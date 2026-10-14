@@ -1,0 +1,12 @@
+[package]
+name = "sim"
+description = "The simulation core: plain Rust, no graphics or engine dependency."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+rayon.workspace = true
+serde.workspace = true
+ron.workspace = true
+png.workspace = true

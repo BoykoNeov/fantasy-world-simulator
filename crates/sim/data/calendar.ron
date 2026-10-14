@@ -1,0 +1,33 @@
+// The default calendar. Modules ask the calendar about weeks, months, seasons and moons; they never
+// assume 7 or 365. Seasons are for the northern hemisphere; a month belongs to the last season that
+// starts at or before it, wrapping around the year.
+(
+    name: "Reckoning of the Wheel",
+    first_year: 1,
+    weekdays: ["Moonday", "Hearthday", "Marketday", "Stoneday", "Windday", "Restday"],
+    months: [
+        (name: "Deepwinter", days: 30),
+        (name: "Thaw", days: 30),
+        (name: "Seedtide", days: 30),
+        (name: "Blossom", days: 30),
+        (name: "Greening", days: 30),
+        (name: "Highsun", days: 30),
+        (name: "Goldfield", days: 30),
+        (name: "Harvest", days: 30),
+        (name: "Emberfall", days: 30),
+        (name: "Mistmoon", days: 30),
+        (name: "Frostfall", days: 30),
+        (name: "Longnight", days: 30),
+        (name: "Yearsend", days: 4),
+    ],
+    seasons: [
+        (name: "Spring", first_month: 2),
+        (name: "Summer", first_month: 5),
+        (name: "Autumn", first_month: 8),
+        (name: "Winter", first_month: 11),
+    ],
+    moons: [
+        (name: "Silvra", period_days: 29, offset_days: 0),
+        (name: "Kesh", period_days: 11, offset_days: 4),
+    ],
+)
