@@ -246,6 +246,52 @@ impl World {
         Ok(())
     }
 
+    /// Write `values` (as [`FieldData::gather`] gives them) at entities `at` of one field, in place:
+    /// the cost follows the number of entities, not the field's size.
+    pub fn scatter_field(&mut self, id: FieldId, at: &[u32], values: &FieldData) -> Result<(), String> {
+        use FieldData::*;
+        fn put<T: Copy>(v: &mut [T], at: &[u32], x: &[T]) -> Result<(), String> {
+            for (&i, &x) in at.iter().zip(x) {
+                *v.get_mut(i as usize).ok_or_else(|| format!("no entity {i}"))? = x;
+            }
+            Ok(())
+        }
+        let p = &mut self.provinces;
+        let pops = &mut self.pops;
+        match (id.def().name, values) {
+            ("cell.elevation", F32(x)) => put(&mut self.elevation, at, x),
+            ("cell.temperature", F32(x)) => put(&mut self.temperature, at, x),
+            ("cell.rainfall", F32(x)) => put(&mut self.rainfall, at, x),
+            ("cell.biome", U8(x)) => {
+                let x: Vec<Biome> = x.iter().map(|&b| biome::ALL.get(b as usize).copied().ok_or(format!("cell.biome: no biome {b}"))).collect::<Result<_, _>>()?;
+                put(&mut self.biome, at, &x)
+            }
+            ("cell.drainage_receiver", U32(x)) => put(&mut self.downstream, at, x),
+            ("cell.river_flow", U64(x)) => put(&mut self.river_flow, at, x),
+            ("cell.food_yield", F64(x)) => put(&mut self.food_per_cell, at, x),
+            ("cell.province", U32(x)) => put(&mut p.of_cell, at, x),
+            ("province.cells", U32(x)) => put(&mut p.cells, at, x),
+            ("province.area_km2", F64(x)) => put(&mut p.area_km2, at, x),
+            ("province.center", Dir(x)) => put(&mut p.center, at, x),
+            ("province.lat", F32(x)) => put(&mut p.lat, at, x),
+            ("province.food_capacity", U64(x)) => put(&mut p.food_capacity, at, x),
+            ("province.food_stock", U64(x)) => put(&mut self.food_stock, at, x),
+            ("province.starved_this_year", U64(x)) => put(&mut self.starved_this_year, at, x),
+            ("pop.province", U32(x)) => put(&mut pops.province, at, x),
+            ("pop.species", U16(x)) => put(&mut pops.species, at, x),
+            ("pop.culture", U16(x)) => put(&mut pops.culture, at, x),
+            ("pop.religion", U16(x)) => put(&mut pops.religion, at, x),
+            ("pop.class", U8(x)) => put(&mut pops.class, at, x),
+            ("pop.size", U64(x)) => put(&mut pops.size, at, x),
+            ("province.rain_shortfall", U64(x)) => put(&mut self.rain_shortfall, at, x),
+            ("cell.temperature_set", F32(x)) => put(&mut self.temperature_set, at, x),
+            ("cell.rainfall_set", F32(x)) => put(&mut self.rainfall_set, at, x),
+            ("cell.biome_set", U8(x)) => put(&mut self.biome_set, at, x),
+            ("cell.spring", U64(x)) => put(&mut self.spring, at, x),
+            (name, _) => Err(format!("{name}: wrong value type")),
+        }
+    }
+
     /// Give the province values that change as the world runs an entry for every province, after an
     /// edit added provinces. New provinces start with nothing. (Add new running province fields
     /// here.)

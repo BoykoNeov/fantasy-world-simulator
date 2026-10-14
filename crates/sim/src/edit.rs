@@ -541,6 +541,9 @@ fn reshape_after_height(w: &mut World, regenerate: &mut dyn FnMut(&mut World)) {
 /// are lost, and the flows say so.
 fn rehouse(w: &mut World, emptied: &[u32]) -> Flows {
     let mut flows = Flows::default();
+    if emptied.is_empty() {
+        return flows;
+    }
     let mut pops_of = pops_by_province(&w.pops);
     for &from in emptied {
         let f = from as usize;
@@ -709,15 +712,12 @@ impl MapChange {
 
     fn put(&self, w: &mut World, back: bool) {
         for (id, change) in &self.fields {
-            let data = match change {
-                Change::Whole { old, new } => if back { old } else { new }.clone(),
-                Change::Sparse { at, old, new } => {
-                    let mut d = w.field(*id);
-                    d.scatter(at, if back { old } else { new });
-                    d
-                }
-            };
-            w.set_field(*id, data).expect("a change of this world");
+            match change {
+                Change::Whole { old, new } => w.set_field(*id, if back { old } else { new }.clone()),
+                // In place: the cost follows the cells that changed, not the planet.
+                Change::Sparse { at, old, new } => w.scatter_field(*id, at, if back { old } else { new }),
+            }
+            .expect("a change of this world");
         }
     }
 
@@ -732,6 +732,32 @@ impl MapChange {
             _ => unreachable!("cell.province holds u32s"),
         };
         at.into_iter().zip(old.iter().zip(new)).filter(|&(_, (&o, &n))| o != n && o != NONE && n != NONE).map(|(c, (&o, &n))| (c, o, n)).collect()
+    }
+
+    /// Provinces it touched, in `w` as it is after the change: those whose land changed (before or
+    /// after), whose cells changed in any way, or whose own values changed. In number order.
+    pub fn provinces(&self, w: &World) -> Vec<u32> {
+        let mut out = Vec::new();
+        for (id, change) in &self.fields {
+            let (at, old, new) = match change {
+                Change::Sparse { at, old, new } => (at.clone(), Some(old), Some(new)),
+                Change::Whole { new, .. } => ((0..new.len() as u32).collect(), None, None),
+            };
+            match id.def().tier {
+                crate::fields::Tier::Cell => out.extend(at.iter().map(|&c| w.provinces.of_cell[c as usize])),
+                crate::fields::Tier::Province => out.extend(at.iter().copied()),
+                crate::fields::Tier::Pop => {}
+            }
+            if id.def().name == "cell.province"
+                && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)
+            {
+                out.extend(o.iter().chain(n));
+            }
+        }
+        out.retain(|&p| p != NONE);
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     /// Provinces that had land before and have none now, in number order.

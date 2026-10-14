@@ -52,6 +52,38 @@ fn main() {
     sim.reinstate(split).unwrap();
     println!("give it again: {:.0} ms", ms(t));
 
+    // Painting while paused, as the window does it: the simulation has run ahead, goes back to the
+    // day shown, takes the stroke, and runs ahead again. The cost of a stroke, of taking one back
+    // and of explaining the day should stay flat however many strokes the day already has.
+    let shown = sim.day;
+    let province = p as u32;
+    let stroke = |sim: &mut Sim, k: usize| {
+        let x = lon + (k % 20) as f64 * 0.3;
+        let path = vec![[x, lat - 1.0], [x, lat + 1.0]];
+        sim.rewind(shown).unwrap();
+        let t = Instant::now();
+        sim.edit(Edit::Paint { path, radius_km: 120.0, brush: Brush::Raise(30.0) }).unwrap();
+        let ms_edit = ms(t);
+        sim.run_days(120);
+        ms_edit
+    };
+    let t = Instant::now();
+    for k in 0..200 {
+        let ms_edit = stroke(&mut sim, k);
+        if [0, 9, 49, 199].contains(&k) {
+            sim.rewind(shown).unwrap();
+            let t = Instant::now();
+            let undone = sim.withdraw(sim.commands.len() - 1).unwrap();
+            let ms_undo = ms(t);
+            sim.reinstate(undone).unwrap();
+            sim.run_days(5);
+            let t = Instant::now();
+            sim.trace(shown, province).unwrap();
+            println!("stroke {}: {ms_edit:.0} ms; taking it back {ms_undo:.0} ms; explaining the day {:.0} ms", k + 1, ms(t));
+        }
+    }
+    println!("200 strokes on one day, each with going back and running 120 days ahead: {:.1} s; map changes kept {:.1} MB", t.elapsed().as_secs_f64(), sim.map_change_bytes() as f64 / 1e6);
+
     sim.run_days(200);
     let t = Instant::now();
     sim.rewind(sim.day - 250).unwrap();

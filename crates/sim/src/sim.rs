@@ -649,8 +649,15 @@ impl Sim {
         for &id in &running {
             self.enforce_contract(id, &[]);
         }
-        if let Some(t) = &mut self.trace
-            && edit.provinces(&self.world).contains(&t.province)
+        // A map edit is about the provinces whose land or values it changed (cheaper to find from
+        // its change than from the edit, which would measure a brush over the whole planet).
+        let traced = self.trace.as_ref().map(|t| t.province);
+        if let Some(p) = traced
+            && match map {
+                Some(i) => self.map_changes[i].provinces(&self.world).contains(&p),
+                None => edit.provinces(&self.world).contains(&p),
+            }
+            && let Some(t) = &mut self.trace
         {
             t.steps.push(TraceStep { stage: Stage::Edit, module: None, what: Traced::Note(edit.describe()) });
         }

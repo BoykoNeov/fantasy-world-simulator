@@ -195,8 +195,14 @@ cut it when long runs need it.
 | Brush stroke, 20 points, 150 km brush | 178 ms | 0.03 MB |
 | The sea rises 50 m (every height changes) | 174 ms | 43 MB |
 | Split a province | 26 ms | 0.4 MB |
-| Take the split back (replays 100 days, reusing the stroke's and the sea's changes) | 226 ms | — |
-| Go back 250 days past all three / run them again | 110 ms / 134 ms | — |
+| Take the split back (replays 100 days, reusing the stroke's and the sea's changes) | 28 ms | — |
+| Go back 250 days past all three / run them again | 11 ms / 49–115 ms | — |
+
+Going back puts each map change's values back in place, so its cost follows the cells that
+changed (a first version copied whole layers: 226 ms to take the split back). Painting while paused,
+as the window does it (go back to the day shown, take the stroke, run 120 days ahead), costs the
+same at the 200th stroke of a day as at the 50th: a stroke 168–174 ms, taking it back 35–38 ms,
+explaining the day 51–56 ms. The 200 strokes kept 1.9 MB of map changes.
 
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a
