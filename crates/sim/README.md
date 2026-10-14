@@ -80,6 +80,13 @@ What exists:
   river redirects that river. A spring at the source can add water, so a river can be drawn where
   little rain falls. Lakes are painted with the height brush, below sea level: there are no lakes
   above it yet.
+- **Timelines** (`branch.rs`): `Timelines::branch` starts a new timeline from a past day of the one
+  being played, and the old one is kept exactly as it was; `Timelines::switch` plays another. A new
+  timeline keeps the old one's commands from before that day and the edits logged for it (the day
+  as shown already has them), but not that day's pokes nor anything later. Each timeline is a whole
+  simulation, so switching is instant; a new one copies the world and shares the checkpoints and
+  map changes they have in common, so each costs about one world's worth of memory.
+  `Timelines::save` writes every timeline, each as its own save.
 - **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
   that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
   restoring the checkpoint before it and running forward; the days after are forgotten, so a poke

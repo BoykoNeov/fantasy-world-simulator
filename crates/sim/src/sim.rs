@@ -24,6 +24,7 @@ use crate::requests::{Cause, Request};
 use crate::world::{Fingerprint, World};
 use crate::fields::Quantity;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// A year's totals, from the flows modules reported.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,9 +183,9 @@ pub enum Traced {
 pub struct Checkpoint {
     pub day: u64,
     /// How many of the edits' map changes the map had.
-    map_at: usize,
+    pub(crate) map_at: usize,
     /// Commands before this one had been applied, if edits.
-    edits_done: usize,
+    pub(crate) edits_done: usize,
     fields: Vec<(FieldId, FieldData)>,
     modules: Vec<Vec<u8>>,
     pending: Vec<Posted>,
@@ -208,7 +209,7 @@ pub struct Sim {
     /// Today's change requests, applied at the end of the day; always empty between days.
     queue: Vec<Request>,
     /// Emission counter for today's events.
-    seq: u32,
+    pub(crate) seq: u32,
     /// Flows for the year in progress.
     pub year_flows: Flows,
     pub history: Vec<YearSummary>,
@@ -219,7 +220,7 @@ pub struct Sim {
     /// Delivered events (not grants). Not part of saves.
     pub event_log: EventLog,
     /// Where the last day's deliveries start in `event_log`.
-    log_today: usize,
+    pub(crate) log_today: usize,
     /// Stop with a panic when a module writes a field it doesn't own. Slow: for tests.
     pub strict: bool,
     /// Index of the first poke not yet sent (commands are in day order).
@@ -229,15 +230,15 @@ pub struct Sim {
     pub(crate) edits_done: usize,
     /// What each edit applied so far did to the map, in the order applied: going back undoes them,
     /// and a replay that applies the same edit again reuses its change.
-    map_changes: Vec<MapChange>,
+    pub(crate) map_changes: Vec<Arc<MapChange>>,
     /// How many of `map_changes` the map has now.
-    map_at: usize,
+    pub(crate) map_at: usize,
     /// Edits that no longer fit the world when their day came (for example, after an earlier edit
     /// they relied on was taken back), with the day and why. They are left out.
     pub skipped_edits: Vec<(u64, String)>,
     /// The world at the start of each year run so far, and where it was loaded: what
     /// [`Sim::rewind`] and [`Sim::trace`] start from. Taken before that day's edits.
-    pub checkpoints: Vec<Checkpoint>,
+    pub checkpoints: Vec<Arc<Checkpoint>>,
     /// Per field, the day each entity's value last changed while the world ran ([`NEVER`] if it
     /// hasn't). Empty for fields only generation writes.
     pub last_change: Vec<Vec<u64>>,
@@ -323,7 +324,7 @@ impl Sim {
         self.seq = 0;
         // Replays pass year starts that already have one.
         if self.calendar.is_year_start(self.day) && self.checkpoints.last().is_none_or(|c| c.day < self.day) {
-            self.checkpoints.push(self.checkpoint());
+            self.checkpoints.push(Arc::new(self.checkpoint()));
         }
         self.apply_todays_edits()
     }
@@ -425,7 +426,7 @@ impl Sim {
 
     /// Memory held by the edits' map changes, bytes (roughly).
     pub fn map_change_bytes(&self) -> usize {
-        self.map_changes.iter().map(MapChange::bytes).sum()
+        self.map_changes.iter().map(|c| c.bytes()).sum()
     }
 
     /// Take back command `index` (an edit or a poke) as if it had never been given: the world goes
@@ -615,13 +616,13 @@ impl Sim {
                         }
                     };
                     edit.change_map(&mut self.world, &mut regenerate);
-                    self.map_changes.push(MapChange::between(edit.clone(), old, &self.world));
+                    self.map_changes.push(Arc::new(MapChange::between(edit.clone(), old, &self.world)));
                 }
             }
             self.map_at += 1;
             self.map_at - 1
         });
-        let flows = edit.change_running(&mut self.world, map.map(|i| &self.map_changes[i]));
+        let flows = edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i]));
 
         for (k, &q) in QUANTITIES.iter().enumerate() {
             let expected = before[k] as i128 + flows.net(q) as i128;

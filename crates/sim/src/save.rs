@@ -172,7 +172,7 @@ impl Sim {
         // The snapshot was taken between days, with the day's edits applied.
         sim.edits_done = sim.commands.partition_point(|c| c.day <= sim.day);
         // History before the load isn't kept: going back stops here.
-        sim.checkpoints = vec![sim.checkpoint()];
+        sim.checkpoints = vec![std::sync::Arc::new(sim.checkpoint())];
         Ok(sim)
     }
 

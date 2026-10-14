@@ -5,6 +5,7 @@
 #![allow(clippy::needless_range_loop)]
 
 pub mod biome;
+pub mod branch;
 pub mod calendar;
 pub mod climate;
 pub mod config;
