@@ -119,6 +119,31 @@ impl Timelines {
     }
 }
 
+impl Timelines {
+    /// Open a world from a file: a scenario (`.toml`), every timeline ([`Timelines::save`]), or
+    /// one simulation ([`Sim::save`]).
+    pub fn open(path: &std::path::Path) -> Result<Timelines, String> {
+        let name = path.display();
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("toml")) {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("{name}: {e}"))?;
+            return Timelines::from_scenario_text(&text);
+        }
+        let bytes = std::fs::read(path).map_err(|e| format!("{name}: {e}"))?;
+        if bytes.starts_with(crate::branch::MAGIC) {
+            Timelines::load(&bytes).map_err(|e| e.to_string())
+        } else {
+            Sim::load(&bytes).map(Timelines::new).map_err(|e| e.to_string())
+        }
+    }
+
+    /// Write every timeline to a file: as a scenario if it ends in `.toml`, else as saves.
+    pub fn write(&self, path: &std::path::Path) -> Result<(), String> {
+        let scenario = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("toml"));
+        let bytes = if scenario { self.scenario_text().into_bytes() } else { self.save() };
+        std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
 impl Sim {
     /// On a world just made: take `commands` as the command log after the configuration's own, and
     /// run to `day`, applying them on their days.

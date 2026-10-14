@@ -422,11 +422,15 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - Going back: a checkpoint at the start of every year, and `rewind` to any earlier day by replaying from it. A poke throws the days computed ahead away this way.
    - The inspector: every value of a province with the module that sets it and the day it last changed; the change requests settled that day; "why?", which replays that day with tracing on and lists each module's own explanation and every change; and the province's daily event log, filterable by source.
    - Story 1's famine half needed two things the step didn't list: a way to start a drought (a poke, stored in the command log) and harvests that fall when rain does (Weather v0 "droughts" owns a per-province rain shortfall, and the harvest reads it). Both are in. The story passes as a test (`crates/sim/tests/stories.rs`).
-   - Left for later: scrubbing back through history in the window, and branching a new timeline from a past day (step 5).
-5. **Scenario editor v1.**
+   - Left for later then, done in step 5: scrubbing back through history in the window, and branching a new timeline from a past day.
+5. **Scenario editor v1.** Done Oct 14 (`crates/sim` and `crates/app`, see their READMEs).
    - Map painting with repair, province split/merge/redraw with pop reallocation, pop edits.
    - Command log, undo via snapshot replay, branching from a past day, scenario save/load.
    - Early on purpose: the editor is also the main tool for building test scenarios.
+   - Edits take effect on the day shown. The map is not in the yearly checkpoints: each edit's change to it is kept as before-and-after values where they differ, undone and redone in place. Province numbers never change (a merged province stays as an empty placeholder) and pops are only ever added, so anything in flight still finds its target.
+   - Painting covers height, sea level, climate and biome overrides, and drawn or redirected rivers; lakes are painted below sea level, as there are no lakes above it yet. Resources, minerals and mana wait for the modules that use them.
+   - Each timeline is a whole simulation of its own; a new one shares the checkpoints and map changes it has in common with the one it left. Scenario files are readable TOML whose commands are replayed on load. Assertions in scenarios wait for the combination tester (step 6).
+   - The history slider also covers step 4's leftover "scrubbing back through history".
 6. **Economics v1 and taxonomies.** Goods tree, prices, local markets, roads, trade layer. The combination tester and evaluator start here, once two slots have two versions each.
 7. **Factions and diplomacy.** Realms, rulers, borders, war/peace. Editor gains realm and character edits. Target stories 1 (full) and 2 pass.
 8. **Warfare and logistics.** Daily armies, supply, battles, sieges. Battle inspector. Editor gains army placement.

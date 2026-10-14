@@ -5,7 +5,7 @@
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P]
-//!            [--bench --out DIR --tag NAME]
+//!            [--open FILE] [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
 //! coasts, rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet
@@ -15,6 +15,8 @@
 //! playing. `--paint` and `--split` edit the world through the window once it is open, as a
 //! player would (raise land along a short stroke; split half a province off), for scripted
 //! screenshots of an edited map.
+//! `--open` shows a saved world instead of making one: a scenario (`.toml`) or a save of its
+//! timelines (world options, `--years`, `--drought` and `--days` are then ignored).
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
@@ -27,6 +29,7 @@ use app::projection::{Camera, Projection};
 use app::wobble::ProvinceLookup;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
+use sim::branch::Timelines;
 use sim::calendar::Calendar;
 use sim::config::Config;
 use sim::edit::{Edit, PopValues};
@@ -71,6 +74,8 @@ struct Options {
     view: Option<(f64, f64, f64)>,
     layers: LayerSettings,
     screenshot: Option<String>,
+    /// A world to open instead of making one.
+    open: Option<String>,
     /// Edits made through the window once it is open (scripted runs): see `--paint` and `--split`.
     live_edits: Vec<LiveEdit>,
     bench: bool,
@@ -98,6 +103,7 @@ impl Options {
             view: None,
             layers: LayerSettings::default(),
             screenshot: None,
+            open: None,
             live_edits: Vec::new(),
             bench: false,
             out_dir: "W:/temp/claude/fantasymap-mapview/bench".into(),
@@ -181,6 +187,7 @@ impl Options {
                     }
                 }
                 "--screenshot" => o.screenshot = Some(value(&mut i)),
+                "--open" => o.open = Some(value(&mut i)),
                 "--paint" => {
                     let x = numbers(&value(&mut i), 4, "--paint LON,LAT,RADIUS_KM,METRES");
                     o.live_edits.push(LiveEdit::Raise { lon: x[0], lat: x[1], radius_km: x[2], metres: x[3] as f32 });
@@ -280,6 +287,10 @@ struct MapApp {
     /// The day on the history slider while it is dragged.
     scrub: Option<u64>,
     editor: Editor,
+    /// The file the File section saves to and opens.
+    file: String,
+    /// The worlds opened so far, as the worker counts them.
+    opened: u32,
     /// A pop being edited in the inspector, and the size typed so far.
     pop_edit: Option<(usize, u64)>,
     /// The size of a pop to add, and a food store to set, as typed in the inspector.
@@ -318,6 +329,29 @@ struct MapApp {
     bench_target: (f64, f64),
 }
 
+/// A new world from the command line's options, run for its years, with its drought.
+fn make_world(opts: &Options, drought: &mut DroughtTool) -> Sim {
+    let mut sim = Sim::new(&opts.config).unwrap_or_else(|e| panic!("{e}"));
+    let first = sim.calendar.def.first_year;
+    sim.run_to_year(first + opts.years);
+    if let Some(at) = opts.drought {
+        let (lon, lat) = match at {
+            DroughtAt::Best => {
+                let (lon, lat) = sim::grid::dir_to_lonlat(sim.world.provinces.center[breadbasket(&sim.world)]);
+                (lon.to_degrees(), lat.to_degrees())
+            }
+            DroughtAt::At { lon, lat, radius_km, percent, years } => {
+                *drought = DroughtTool { percent, radius_km, years };
+                (lon, lat)
+            }
+        };
+        let e = drought_event(lon, lat, drought, &sim.calendar);
+        sim.poke(e);
+    }
+    sim.run_days(opts.days);
+    sim
+}
+
 /// The province that grows the most food.
 fn breadbasket(w: &World) -> usize {
     let p = &w.provinces;
@@ -332,33 +366,19 @@ fn drought_event(lon: f64, lat: f64, t: &DroughtTool, cal: &Calendar) -> Event {
 impl MapApp {
     fn new(cc: &eframe::CreationContext<'_>, opts: Options) -> Self {
         let t0 = Instant::now();
-        let mut sim = Sim::new(&opts.config).unwrap_or_else(|e| panic!("{e}"));
-        let first = sim.calendar.def.first_year;
-        sim.run_to_year(first + opts.years);
         let mut drought = DroughtTool { percent: 70.0, radius_km: 2000.0, years: 3.0 };
-        if let Some(at) = opts.drought {
-            let (lon, lat) = match at {
-                DroughtAt::Best => {
-                    let (lon, lat) = sim::grid::dir_to_lonlat(sim.world.provinces.center[breadbasket(&sim.world)]);
-                    (lon.to_degrees(), lat.to_degrees())
-                }
-                DroughtAt::At { lon, lat, radius_km, percent, years } => {
-                    drought = DroughtTool { percent, radius_km, years };
-                    (lon, lat)
-                }
-            };
-            let e = drought_event(lon, lat, &drought, &sim.calendar);
-            sim.poke(e);
-        }
-        sim.run_days(opts.days);
+        let timelines = match &opts.open {
+            Some(file) => Timelines::open(file.as_ref()).unwrap_or_else(|e| panic!("{e}")),
+            None => Timelines::new(make_world(&opts, &mut drought)),
+        };
+        let sim = timelines.sim();
         let gen_s = t0.elapsed().as_secs_f64();
-        let data = MapData::build(&sim);
+        let data = MapData::build(sim);
 
         let rs = cc.wgpu_render_state.as_ref().expect("wgpu renderer");
         let gpu = MapGpu::new(&rs.device, &rs.queue, rs.target_format, &data);
         rs.renderer.write().callback_resources.insert(gpu);
         let info = rs.adapter.get_info();
-
         // The most populous province, for the benchmark zoom.
         let people = sim.world.province_population();
         let top = (0..people.len()).max_by_key(|&p| people[p]).unwrap_or(0);
@@ -371,7 +391,7 @@ impl MapApp {
                 None => ("nobody (a default)".into(), None),
             })
             .collect();
-        let frame = Frame::now(&sim, 0);
+        let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
         // On the command line, explain the last day the province changed.
@@ -397,17 +417,19 @@ impl MapApp {
             repaint: cc.egui_ctx.clone(),
             status: Status::default(),
             notice: None,
-            seen: HashMap::from([(0, first_day)]),
+            seen: HashMap::from([(timelines.active_id(), first_day)]),
             left_at: HashMap::new(),
             waiting: None,
             scrub: None,
             editor: Editor::default(),
+            file: opts.open.clone().unwrap_or_else(|| "fantasy_world.toml".into()),
+            opened: 0,
             pop_edit: None,
             new_pop: 1000,
             food_edit: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
-            worker: Worker::start(sim, move || ctx.request_repaint()),
+            worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
             epoch: 0,
             rate: Rate::default(),
             tables_for: None,
@@ -458,6 +480,12 @@ impl MapApp {
                 FromSim::Frame(f) if f.epoch == self.epoch => self.frames.push_back(f),
                 FromSim::Frame(_) => {}
                 FromSim::Status(s) => {
+                    // Another world opened: nothing watched in it yet.
+                    if s.opened != self.opened {
+                        self.opened = s.opened;
+                        self.seen.clear();
+                        self.left_at.clear();
+                    }
                     if let Some(m) = &s.message {
                         self.notice = Some((m.clone(), Instant::now()));
                     }
@@ -770,7 +798,12 @@ impl MapApp {
     fn side_panel(&mut self, ui: &mut egui::Ui) {
         let w = &self.geo;
         ui.heading("Fantasy Planet");
-        ui.label(format!("{:?} world, seed {}", self.opts.size, w.params.seed));
+        // Named by the world itself: an opened one may not be the size the options say.
+        let size = [Size::Small, Size::Medium, Size::Large, Size::Huge].into_iter().find(|&z| WorldParams::preset(z, 0).n == w.grid.n);
+        ui.label(match size {
+            Some(z) => format!("{z:?} world, seed {}", w.params.seed),
+            None => format!("world of {} cells, seed {}", w.grid.cells(), w.params.seed),
+        });
         ui.label(format!("{} people", group(self.view.people.iter().sum::<f64>().round() as u64)));
         ui.separator();
 
@@ -797,6 +830,19 @@ impl MapApp {
 
         ui.label("Timelines");
         self.timelines(ui);
+        ui.separator();
+
+        ui.label("File");
+        ui.add(egui::TextEdit::singleline(&mut self.file).desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            if ui.button("save").on_hover_text("every timeline: a readable scenario if the name ends in .toml, else a save that opens at once").clicked() {
+                self.worker.save(self.file.clone().into(), self.day());
+            }
+            if ui.button("open").on_hover_text("the same world saved earlier (another world: start the app with --open)").clicked() {
+                self.new_epoch();
+                self.worker.open(self.epoch, self.file.clone().into());
+            }
+        });
         ui.separator();
 
         ui.label("Map shape");

@@ -199,3 +199,60 @@ fn a_change_in_the_past_starts_a_timeline_and_going_back_and_forth_repeats_days(
     assert_eq!(back.state.fields, later.state.fields);
     assert_eq!(status(&worker).active, 0);
 }
+
+#[test]
+fn a_world_saved_from_the_window_opens_again_as_it_was() {
+    use app::playback::Change;
+    use sim::edit::Edit;
+    let mut sim = world();
+    sim.run_days(100);
+    let day = sim.day;
+    let worker = Worker::start(sim, || {});
+    let _ = status(&worker);
+    worker.change(1, day, Change::Edit(Edit::SetFoodStock { province: 2, rations: 77 }), false);
+    let edited = landed(&worker, 1);
+    let _ = status(&worker);
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"));
+    for name in ["window_world.toml", "window_world.bin"] {
+        let path = dir.join(name);
+        worker.save(path.clone(), day);
+        let s = loop {
+            let s = status(&worker);
+            if s.busy.is_none() {
+                break s;
+            }
+        };
+        assert!(s.message.as_deref().is_some_and(|m| m.starts_with("saved")), "{s:?}");
+    }
+    // Move on, then open each: the world comes back as saved, on the day saved.
+    worker.goto(2, day + 50);
+    let _ = landed(&worker, 2);
+    for (k, name) in ["window_world.toml", "window_world.bin"].into_iter().enumerate() {
+        let epoch = 3 + k as u64;
+        worker.open(epoch, dir.join(name));
+        let f = landed(&worker, epoch);
+        assert_eq!(f.day, day, "{name}");
+        assert_eq!(f.state.fields, edited.state.fields, "{name}");
+        let s = loop {
+            let s = status(&worker);
+            if s.busy.is_none() {
+                break s;
+            }
+        };
+        assert_eq!(s.opened, k as u32 + 1);
+        assert!(s.can_undo, "the edit came back with it");
+    }
+    // Another world is refused.
+    let other = Sim::new(&Config::new(WorldParams { n: 24, provinces: 40, seed: 10, land_fraction: 0.4, radius_km: 6371.0 })).unwrap();
+    let path = dir.join("other_world.bin");
+    std::fs::write(&path, other.save()).unwrap();
+    worker.open(9, path);
+    let _ = landed(&worker, 9);
+    let s = loop {
+        let s = status(&worker);
+        if s.busy.is_none() {
+            break s;
+        }
+    };
+    assert!(s.message.as_deref().is_some_and(|m| m.contains("another world")), "{s:?}");
+}

@@ -1,7 +1,7 @@
 # app: the map view
 
-The window that shows the planet: egui + wgpu over the `sim` crate. Build steps 2 (the map view) and 4
-(time controls and the inspector) from the design doc. The simulation code knows nothing about it; the
+The window that shows the planet: egui + wgpu over the `sim` crate. Build steps 2 (the map view), 4
+(time controls and the inspector) and 5 (the scenario editor) from the design doc. The simulation code knows nothing about it; the
 map only reads the sim's fields.
 
 What exists:
@@ -46,6 +46,26 @@ What exists:
   line is moved to match, and picking uses the same field. It fades out next to the sea and along big
   rivers, so borders meet the coast exactly and river borders stay on their river.
 
+- **Editing** (`editor.rs`, the Edit section): tools for the land's height (raise, lower, smooth,
+  roughen, flatten; lakes are flattened below 0 m) and the sea level; painted climate (temperature,
+  rainfall, a biome, or clearing them); rivers drawn from source to mouth (starting on a river
+  redirects it; a spring adds water); and provinces (move land into the selected province, make
+  it a new province, merge a clicked province into the selected one). Brush tools draw with the left
+  button, and right-drag still moves the map; the brush and the stroke are drawn over the map. The
+  inspector sets a pop's size, adds a pop and sets the food store. An edit shows at once on the day
+  shown. Undo and redo (Ctrl+Z, Ctrl+Y) take back edits and droughts, on the latest day watched.
+- **A changed map is drawn again**: every day the simulation sends says which map it belongs to.
+  When the day shown has a new map, its picture is built on another thread (0.5–0.8 s on a large
+  world, about 1.2 s on a huge one: `examples/map_rebuild.rs`) while the old one stays up, then the
+  picture and the picking swap in the same frame.
+- **History and timelines**: the history slider goes to any day from the earliest kept to the
+  latest watched, and back. A change made on an earlier day starts a new timeline and keeps the old
+  one; the Timelines section plays either, from where it was left. Slow work (taking back an old
+  change, opening a scenario, a long jump) shows what is under way and for how long.
+- **File**: save every timeline, as a readable scenario if the name ends in `.toml` or else as a
+  save that opens at once; open the same world again. The timeline played is saved on the day
+  shown.
+
 Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
 
 ## Running
@@ -68,13 +88,20 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
   `drought`, `provinces` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
-- `--screenshot FILE.png`: open, save a screenshot, close.
+- `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
+- `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`: once the window is open, raise land along a
+  short stroke, or split half a province off, as a player would (for scripted screenshots).
+- `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
+  close.
 - `--bench --out DIR --tag NAME`: a scripted full turn of the world, then a zoom to 8×. It writes a
   screenshot and a JSON file of frame times. Set `WGPU_POWER_PREF=low` (integrated GPU) or `high` first.
 
 Tests, including one that renders cell ids on the GPU and checks them against the CPU picking code
 (it skips if there is no GPU), and one that drives the simulation thread without a window: it stays
-within its lookahead, and a poke after it ran ahead gives exactly the future a fresh world gets:
+within its lookahead, and a poke after it ran ahead gives exactly the future a fresh world gets; an
+edit comes back on the day shown with its new map, undo and redo give the maps before and after,
+a change in the past starts a timeline and leaves the old one as it was, going back and forth
+gives the same days, and a world saved from the window opens again as it was:
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app

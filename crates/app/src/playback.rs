@@ -33,15 +33,16 @@ pub const LOOKAHEAD: u64 = 120;
 /// The map (the fields only world generation and edits write) as frames show it. Every frame with
 /// the same map shares one.
 pub struct MapState {
-    /// The timeline, and [`Sim::map_version`] in it: the same key, the same map.
-    pub key: (u32, usize, usize),
+    /// How many worlds were opened before, the timeline, and [`Sim::map_version`] in it: the same
+    /// key, the same map.
+    pub key: (u32, u32, usize, usize),
     pub fields: Vec<(FieldId, FieldData)>,
 }
 
 impl MapState {
-    pub fn of(timeline: u32, sim: &Sim) -> Self {
+    pub fn of(opened: u32, timeline: u32, sim: &Sim) -> Self {
         let (at, last) = sim.map_version();
-        MapState { key: (timeline, at, last), fields: sim.map_fields().map(|id| (id, sim.world.field(id))).collect() }
+        MapState { key: (opened, timeline, at, last), fields: sim.map_fields().map(|id| (id, sim.world.field(id))).collect() }
     }
 }
 
@@ -81,7 +82,7 @@ pub struct Frame {
 impl Frame {
     /// The world as it stands, as frame 0 of `epoch`.
     pub fn now(sim: &Sim, epoch: u64) -> Self {
-        Self::with(sim, epoch, Arc::new(DayState::of(sim, Arc::new(MapState::of(0, sim)))))
+        Self::with(sim, epoch, Arc::new(DayState::of(sim, Arc::new(MapState::of(0, 0, sim)))))
     }
 
     fn with(sim: &Sim, epoch: u64, state: Arc<DayState>) -> Self {
@@ -121,8 +122,10 @@ pub struct Status {
     pub can_redo: bool,
     /// Something slow is under way (the words say what); the window says so until it ends.
     pub busy: Option<String>,
-    /// A change that was refused, or edits left out, in words.
+    /// A change that was refused, edits left out, or a file saved, in words.
     pub message: Option<String>,
+    /// How many worlds were opened since the window started.
+    pub opened: u32,
 }
 
 enum ToSim {
@@ -130,6 +133,8 @@ enum ToSim {
     GoTo { epoch: u64, day: u64 },
     Switch { epoch: u64, id: u32, day: u64 },
     Trace { day: u64, province: u32 },
+    Save { path: std::path::PathBuf, day: u64 },
+    Open { epoch: u64, path: std::path::PathBuf },
 }
 
 pub enum FromSim {
@@ -191,6 +196,18 @@ impl Worker {
         self.send(ToSim::Switch { epoch, id, day });
     }
 
+    /// Write every timeline to `path`: a scenario if it ends in `.toml`, else saves. The one played
+    /// is saved on `day` (the day shown), not on the day the simulation has run ahead to.
+    pub fn save(&self, path: std::path::PathBuf, day: u64) {
+        self.send(ToSim::Save { path, day });
+    }
+
+    /// Open the world in `path` in place of this one. It must be the same world (size, seed,
+    /// modules, calendar), since the window was made for it.
+    pub fn open(&self, epoch: u64, path: std::path::PathBuf) {
+        self.send(ToSim::Open { epoch, path });
+    }
+
     /// Explain what happened to `province` on `day`; the answer comes back as [`FromSim::Trace`].
     pub fn trace(&self, day: u64, province: u32) {
         self.send(ToSim::Trace { day, province });
@@ -220,6 +237,7 @@ struct Run {
     /// Per timeline, commands taken back, the latest last.
     redo: HashMap<u32, Vec<Command>>,
     out: Sender<FromSim>,
+    opened: u32,
 }
 
 impl Run {
@@ -231,8 +249,8 @@ impl Run {
     fn state(&mut self) -> Arc<DayState> {
         let id = self.t.active_id();
         let (at, last) = self.t.sim().map_version();
-        if self.map.key != (id, at, last) {
-            self.map = Arc::new(MapState::of(id, self.t.sim()));
+        if self.map.key != (self.opened, id, at, last) {
+            self.map = Arc::new(MapState::of(self.opened, id, self.t.sim()));
         }
         Arc::new(DayState::of(self.t.sim(), self.map.clone()))
     }
@@ -249,6 +267,7 @@ impl Run {
             can_redo: self.redo.get(&t.active_id()).is_some_and(|r| !r.is_empty()),
             busy,
             message,
+            opened: self.opened,
         };
         self.out.send(FromSim::Status(status)).is_ok()
     }
@@ -304,8 +323,8 @@ impl Run {
 }
 
 fn run(t: Timelines, commands: Receiver<ToSim>, out: Sender<FromSim>, shown: Arc<AtomicU64>, wake: impl Fn()) {
-    let map = Arc::new(MapState::of(t.active_id(), t.sim()));
-    let mut r = Run { t, map, redo: HashMap::new(), out };
+    let map = Arc::new(MapState::of(0, t.active_id(), t.sim()));
+    let mut r = Run { t, map, redo: HashMap::new(), out, opened: 0 };
     let mut epoch = 0;
     let mut state = r.state();
     if !r.status(None, None) {
@@ -348,6 +367,44 @@ fn run(t: Timelines, commands: Receiver<ToSim>, out: Sender<FromSim>, shown: Arc
             }
             Some(ToSim::Switch { epoch: e, id, day }) => {
                 let message = r.t.switch(id).and_then(|()| r.sim().goto(day)).err();
+                Some((e, message))
+            }
+            Some(ToSim::Save { path, day }) => {
+                if !r.busy("saving…") {
+                    return;
+                }
+                // A copy on the day shown takes the played timeline's place while it is written.
+                let mut shown = r.t.sim().fork();
+                let moved = shown.goto(day);
+                std::mem::swap(r.t.sim_mut(), &mut shown);
+                let written = moved.and_then(|()| r.t.write(&path));
+                std::mem::swap(r.t.sim_mut(), &mut shown);
+                let said = match written {
+                    Ok(()) => format!("saved {}", path.display()),
+                    Err(e) => e,
+                };
+                if !r.status(None, Some(said)) {
+                    return;
+                }
+                wake();
+                continue;
+            }
+            Some(ToSim::Open { epoch: e, path }) => {
+                if !r.busy("opening (a scenario replays every day it holds)…") {
+                    return;
+                }
+                let message = match Timelines::open(&path) {
+                    Err(e) => Some(e),
+                    Ok(t) if t.sim().config != r.t.sim().config => {
+                        Some(format!("{} is another world; start the app with --open to see it", path.display()))
+                    }
+                    Ok(t) => {
+                        r.t = t;
+                        r.redo.clear();
+                        r.opened += 1;
+                        None
+                    }
+                };
                 Some((e, message))
             }
             Some(ToSim::Trace { day, province }) => {
