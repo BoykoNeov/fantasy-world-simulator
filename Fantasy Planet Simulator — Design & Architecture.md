@@ -83,12 +83,12 @@ Replay re-runs the simulation from the nearest snapshot and re-applies the comma
 
 ## Tech stack
 
-The simulation lives in its own plain-Rust crate with no engine dependency. The app shell is decided by a short spike.
+The simulation lives in its own plain-Rust crate with no engine dependency. The app shell is egui + wgpu, chosen by a renderer trial (Oct 14).
 
 | Layer | Choice | Why |
 | --- | --- | --- |
 | Simulation core | Plain Rust crate (`sim`) | No GC pauses at 1M cells; `rayon` for parallel array passes; runs headless for tests and batch runs |
-| Renderer / UI | **Bevy or egui + wgpu, decided by a spike in build step 2** | The sim doesn't use an engine ECS, so the choice is about rendering and UI only. Spike criteria: cubemap layer compositing, vector lines and curved labels, egui panels, editor brush input, API stability across releases (Bevy ships breaking changes every few months; egui + wgpu is lighter for "a map plus panels") |
+| Renderer / UI | **egui + wgpu (via eframe)**, decided Oct 14 after a renderer trial against Bevy (`spikes/REPORT.md`) | Same picture at about the same speed as Bevy; updates only the changed part of a texture, needed no engine defaults switched off, rebuilds ~5× faster, a fifth of the size. The sim doesn't use an engine ECS, so nothing in the sim depended on the choice. Bevy is worth revisiting only if the project ever wants 3D, an asset pipeline or many animated sprites |
 | Config and content | TOML / RON | Human-editable, mod-friendly, no rebuild to rebalance |
 | Saves | Command log + snapshots, `bincode`, versioned format | Deterministic replay, small files, future save → convert → reload |
 | Tests | `cargo test` on `sim` with fixed seeds | Quick per-module tests run a few simulated decades headless in seconds; century-scale and 1000-year runs go to nightly / CI |
@@ -402,7 +402,7 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - A minimal daily scheduler with hashed randomness, and a calendar as data.
    - Headless PNG export (one projection) for eyeballing.
    - Tests: same seed gives same world, water conserved across a seam, speed per simulated day measured from here on.
-2. **Renderer spike and map view.** Build the same map view in Bevy and in egui + wgpu, for about a week in total, then pick one. Then: cubemap layers, projection, pan/zoom/wrap, parchment look, layer toggles, picking. First "it's pretty" milestone.
+2. **Map view.** The renderer trial is done and egui + wgpu was picked (`spikes/REPORT.md`). Remaining: cubemap layers, projection, pan/zoom/wrap, parchment look, layer toggles, picking. First "it's pretty" milestone.
 3. **Extract the module contract** from the modules that now exist:
    - manifests, change requests and rationing, event delivery order, field contracts, exact conserved quantities, the save format (with the fields listed under "What the save format needs");
    - null + simple versions for terrain and climate, to prove choosing versions at world creation.
@@ -435,6 +435,7 @@ After step 5 the game is already a watchable, editable living map; everything af
 - **Mods:** data-only (TOML/RON) first; scripted modules maybe later.
 - **LLM chronicle:** later, not v1.
 - **Hardware floor:** a laptop with integrated graphics.
+- **Renderer:** egui + wgpu via eframe, decided Oct 14 from the renderer trial (`spikes/REPORT.md`). Caveat kept on record: Bevy crashed on the integrated GPU with border lines on, and the cause was never found (it may have been the trial's own Bevy setup).
 - **Map view:** flat map only; no globe view.
 - **1x speed:** aims for one simulated day per second. With complex module sets the sim may not keep up, and that is acceptable.
 - **World sizes:** Small / Medium / Large / Huge presets, with cell count and province count as separate settings. Speed depends on world size × module complexity; smaller worlds (especially fewer provinces) are how to run complex modules fast.
@@ -443,7 +444,6 @@ After step 5 the game is already a watchable, editable living map; everything af
 
 ## Open questions
 
-- [ ] Renderer: Bevy or egui + wgpu? Trial done; it recommends **egui + wgpu** (see `spikes/REPORT.md`). Awaiting decision.
 - [ ] Map view projection: equirectangular (simple, stretched near the poles), a compromise projection that looks more like a classic world map, or several selectable?
 - [ ] Default rationing rule when requests exceed what exists: proportional within priority classes (current proposal), or strict priority only?
 - [ ] "Day by day": does it mean the clock ticks daily while each module keeps its own cadence (current proposal), or that every module runs every day?

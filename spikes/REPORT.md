@@ -2,6 +2,8 @@
 
 October 14, 2026. Question from the design doc: which app shell should draw the map and the panels?
 
+**Decided Oct 14, 2026: egui + wgpu.** The user accepted the recommendation below.
+
 **Recommendation: egui + wgpu (via eframe).** Both draw the same picture at about the same speed. egui wins
 on what is certain:
 

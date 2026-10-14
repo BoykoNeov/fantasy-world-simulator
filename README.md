@@ -10,4 +10,6 @@ watch, poke, edit and fast-forward it.
 - [`spikes/`](spikes/): throwaway prototypes used to make design decisions. Right now that's a renderer
   trial comparing Bevy against egui + wgpu, drawing the same cube-sphere map in both.
 
+Renderer: **egui + wgpu**, decided Oct 14, 2026 from that trial.
+
 Built in Rust.
