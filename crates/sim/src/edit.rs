@@ -26,11 +26,14 @@
 //! people and rations by the largest-remainder rule, so nothing is lost or made.
 
 use crate::fields::{known, FieldData, FieldId, Quantity};
-use crate::grid::NONE;
+use crate::grid::{dot, lonlat_to_dir, Grid, NONE, V3};
 use crate::module::Flows;
 use crate::pops::{Pops, HUMAN};
 use crate::requests::{split_proportional, Cause};
+use crate::rng::{draw, mix, purpose, Module as Rng};
+use crate::terrain::fbm;
 use crate::world::World;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
@@ -65,6 +68,29 @@ pub enum Edit {
     Split { cells: Vec<u32> },
     /// Province `from` joins `into`, and stays as an empty placeholder.
     Merge { from: u32, into: u32 },
+    /// One brush stroke on the land's height: the brush laid down at each point of `path`
+    /// (longitude and latitude, degrees), `radius_km` across from its middle to its edge. Points
+    /// should be at most half a radius apart.
+    Paint { path: Vec<[f64; 2]>, radius_km: f64, brush: Brush },
+    /// The sea rises by this many metres everywhere (falls, if negative).
+    SeaLevel { rise_m: f32 },
+}
+
+/// What a brush does to the land's height, at full strength: in the middle half of the brush. It
+/// fades to nothing at the brush's edge.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Brush {
+    /// Raise the land by this many metres.
+    Raise(f32),
+    /// Lower it by this many metres.
+    Lower(f32),
+    /// Move each height this share (0 to 1) of the way to the average of its neighbours.
+    Smooth(f32),
+    /// Add hills and hollows up to this many metres high or deep.
+    Roughen(f32),
+    /// Set the height to this many metres. Below 0 makes sea: an inland sea, a lake at sea level,
+    /// or a bay.
+    Flatten(f32),
 }
 
 impl Edit {
@@ -116,6 +142,21 @@ impl Edit {
                 }
                 Ok(())
             }
+            Edit::Paint { ref path, radius_km, brush } => {
+                if path.is_empty() {
+                    return Err("a stroke needs at least one point".into());
+                }
+                if path.iter().flatten().any(|x| !x.is_finite()) || !(radius_km > 0.0 && radius_km.is_finite()) {
+                    return Err("the stroke's points and radius must be numbers, the radius above 0".into());
+                }
+                let x = match brush {
+                    Brush::Raise(x) | Brush::Lower(x) | Brush::Roughen(x) | Brush::Flatten(x) => x,
+                    Brush::Smooth(x) if !(0.0..=1.0).contains(&x) => return Err("smoothing goes from 0 to 1".into()),
+                    Brush::Smooth(x) => x,
+                };
+                if x.is_finite() { Ok(()) } else { Err("the brush's strength must be a number".into()) }
+            }
+            Edit::SeaLevel { rise_m } => if rise_m.is_finite() { Ok(()) } else { Err("the rise must be a number".into()) },
         }
     }
 
@@ -123,16 +164,26 @@ impl Edit {
     pub fn changes_map(&self) -> bool {
         match self {
             Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } => false,
-            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } => true,
+            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } => true,
         }
     }
 
-    /// The map part. Depends on the map alone; called after [`Edit::check`] passed.
-    pub(crate) fn change_map(&self, w: &mut World) {
+    /// The map part. Depends on the map alone; called after [`Edit::check`] passed. `regenerate`
+    /// works out again everything world generation derives from the land's height, except the
+    /// provinces (climate, biomes, rivers, farmland), with the world's own module versions.
+    pub(crate) fn change_map(&self, w: &mut World, regenerate: &mut dyn FnMut(&mut World)) {
         let count = w.provinces.count;
         let of_cell = &mut w.provinces.of_cell;
         let count = match *self {
             Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } => return,
+            Edit::Paint { ref path, radius_km, brush } => {
+                paint(w, path, radius_km, brush);
+                return reshape_after_height(w, regenerate);
+            }
+            Edit::SeaLevel { rise_m } => {
+                w.elevation.iter_mut().for_each(|h| *h -= rise_m);
+                return reshape_after_height(w, regenerate);
+            }
             Edit::MoveCells { ref cells, to } => {
                 cells.iter().for_each(|&c| of_cell[c as usize] = to);
                 count
@@ -187,6 +238,11 @@ impl Edit {
                 }
                 share_out(w, &moved);
             }
+            Edit::Paint { .. } | Edit::SeaLevel { .. } => {
+                w.grow_province_fields();
+                let emptied = map.expect("a height edit changes the map").emptied_provinces();
+                flows = rehouse(w, &emptied);
+            }
         }
         flows
     }
@@ -206,6 +262,14 @@ impl Edit {
             Edit::MoveCells { ref cells, to } => of(cells, to),
             Edit::Split { ref cells } => of(cells, w.provinces.count as u32),
             Edit::Merge { from, into } => vec![from, into],
+            Edit::Paint { ref path, radius_km, .. } => {
+                let reach = brush_reach(&w.grid, path, radius_km / w.params.radius_km);
+                let mut v: Vec<u32> = (0..reach.len()).filter(|&c| reach[c] > 0.0).map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            }
+            Edit::SeaLevel { .. } => (0..w.provinces.count as u32).collect(),
         }
     }
 
@@ -218,6 +282,181 @@ impl Edit {
             Edit::MoveCells { cells, to } => format!("{} cells of land moved into province {to}", cells.len()),
             Edit::Split { cells } => format!("{} cells of land made a new province", cells.len()),
             Edit::Merge { from, into } => format!("province {from} merged into province {into}"),
+            Edit::Paint { path, radius_km, brush } => {
+                let what = match brush {
+                    Brush::Raise(m) => format!("land raised by up to {m:.0} m"),
+                    Brush::Lower(m) => format!("land lowered by up to {m:.0} m"),
+                    Brush::Smooth(a) => format!("land smoothed ({:.0}%)", a * 100.0),
+                    Brush::Roughen(m) => format!("land roughened by up to {m:.0} m"),
+                    Brush::Flatten(m) => format!("land set to {m:.0} m"),
+                };
+                format!("{what} along a {}-point stroke {radius_km:.0} km wide", path.len())
+            }
+            Edit::SeaLevel { rise_m } if *rise_m >= 0.0 => format!("the sea rose {rise_m:.0} m"),
+            Edit::SeaLevel { rise_m } => format!("the sea fell {:.0} m", -rise_m),
+        }
+    }
+}
+
+/// How strongly a brush laid along `path` reaches each cell, 0 to 1: fully in the middle half of
+/// the brush around each point, fading smoothly to nothing at `radius` (radians).
+fn brush_reach(grid: &Grid, path: &[[f64; 2]], radius: f64) -> Vec<f32> {
+    let points: Vec<V3> = path.iter().map(|p| lonlat_to_dir(p[0].to_radians(), p[1].to_radians())).collect();
+    let near = radius.min(std::f64::consts::PI).cos();
+    grid.center
+        .par_iter()
+        .map(|&d| {
+            let mut best = 0.0f64;
+            for &p in &points {
+                let cos = dot(d, p);
+                if cos > near {
+                    let x = cos.clamp(-1.0, 1.0).acos() / radius;
+                    let t = ((1.0 - x) / 0.5).clamp(0.0, 1.0);
+                    best = best.max(t * t * (3.0 - 2.0 * t));
+                }
+            }
+            best as f32
+        })
+        .collect()
+}
+
+/// Lay a brush stroke on the land's height, then keep heights inside their field's bounds.
+fn paint(w: &mut World, path: &[[f64; 2]], radius_km: f64, brush: Brush) {
+    let radius = radius_km / w.params.radius_km;
+    let reach = brush_reach(&w.grid, path, radius);
+    let old = w.elevation.clone();
+    let grid = &w.grid;
+    // Bumps about a fifth of the brush across, different for every stroke.
+    let stroke = path.iter().flatten().fold(0u64, |h, x| mix(h ^ x.to_bits()));
+    let key = draw(w.params.seed, Rng::Editor, 0, stroke, purpose("roughen"));
+    let freq = 5.0 / radius;
+    w.elevation.par_iter_mut().enumerate().filter(|(c, _)| reach[*c] > 0.0).for_each(|(c, h)| {
+        let r = reach[c];
+        *h = match brush {
+            Brush::Raise(m) => old[c] + m * r,
+            Brush::Lower(m) => old[c] - m * r,
+            Brush::Smooth(a) => {
+                let (sum, n) = grid.neighbors8(c).fold((0.0f64, 0u32), |(s, n), m| (s + old[m] as f64, n + 1));
+                old[c] + a * r * ((sum / n as f64) as f32 - old[c])
+            }
+            Brush::Roughen(m) => {
+                let d = grid.center[c];
+                old[c] + m * r * fbm([d[0] * freq, d[1] * freq, d[2] * freq], 3, key) as f32
+            }
+            Brush::Flatten(m) => old[c] + r * (m - old[c]),
+        };
+    });
+    let def = known("cell.elevation").def();
+    w.elevation.iter_mut().for_each(|h| *h = h.clamp(def.min as f32, def.max as f32));
+}
+
+/// After the land's height changed: work out climate, biomes, rivers and farmland again; take land
+/// that sank out of its province; give new land to the province next to it, spreading out from
+/// the old coast a ring of cells at a time (the lowest-numbered neighbour wins a tie); make each
+/// new island that touches no province a province of its own. Province numbers never change.
+fn reshape_after_height(w: &mut World, regenerate: &mut dyn FnMut(&mut World)) {
+    regenerate(w);
+    let grid = w.grid.clone();
+    let of_cell = &mut w.provinces.of_cell;
+    let mut new_land = Vec::new();
+    for c in 0..grid.cells() {
+        match (w.elevation[c] >= 0.0, of_cell[c] != NONE) {
+            (false, true) => of_cell[c] = NONE,
+            (true, false) => new_land.push(c),
+            _ => {}
+        }
+    }
+    loop {
+        let (mut joined, mut left) = (Vec::new(), Vec::new());
+        for &c in &new_land {
+            match grid.neighbors[c].iter().map(|&m| of_cell[m as usize]).filter(|&p| p != NONE).min() {
+                Some(p) => joined.push((c, p)),
+                None => left.push(c),
+            }
+        }
+        if joined.is_empty() {
+            break;
+        }
+        for (c, p) in joined {
+            of_cell[c] = p;
+        }
+        new_land = left;
+    }
+    let mut count = w.provinces.count;
+    for &start in &new_land {
+        if of_cell[start] != NONE {
+            continue;
+        }
+        let id = count as u32;
+        count += 1;
+        of_cell[start] = id;
+        let mut island = vec![start];
+        while let Some(c) = island.pop() {
+            for &m in &grid.neighbors[c] {
+                let m = m as usize;
+                if w.elevation[m] >= 0.0 && of_cell[m] == NONE {
+                    of_cell[m] = id;
+                    island.push(m);
+                }
+            }
+        }
+    }
+    crate::provinces::reaggregate(w, count);
+}
+
+/// People and food of provinces whose land all sank move to the nearest province that still has
+/// land (by distance between centres; the lower number wins a tie). With no land left anywhere they
+/// are lost, and the flows say so.
+fn rehouse(w: &mut World, emptied: &[u32]) -> Flows {
+    let mut flows = Flows::default();
+    let mut pops_of = pops_by_province(&w.pops);
+    for &from in emptied {
+        let f = from as usize;
+        let c = w.provinces.center[f];
+        let to = (0..w.provinces.count).filter(|&p| w.provinces.cells[p] > 0).max_by(|&a, &b| {
+            dot(c, w.provinces.center[a]).total_cmp(&dot(c, w.provinces.center[b])).then(b.cmp(&a))
+        });
+        let food = std::mem::take(&mut w.food_stock[f]);
+        for k in pops_of.get(&from).cloned().unwrap_or_default() {
+            let n = std::mem::take(&mut w.pops.size[k]);
+            match to {
+                Some(t) => join(&mut w.pops, &mut pops_of, k, t as u32, n),
+                None => flows.add(Quantity::People, Cause::Edit, -(n as i64)),
+            }
+        }
+        match to {
+            Some(t) => w.food_stock[t] += food,
+            None => flows.add(Quantity::Food, Cause::Edit, -(food as i64)),
+        }
+    }
+    flows
+}
+
+/// Pops of each province.
+fn pops_by_province(pops: &Pops) -> HashMap<u32, Vec<usize>> {
+    let mut out: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (k, &p) in pops.province.iter().enumerate() {
+        out.entry(p).or_default().push(k);
+    }
+    out
+}
+
+/// `n` people of pop `k`'s kind arrive in province `to`: they join a pop of their kind there, or
+/// make one.
+fn join(pops: &mut Pops, pops_of: &mut HashMap<u32, Vec<usize>>, k: usize, to: u32, n: u64) {
+    if n == 0 {
+        return;
+    }
+    let key = |p: &Pops, j: usize| (p.species[j], p.culture[j], p.religion[j], p.class[j]);
+    let there = pops_of.entry(to).or_default();
+    match there.iter().find(|&&j| key(pops, j) == key(pops, k)) {
+        Some(&j) => pops.size[j] += n,
+        None => {
+            let (species, culture, religion, class) = key(pops, k);
+            pops.push(to, n);
+            let j = pops.size.len() - 1;
+            (pops.species[j], pops.culture[j], pops.religion[j], pops.class[j]) = (species, culture, religion, class);
+            there.push(j);
         }
     }
 }
@@ -259,11 +498,7 @@ fn share_out(w: &mut World, moved: &[(u32, u32, u32)]) {
         }
     }
     gifts.sort_by_key(|g| g.0);
-    let mut pops_of: HashMap<u32, Vec<usize>> = HashMap::new();
-    for (k, &p) in w.pops.province.iter().enumerate() {
-        pops_of.entry(p).or_default().push(k);
-    }
-    let key = |p: &Pops, j: usize| (p.species[j], p.culture[j], p.religion[j], p.class[j]);
+    let mut pops_of = pops_by_province(&w.pops);
 
     for (from, to) in gifts {
         let f = from as usize;
@@ -280,19 +515,8 @@ fn share_out(w: &mut World, moved: &[(u32, u32, u32)]) {
         for k in pops_of.get(&from).cloned().unwrap_or_default() {
             let parts = split_proportional(w.pops.size[k], &weights, &ids);
             w.pops.size[k] = parts[0];
-            for (g, &n) in to.iter().zip(&parts[1..]).filter(|(_, n)| **n > 0) {
-                // People join a pop of their own kind there, or make one.
-                let there = pops_of.entry(g.0).or_default();
-                match there.iter().find(|&&j| key(&w.pops, j) == key(&w.pops, k)) {
-                    Some(&j) => w.pops.size[j] += n,
-                    None => {
-                        let (species, culture, religion, class) = key(&w.pops, k);
-                        w.pops.push(g.0, n);
-                        let j = w.pops.size.len() - 1;
-                        (w.pops.species[j], w.pops.culture[j], w.pops.religion[j], w.pops.class[j]) = (species, culture, religion, class);
-                        there.push(j);
-                    }
-                }
+            for (g, &n) in to.iter().zip(&parts[1..]) {
+                join(&mut w.pops, &mut pops_of, k, g.0, n);
             }
         }
     }
@@ -365,6 +589,18 @@ impl MapChange {
             _ => unreachable!("cell.province holds u32s"),
         };
         at.into_iter().zip(old.iter().zip(new)).filter(|&(_, (&o, &n))| o != n && o != NONE && n != NONE).map(|(c, (&o, &n))| (c, o, n)).collect()
+    }
+
+    /// Provinces that had land before and have none now, in number order.
+    pub fn emptied_provinces(&self) -> Vec<u32> {
+        let cells = known("province.cells");
+        let Some((_, change)) = self.fields.iter().find(|f| f.0 == cells) else { return Vec::new() };
+        let (at, old, new): (Vec<u32>, &[u32], &[u32]) = match change {
+            Change::Sparse { at, old: FieldData::U32(o), new: FieldData::U32(n) } => (at.clone(), o, n),
+            Change::Whole { old: FieldData::U32(o), new: FieldData::U32(n) } => ((0..o.len() as u32).collect(), o, &n[..o.len().min(n.len())]),
+            _ => unreachable!("province.cells holds u32s"),
+        };
+        at.into_iter().zip(old.iter().zip(new)).filter(|&(_, (&o, &n))| o > 0 && n == 0).map(|(p, _)| p).collect()
     }
 
     /// The fields it changed.

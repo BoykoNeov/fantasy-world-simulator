@@ -423,6 +423,11 @@ impl Sim {
         Ok(())
     }
 
+    /// Memory held by the edits' map changes, bytes (roughly).
+    pub fn map_change_bytes(&self) -> usize {
+        self.map_changes.iter().map(MapChange::bytes).sum()
+    }
+
     /// Take back command `index` (an edit or a poke) as if it had never been given: the world goes
     /// back to the last checkpoint before it and runs again to today without it. Edits made later
     /// that relied on it are left out (see [`Sim::skipped_edits`]).
@@ -600,7 +605,16 @@ impl Sim {
                 _ => {
                     self.map_changes.truncate(self.map_at);
                     let old = self.map_fields().map(|id| (id, self.world.field(id))).collect();
-                    edit.change_map(&mut self.world);
+                    // Everything generation derives from the land's height, except provinces.
+                    let (modules, plan) = (&self.modules, &self.plan);
+                    let mut regenerate = |w: &mut World| {
+                        for &i in &plan.generation {
+                            if !matches!(modules[i].manifest().slot, Slot::Terrain | Slot::Provinces) {
+                                modules[i].generate(w);
+                            }
+                        }
+                    };
+                    edit.change_map(&mut self.world, &mut regenerate);
                     self.map_changes.push(MapChange::between(edit.clone(), old, &self.world));
                 }
             }

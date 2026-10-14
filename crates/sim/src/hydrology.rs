@@ -17,7 +17,7 @@ pub struct Rivers;
 
 static V0: Manifest = Manifest::generation(Slot::Rivers, "drainage", crate::fields::Tier::Cell,
     &["cell.elevation", "cell.temperature", "cell.rainfall"],
-    &["cell.drainage_receiver", "cell.drainage_order", "cell.river_flow"],
+    &["cell.drainage_receiver", "cell.river_flow"],
 );
 
 impl Module for Rivers {
@@ -28,7 +28,7 @@ impl Module for Rivers {
         let drainage = drainage(&w.grid, &w.elevation);
         let runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km);
         w.river_flow = accumulate(&drainage, &runoff);
-        w.drainage = drainage;
+        w.downstream = drainage.receiver;
     }
 }
 

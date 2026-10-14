@@ -161,14 +161,19 @@ fn loads_refuse_what_they_cannot_read() {
     assert!(refused(&other_version).contains("the save's modules are [Terrain plates (none)"));
     let other_schema = edit(&|f| f.snapshots[0].module_state[7].state_schema = "pops-2".into());
     assert!(refused(&other_schema).contains("Population state is schema pops-2"));
-    let deeper = edit(&|f| f.snapshots[0].fields[14].depth = 2);
+    let food = |f: &SaveFile| f.snapshots[0].fields.iter().position(|b| b.name == "province.food_stock").unwrap();
+    let deeper = edit(&|f| {
+        let k = food(f);
+        f.snapshots[0].fields[k].depth = 2
+    });
     assert!(refused(&deeper).contains("province.food_stock is stored at taxonomy depth 2"));
     let missing = edit(&|f| {
         f.snapshots[0].fields.remove(0);
     });
     assert!(refused(&missing).contains("missing field cell.elevation"));
     let short = edit(&|f| {
-        if let sim::fields::FieldData::U64(v) = &mut f.snapshots[0].fields[14].data {
+        let k = food(f);
+        if let sim::fields::FieldData::U64(v) = &mut f.snapshots[0].fields[k].data {
             v.pop();
         }
     });

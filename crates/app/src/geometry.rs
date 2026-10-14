@@ -204,7 +204,7 @@ fn river_width(flow: u64) -> f32 {
 /// halfway to the first sea cell.
 pub fn river_chains(world: &World) -> Vec<Chain> {
     let grid = &world.grid;
-    let rx = &world.drainage.receiver;
+    let rx = &world.downstream;
     let is_river = |c: usize| world.river_flow[c] >= RIVER_MIN_FLOW && world.elevation[c] >= 0.0 && rx[c] != NONE;
     let mut inflow = vec![0u8; grid.cells()];
     for c in 0..grid.cells() {

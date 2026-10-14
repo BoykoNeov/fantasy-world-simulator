@@ -15,6 +15,8 @@ pub enum Module {
     Pops = 4,
     /// Economics v0 (food). Harvests drew from `Pops` before the module split.
     Economics = 5,
+    /// The player's edits (the bumps a roughening brush adds).
+    Editor = 6,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

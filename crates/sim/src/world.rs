@@ -9,7 +9,6 @@ use crate::biome::{self, Biome};
 use crate::config::ModuleConfig;
 use crate::fields::{FieldData, FieldId, Tier, FIELDS};
 use crate::grid::Grid;
-use crate::hydrology::Drainage;
 use crate::module::{plan, Manifest, Module, Slot};
 use crate::pops::Pops;
 use crate::provinces::Provinces;
@@ -91,7 +90,9 @@ pub struct World {
     /// Annual total, mm.
     pub rainfall: Vec<f32>,
     pub biome: Vec<Biome>,
-    pub drainage: Drainage,
+    /// The cell each cell drains to (field `cell.drainage_receiver`), [`crate::grid::NONE`] for a
+    /// sink: the sea, or the low point of land with no sea.
+    pub downstream: Vec<u32>,
     /// Water passing through each cell per year, thousand m³.
     pub river_flow: Vec<u64>,
     /// Food a cell yields in an average year, rations (field `cell.food_yield`).
@@ -116,7 +117,7 @@ impl World {
             temperature: Vec::new(),
             rainfall: Vec::new(),
             biome: Vec::new(),
-            drainage: Drainage::default(),
+            downstream: Vec::new(),
             river_flow: Vec::new(),
             food_per_cell: Vec::new(),
             provinces: Provinces::default(),
@@ -156,8 +157,7 @@ impl World {
             "cell.temperature" => F32(self.temperature.clone()),
             "cell.rainfall" => F32(self.rainfall.clone()),
             "cell.biome" => U8(self.biome.iter().map(|&b| b as u8).collect()),
-            "cell.drainage_receiver" => U32(self.drainage.receiver.clone()),
-            "cell.drainage_order" => U32(self.drainage.order.clone()),
+            "cell.drainage_receiver" => U32(self.downstream.clone()),
             "cell.river_flow" => U64(self.river_flow.clone()),
             "cell.food_yield" => F64(self.food_per_cell.clone()),
             "cell.province" => U32(p.of_cell.clone()),
@@ -188,7 +188,7 @@ impl World {
             // The province count is set by the province fields themselves; pops vary.
             Tier::Province | Tier::Pop => None,
         };
-        if let Some(n) = expect.filter(|&n| n != data.len() && def.name != "cell.drainage_order") {
+        if let Some(n) = expect.filter(|&n| n != data.len()) {
             return Err(format!("{}: {} values for {n} cells", def.name, data.len()));
         }
         let wrong = || Err(format!("{}: wrong value type", def.name));
@@ -200,8 +200,7 @@ impl World {
             ("cell.biome", U8(v)) => {
                 self.biome = v.iter().map(|&b| biome::ALL.get(b as usize).copied().ok_or(format!("cell.biome: no biome {b}"))).collect::<Result<_, _>>()?
             }
-            ("cell.drainage_receiver", U32(v)) => self.drainage.receiver = v,
-            ("cell.drainage_order", U32(v)) => self.drainage.order = v,
+            ("cell.drainage_receiver", U32(v)) => self.downstream = v,
             ("cell.river_flow", U64(v)) => self.river_flow = v,
             ("cell.food_yield", F64(v)) => self.food_per_cell = v,
             ("cell.province", U32(v)) => p.of_cell = v,

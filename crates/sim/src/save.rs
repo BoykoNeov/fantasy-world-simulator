@@ -28,7 +28,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// causes or events (saved events refer to fields by position).
 /// Format 2 (step 4): the Weather slot, the rain shortfall field, drought events and pokes.
 /// Format 3 (step 5): edits in the command log, the edit cause, and edits in the year's ledger.
-pub const FORMAT_VERSION: u32 = 3;
+/// Format 4 (step 5): the drainage order is no longer stored (it is rebuilt from the downstream
+/// links when rivers are worked out).
+pub const FORMAT_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

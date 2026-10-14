@@ -69,7 +69,6 @@ pub const FIELDS: &[FieldDef] = &[
     def("cell.rainfall", Tier::Cell, "mm a year", 0.0, 20_000.0),
     def("cell.biome", Tier::Cell, "biome id", 0.0, (crate::biome::ALL.len() - 1) as f64),
     def("cell.drainage_receiver", Tier::Cell, "downstream cell", -UNBOUNDED, UNBOUNDED),
-    def("cell.drainage_order", Tier::Cell, "cells, upstream last", -UNBOUNDED, UNBOUNDED),
     def("cell.river_flow", Tier::Cell, "thousand m³ a year", 0.0, UNBOUNDED),
     def("cell.food_yield", Tier::Cell, "rations a year", 0.0, UNBOUNDED),
     def("cell.province", Tier::Cell, "province id", -UNBOUNDED, UNBOUNDED),

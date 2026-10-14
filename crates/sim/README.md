@@ -62,6 +62,15 @@ What exists:
   Province numbers never change: a province merged away stays as an empty placeholder that keeps
   its centre, and a split's new province is numbered after the last. Pops are only ever added, so
   food on its way to a pop still finds it.
+- **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
+  the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
+  and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
+  lake at sea level is painted this way. Afterwards climate, biomes, rivers and farmland are worked
+  out again by the world's own module versions; provinces are not regrown. Land that sinks leaves
+  its province; new land joins the province next to it, spreading from the old coast; a new island
+  that touches no province becomes one. A province whose land all sinks sends its people and food to
+  the nearest province with land. Only the downstream links of the rivers are stored now, not the
+  order water is added up in (format 4).
 - **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
   that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
   restoring the checkpoint before it and running forward; the days after are forgotten, so a poke
@@ -152,6 +161,16 @@ checkpoints are never dropped, so a 1,000-year run on a huge world holds about 2
 Most of it is the last-changed stamps (8 bytes for every province and pop value). Not trimmed yet;
 storing stamps as 4-byte day numbers, or keeping only every tenth year beyond the last few, would
 cut it when long runs need it.
+
+**Edits** (Oct 14, below-normal priority, large world, seed 7; `examples/edit_timing.rs`):
+
+| Edit | Time | Kept for going back |
+| --- | --- | --- |
+| Brush stroke, 20 points, 150 km brush | 178 ms | 0.03 MB |
+| The sea rises 50 m (every height changes) | 174 ms | 43 MB |
+| Split a province | 26 ms | 0.4 MB |
+| Take the split back (replays 100 days, reusing the stroke's and the sea's changes) | 226 ms | — |
+| Go back 250 days past all three / run them again | 110 ms / 134 ms | — |
 
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a
