@@ -573,6 +573,37 @@ impl Sim {
         Ok(())
     }
 
+    /// Go to the start of any `day` from the earliest kept on, back or forward, keeping every
+    /// checkpoint: the command log hasn't changed, so the days after are the same days again. For
+    /// moving through history; [`Sim::rewind`] is for changing it.
+    pub fn goto(&mut self, day: u64) -> Result<(), String> {
+        if day < self.day {
+            self.replay_to(day, true)
+        } else {
+            // A checkpoint ahead saves running the days up to it again. It must be a year before the
+            // day, so the event log still holds that year (the famine layer reads it).
+            let year = self.calendar.days_per_year() as u64;
+            if let Some(c) = self.checkpoints.iter().rev().find(|c| c.day + year <= day && c.day > self.day).cloned() {
+                self.restore(&c);
+                self.arrive();
+            }
+            while self.day < day {
+                self.step_day();
+            }
+            Ok(())
+        }
+    }
+
+    /// The earliest day going back can reach.
+    pub fn earliest_day(&self) -> u64 {
+        self.checkpoints.first().map_or(self.day, |c| c.day)
+    }
+
+    /// Which map the world has: the same pair means the same map, within one timeline.
+    pub fn map_version(&self) -> (usize, usize) {
+        (self.map_at, self.map_at.checked_sub(1).map_or(0, |i| Arc::as_ptr(&self.map_changes[i]) as usize))
+    }
+
     /// Go back to the start of an earlier `day` and forget the days after it, so a poke made now
     /// starts a new future. Commands already logged for later days stay and run again.
     pub fn rewind(&mut self, day: u64) -> Result<(), String> {

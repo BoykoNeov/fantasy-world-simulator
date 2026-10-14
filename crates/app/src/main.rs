@@ -18,7 +18,7 @@ use app::bench;
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
 use app::inspector::{self, group, LogEntry, Source};
 use app::layers::{self, ProvinceView};
-use app::playback::{Clock, DayState, Frame, FromSim, Rate, Speed, Worker};
+use app::playback::{Change, Clock, DayState, Frame, FromSim, MapState, Rate, Speed, Status, Worker};
 use app::projection::{Camera, Projection};
 use app::wobble::ProvinceLookup;
 use eframe::egui;
@@ -31,8 +31,8 @@ use sim::grid::NONE;
 use sim::module::Slot;
 use sim::sim::{Sim, Stage, Trace, NEVER};
 use sim::world::{Size, World, WorldParams, RIVER_MIN_FLOW};
-use std::collections::{HashSet, VecDeque};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 /// Where a drought poke from the command line goes.
@@ -233,6 +233,28 @@ struct MapApp {
     rate: Rate,
     /// The day state copied into `geo`.
     shown_state: Arc<DayState>,
+    /// The map drawn now. After an edit it differs from the shown day's map until the new
+    /// picture is built.
+    drawn_map: Arc<MapState>,
+    /// The picture of a map being built on another thread.
+    rebuild: Option<(Arc<MapState>, mpsc::Receiver<MapData>)>,
+    /// A built picture, waiting for the next paint callback to put it on the GPU.
+    pending_gpu: Option<Arc<MapData>>,
+    /// Provinces the GPU's province tables have room for.
+    gpu_provinces: usize,
+    target: wgpu::TextureFormat,
+    repaint: egui::Context,
+    status: Status,
+    /// What the simulation last refused or left out, and when.
+    notice: Option<(String, Instant)>,
+    /// Per timeline, the furthest day watched: a change before it starts a new timeline.
+    seen: HashMap<u32, u64>,
+    /// Per timeline, the day shown when it was left.
+    left_at: HashMap<u32, u64>,
+    /// A change, jump or switch asked for and not yet answered, and since when.
+    waiting: Option<Instant>,
+    /// The day on the history slider while it is dragged.
+    scrub: Option<u64>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -320,6 +342,7 @@ impl MapApp {
             })
             .collect();
         let frame = Frame::now(&sim, 0);
+        let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
         // On the command line, explain the last day the province changed.
         let trace_pending = opts.explain.then(|| {
@@ -336,6 +359,18 @@ impl MapApp {
             run_to_year: sim.calendar.date(sim.day).year + 5,
             log: sim.event_log.entries.iter().map(LogEntry::of_event).collect(),
             shown_state: frame.state.clone(),
+            drawn_map: frame.state.map.clone(),
+            rebuild: None,
+            pending_gpu: None,
+            gpu_provinces: data.provinces,
+            target: rs.target_format,
+            repaint: cc.egui_ctx.clone(),
+            status: Status::default(),
+            notice: None,
+            seen: HashMap::from([(0, first_day)]),
+            left_at: HashMap::new(),
+            waiting: None,
+            scrub: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start(sim, move || ctx.request_repaint()),
@@ -378,8 +413,22 @@ impl MapApp {
     fn pump(&mut self) {
         while let Ok(m) = self.worker.rx.try_recv() {
             match m {
+                // After a change, a jump or a switch: the day it lands on replaces the day on screen.
+                FromSim::Frame(f) if f.epoch == self.epoch && f.replaces.is_some() => {
+                    self.log = f.replaces.iter().flatten().map(LogEntry::of_event).collect();
+                    self.clock.pos = f.day as f64;
+                    self.frames.clear();
+                    self.frames.push_back(f);
+                    self.waiting = None;
+                }
                 FromSim::Frame(f) if f.epoch == self.epoch => self.frames.push_back(f),
                 FromSim::Frame(_) => {}
+                FromSim::Status(s) => {
+                    if let Some(m) = &s.message {
+                        self.notice = Some((m.clone(), Instant::now()));
+                    }
+                    self.status = s;
+                }
                 FromSim::Trace(t) => {
                     // An answer says which day and province it explains; a later question may
                     // still be waiting.
@@ -407,23 +456,73 @@ impl MapApp {
         self.worker.show(self.day());
         self.rate.record(Instant::now(), self.day());
 
+        let today = self.day();
+        let seen = self.seen.entry(self.status.active).or_insert(0);
+        *seen = (*seen).max(today);
+
         let front = &self.frames[0];
         if !Arc::ptr_eq(&self.shown_state, &front.state) {
+            // The map first: it sets how many provinces there are.
+            if !Arc::ptr_eq(&self.shown_state.map, &front.state.map) {
+                for (id, data) in &front.state.map.fields {
+                    self.geo.set_field(*id, data.clone()).expect("a map of this world");
+                }
+            }
             for (id, data) in &front.state.fields {
                 self.geo.set_field(*id, data.clone()).expect("the worker's world has the same shape");
             }
             self.shown_state = front.state.clone();
         }
+        self.rebuild_map();
+        let front = &self.frames[0];
         let t = self.clock.blend();
-        let next = self.frames.get(1).filter(|n| n.day == front.day + 1 && t > 0.0);
+        // Days on different maps (an edit between them) aren't blended: their provinces differ.
+        let next = self.frames.get(1).filter(|n| n.day == front.day + 1 && t > 0.0 && Arc::ptr_eq(&n.state.map, &front.state.map));
         let key = (front.day, next.map_or(0, |_| t.to_bits()), Arc::as_ptr(&front.state) as u64 ^ self.epoch);
         if self.tables_for != Some(key) {
             self.view = match next {
                 Some(n) => ProvinceView::blend(&front.state.view, &n.state.view, t),
                 None => front.state.view.clone(),
             };
-            self.pending_tables = Some(layers::province_tables(&self.geo, &self.view));
-            self.tables_for = Some(key);
+            // Until a changed map's picture is ready, the GPU's tables have the old map's size.
+            if self.geo.provinces.count == self.gpu_provinces {
+                self.pending_tables = Some(layers::province_tables(&self.geo, &self.view));
+                self.tables_for = Some(key);
+            }
+        }
+    }
+
+    /// Keep the picture in step with the shown day's map: build a changed map's picture on another
+    /// thread, and once it is ready swap it in, picking with it, in the same frame.
+    fn rebuild_map(&mut self) {
+        let wanted = self.shown_state.map.clone();
+        if let Some((map, rx)) = &self.rebuild {
+            match rx.try_recv() {
+                Ok(data) => {
+                    let map = map.clone();
+                    self.rebuild = None;
+                    if Arc::ptr_eq(&map, &wanted) {
+                        self.provinces = ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
+                        self.line_segments = data.lines.len();
+                        self.gpu_provinces = data.provinces;
+                        self.pending_gpu = Some(Arc::new(data));
+                        self.drawn_map = map;
+                        self.tables_for = None;
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => self.rebuild = None,
+            }
+        }
+        if self.rebuild.is_none() && !Arc::ptr_eq(&wanted, &self.drawn_map) {
+            let (world, view) = (self.geo.clone(), self.shown_state.view.clone());
+            let (tx, rx) = mpsc::channel();
+            let ctx = self.repaint.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(MapData::of(&world, &view));
+                ctx.request_repaint();
+            });
+            self.rebuild = Some((wanted, rx));
         }
     }
 
@@ -443,10 +542,43 @@ impl MapApp {
 
     /// Poke the world on the day shown. The days computed ahead are thrown away.
     fn poke(&mut self, event: Event) {
+        self.change(Change::Poke(event));
+    }
+
+    /// Change the world on the day shown. The days computed ahead are thrown away; on a day before
+    /// the furthest one watched, a new timeline starts and the old one is kept.
+    fn change(&mut self, change: Change) {
+        let branch = !self.at_the_edge();
+        self.new_epoch();
+        self.worker.change(self.epoch, self.day(), change, branch);
+    }
+
+    /// Whether the day shown is the furthest one watched. Undo and redo only apply there: before
+    /// it, a change starts a new timeline.
+    fn at_the_edge(&self) -> bool {
+        self.day() >= self.seen.get(&self.status.active).copied().unwrap_or(0)
+    }
+
+    /// Show another day of this timeline.
+    fn goto(&mut self, day: u64) {
+        self.new_epoch();
+        self.worker.goto(self.epoch, day);
+    }
+
+    /// Play another timeline, from the day it was left on.
+    fn switch(&mut self, id: u32) {
+        self.left_at.insert(self.status.active, self.day());
+        let day = self.left_at.get(&id).or(self.seen.get(&id)).copied().unwrap_or(0);
+        self.new_epoch();
+        self.worker.switch(self.epoch, id, day);
+    }
+
+    /// Frames from now on answer a new request; the ones computed ahead are dropped.
+    fn new_epoch(&mut self) {
         self.epoch += 1;
         self.frames.truncate(1);
-        self.clock.pos = self.day() as f64;
-        self.worker.poke(self.epoch, self.day(), event);
+        self.clock.pause();
+        self.waiting = Some(Instant::now());
     }
 
     fn explain(&mut self, day: u64, province: u32) {
@@ -489,6 +621,7 @@ impl MapApp {
             let ms = if busy.is_empty() { 0.0 } else { busy.iter().sum::<f64>() / self.frames.len().max(1) as f64 };
             ui.small(format!("showing {:.0} days a second · simulation {ahead} days ahead · {ms:.3} ms per simulated day", self.rate.days_per_second()));
         });
+        self.history_bar(ui);
         // Space pauses and resumes at a day a second; the right arrow steps a day.
         let (space, right) = ui.input(|i| (i.key_pressed(egui::Key::Space), i.key_pressed(egui::Key::ArrowRight)));
         if space {
@@ -500,11 +633,82 @@ impl MapApp {
         }
     }
 
+    /// The history slider, from the earliest day kept to the furthest watched; letting go of it goes
+    /// there. Then what is under way, and what the simulation refused.
+    fn history_bar(&mut self, ui: &mut egui::Ui) {
+        let today = self.day();
+        let earliest = self.status.earliest.min(today);
+        let furthest = self.seen.get(&self.status.active).copied().unwrap_or(today).max(today);
+        ui.horizontal(|ui| {
+            ui.label("history");
+            let mut day = self.scrub.unwrap_or(today);
+            let cal = self.calendar.clone();
+            let width = (ui.available_width() - 260.0).max(120.0);
+            ui.spacing_mut().slider_width = width;
+            let r = ui.add(egui::Slider::new(&mut day, earliest..=furthest.max(earliest + 1)).show_value(false));
+            if r.dragged() {
+                self.scrub = Some(day);
+            } else if r.drag_stopped() || (r.changed() && self.scrub.is_none()) {
+                self.scrub = None;
+                if day != today {
+                    self.goto(day);
+                }
+            }
+            ui.label(cal.format(self.scrub.unwrap_or(today)));
+            if today < furthest && ui.button("back to the latest").clicked() {
+                self.goto(furthest);
+            }
+        });
+        if let Some(since) = self.waiting {
+            let what = self.status.busy.clone().unwrap_or_else(|| "working…".into());
+            ui.colored_label(egui::Color32::from_rgb(160, 90, 20), format!("{what} {:.1} s", since.elapsed().as_secs_f64()));
+        } else if self.rebuild.is_some() {
+            ui.small("redrawing the changed map…");
+        }
+        if let Some((text, at)) = &self.notice {
+            if at.elapsed().as_secs() < 8 {
+                ui.colored_label(egui::Color32::from_rgb(170, 40, 30), text);
+            } else {
+                self.notice = None;
+            }
+        }
+    }
+
+    /// Every timeline, and a button to play each one.
+    fn timelines(&mut self, ui: &mut egui::Ui) {
+        if self.status.timelines.len() < 2 {
+            ui.small("Changing a day before the latest one you have watched starts a new timeline; this one is kept.");
+            return;
+        }
+        let mut play = None;
+        for t in &self.status.timelines {
+            ui.horizontal_wrapped(|ui| {
+                let name = match t.parent {
+                    None => format!("timeline {}", t.id),
+                    Some((p, d)) => format!("timeline {} (left {p} on {})", t.id, self.calendar.format(d)),
+                };
+                if t.id == self.status.active {
+                    ui.strong(format!("▶ {name}"));
+                } else if ui.button(name).on_hover_text("play this timeline from where it was left").clicked() {
+                    play = Some(t.id);
+                }
+                ui.small(format!("{} changes", t.commands));
+            });
+        }
+        if let Some(id) = play {
+            self.switch(id);
+        }
+    }
+
     fn side_panel(&mut self, ui: &mut egui::Ui) {
         let w = &self.geo;
         ui.heading("Fantasy Planet");
         ui.label(format!("{:?} world, seed {}", self.opts.size, w.params.seed));
         ui.label(format!("{} people", group(self.view.people.iter().sum::<f64>().round() as u64)));
+        ui.separator();
+
+        ui.label("Timelines");
+        self.timelines(ui);
         ui.separator();
 
         ui.label("Map shape");
@@ -760,17 +964,23 @@ struct MapCallback {
     uniforms: MapUniforms,
     copies: u32,
     tables: Option<Vec<layers::Rgba>>,
+    /// A changed map's picture, to replace the one on the GPU.
+    rebuild: Option<Arc<MapData>>,
+    target: wgpu::TextureFormat,
 }
 
 impl egui_wgpu::CallbackTrait for MapCallback {
     fn prepare(
         &self,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         _screen: &egui_wgpu::ScreenDescriptor,
         _encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        if let Some(data) = &self.rebuild {
+            resources.insert(MapGpu::new(device, queue, self.target, data));
+        }
         let gpu: &MapGpu = resources.get().expect("map resources");
         queue.write_buffer(&gpu.uniforms, 0, bytemuck::bytes_of(&self.uniforms));
         if let Some(t) = &self.tables {
@@ -866,11 +1076,13 @@ impl eframe::App for MapApp {
             let hover_province = self.hover.map_or(NONE, |(_, p)| p);
             let uniforms = gpu::uniforms(&cam, self.geo.grid.n, w, h, origin, ppp, &self.layers, hover_province, self.selected.unwrap_or(NONE));
             let (first, last) = cam.visible_copies(w);
-            let tables = self.pending_tables.take();
-            ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, MapCallback { uniforms, copies: (last - first + 1) as u32, tables }));
+            let (tables, rebuild) = (self.pending_tables.take(), self.pending_gpu.take());
+            let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, rebuild, target: self.target };
+            ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         });
 
-        if self.opts.bench || self.opts.screenshot.is_some() || self.clock.speed != Speed::Paused {
+        let busy = self.waiting.is_some() || self.rebuild.is_some() || self.notice.is_some();
+        if self.opts.bench || self.opts.screenshot.is_some() || self.clock.speed != Speed::Paused || busy {
             ctx.request_repaint();
         }
         if self.opts.bench || self.opts.screenshot.is_some() {

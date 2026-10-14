@@ -7,6 +7,7 @@ use crate::projection::Camera;
 use eframe::egui_wgpu::wgpu;
 use eframe::egui_wgpu::wgpu::util::DeviceExt as _;
 use sim::sim::Sim;
+use sim::world::World;
 use std::ops::Range;
 
 pub const SHADER: &str = include_str!("map.wgsl");
@@ -90,7 +91,12 @@ pub struct MapData {
 
 impl MapData {
     pub fn build(sim: &Sim) -> Self {
-        let w = &sim.world;
+        Self::of(&sim.world, &layers::ProvinceView::now(sim))
+    }
+
+    /// The data for `w`'s map, with province layers showing `view`. Needs no simulation, so it can
+    /// be built on another thread after an edit changed the map.
+    pub fn of(w: &World, view: &layers::ProvinceView) -> Self {
         let halo = layers::halo_cells(&w.grid);
         let warp = crate::wobble::halo_warp(w, &halo);
         let mut chains = crate::geometry::all_lines(w);
@@ -103,7 +109,7 @@ impl MapData {
             fields: layers::spread(&halo, &layers::fields(w)),
             province_ids: layers::spread(&halo, &w.provinces.of_cell),
             warp,
-            tables: layers::tables_now(sim),
+            tables: layers::province_tables(w, view),
             lines,
             line_ranges,
         }

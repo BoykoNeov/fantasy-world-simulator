@@ -2,16 +2,24 @@
 //! one frame per simulated day. The window plays the frames back at the chosen speed and blends the
 //! two days either side of the moment shown. The simulation never knows whether anyone watches.
 //!
-//! A poke throws the days computed ahead away: the worker goes back to the day on screen
-//! ([`Sim::rewind`]) and the future is computed again with the poke in it. Explaining a day
+//! A change (a poke, an edit, undo, redo) throws the days computed ahead away: the worker goes back
+//! to the day on screen ([`Sim::rewind`]), makes the change, sends that day again so the screen shows
+//! it at once, and computes the future again. A change on a day before the furthest one the player
+//! has watched starts a new timeline instead, and the old one is kept. Going to another day or
+//! another timeline moves through history without changing it ([`Sim::goto`]). Explaining a day
 //! ([`Sim::trace`]) runs on the worker too, which then carries on exactly where it was.
+//!
+//! Every frame says which map it belongs to. Edits can change the map, so the window rebuilds its
+//! picture when the map of the day shown changes.
 
 use crate::layers::ProvinceView;
+use sim::branch::Timelines;
+use sim::edit::Edit;
 use sim::events::{Event, Posted};
 use sim::fields::{FieldData, FieldId};
 use sim::requests::Request;
-use sim::sim::{Sim, Trace};
-use std::collections::VecDeque;
+use sim::sim::{Command, Sim, Trace};
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::Arc;
@@ -19,8 +27,23 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 /// How many days the simulation may run ahead of the day shown. Enough to cover a heavy day at a
-/// year a second; a poke only costs going back, whatever this is.
+/// year a second; a change only costs going back, whatever this is.
 pub const LOOKAHEAD: u64 = 120;
+
+/// The map (the fields only world generation and edits write) as frames show it. Every frame with
+/// the same map shares one.
+pub struct MapState {
+    /// The timeline, and [`Sim::map_version`] in it: the same key, the same map.
+    pub key: (u32, usize, usize),
+    pub fields: Vec<(FieldId, FieldData)>,
+}
+
+impl MapState {
+    pub fn of(timeline: u32, sim: &Sim) -> Self {
+        let (at, last) = sim.map_version();
+        MapState { key: (timeline, at, last), fields: sim.map_fields().map(|id| (id, sim.world.field(id))).collect() }
+    }
+}
 
 /// Everything shown for one day that can change while the world runs. Shared between the frames
 /// of days on which nothing ran.
@@ -28,15 +51,12 @@ pub struct DayState {
     pub fields: Vec<(FieldId, FieldData)>,
     pub last_change: Vec<Vec<u64>>,
     pub view: ProvinceView,
+    pub map: Arc<MapState>,
 }
 
 impl DayState {
-    pub fn of(sim: &Sim) -> Self {
-        DayState {
-            fields: sim.running_fields().map(|id| (id, sim.world.field(id))).collect(),
-            last_change: sim.last_change.clone(),
-            view: ProvinceView::now(sim),
-        }
+    pub fn of(sim: &Sim, map: Arc<MapState>) -> Self {
+        DayState { fields: sim.running_fields().map(|id| (id, sim.world.field(id))).collect(), last_change: sim.last_change.clone(), view: ProvinceView::now(sim), map }
     }
 }
 
@@ -44,7 +64,7 @@ impl DayState {
 #[derive(Clone)]
 pub struct Frame {
     pub day: u64,
-    /// Frames from before the latest poke are stale.
+    /// Frames from before the latest change are stale.
     pub epoch: u64,
     pub state: Arc<DayState>,
     /// Events delivered on the day before (grants excluded).
@@ -53,23 +73,69 @@ pub struct Frame {
     pub applied: Vec<(Request, u64)>,
     /// How long the simulation took for the day before, ms.
     pub ms: f64,
+    /// Sent again after a change, a jump or a switch: it replaces the day on screen, and `history`
+    /// is the event log as it now stands.
+    pub replaces: Option<Vec<Posted>>,
 }
 
 impl Frame {
     /// The world as it stands, as frame 0 of `epoch`.
     pub fn now(sim: &Sim, epoch: u64) -> Self {
-        Frame { day: sim.day, epoch, state: Arc::new(DayState::of(sim)), delivered: sim.delivered_today().to_vec(), applied: sim.applied_today.clone(), ms: 0.0 }
+        Self::with(sim, epoch, Arc::new(DayState::of(sim, Arc::new(MapState::of(0, sim)))))
+    }
+
+    fn with(sim: &Sim, epoch: u64, state: Arc<DayState>) -> Self {
+        Frame { day: sim.day, epoch, state, delivered: sim.delivered_today().to_vec(), applied: sim.applied_today.clone(), ms: 0.0, replaces: None }
     }
 }
 
+/// A change to the world, made on the day shown.
+#[derive(Clone, Debug)]
+pub enum Change {
+    Poke(Event),
+    Edit(Edit),
+    /// Take back the latest command (an edit or a poke) of the timeline.
+    Undo,
+    /// Give back the command taken back last.
+    Redo,
+}
+
+/// One timeline, as the window lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TimelineInfo {
+    pub id: u32,
+    /// The timeline it left, and the day.
+    pub parent: Option<(u32, u64)>,
+    /// How many commands it holds (edits and pokes).
+    pub commands: usize,
+}
+
+/// What the worker tells the window besides frames.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Status {
+    pub timelines: Vec<TimelineInfo>,
+    pub active: u32,
+    /// The earliest day the timeline played can go back to.
+    pub earliest: u64,
+    pub can_undo: bool,
+    pub can_redo: bool,
+    /// Something slow is under way (the words say what); the window says so until it ends.
+    pub busy: Option<String>,
+    /// A change that was refused, or edits left out, in words.
+    pub message: Option<String>,
+}
+
 enum ToSim {
-    Poke { epoch: u64, day: u64, event: Event },
+    Change { epoch: u64, day: u64, change: Change, branch: bool },
+    GoTo { epoch: u64, day: u64 },
+    Switch { epoch: u64, id: u32, day: u64 },
     Trace { day: u64, province: u32 },
 }
 
 pub enum FromSim {
     Frame(Frame),
     Trace(Result<Trace, String>),
+    Status(Status),
 }
 
 /// The simulation thread.
@@ -85,13 +151,17 @@ impl Worker {
     /// Hand `sim` to a new thread, which starts computing the days after the one it is on.
     /// `wake` is called whenever something new is ready (the window's repaint).
     pub fn start(sim: Sim, wake: impl Fn() + Send + 'static) -> Worker {
+        Worker::start_timelines(Timelines::new(sim), wake)
+    }
+
+    pub fn start_timelines(timelines: Timelines, wake: impl Fn() + Send + 'static) -> Worker {
         let (tx, commands) = mpsc::channel();
         let (out, rx) = mpsc::channel();
-        let shown = Arc::new(AtomicU64::new(sim.day));
+        let shown = Arc::new(AtomicU64::new(timelines.sim().day));
         let watching = shown.clone();
         let thread = std::thread::Builder::new()
             .name("simulation".into())
-            .spawn(move || run(sim, commands, out, watching, wake))
+            .spawn(move || run(timelines, commands, out, watching, wake))
             .expect("start the simulation thread");
         Worker { tx: Some(tx), rx, shown, thread: Some(thread) }
     }
@@ -100,9 +170,25 @@ impl Worker {
         self.shown.store(day, Ordering::Relaxed);
     }
 
-    /// Poke the world at the start of `day` (the day shown); frames from before have older epochs.
+    /// Change the world at the start of `day` (the day shown); frames from before have older epochs.
+    /// With `branch`, a new timeline leaves the one played at `day` first.
+    pub fn change(&self, epoch: u64, day: u64, change: Change, branch: bool) {
+        self.send(ToSim::Change { epoch, day, change, branch });
+    }
+
+    /// Poke the world at the start of `day` (the day shown).
     pub fn poke(&self, epoch: u64, day: u64, event: Event) {
-        self.send(ToSim::Poke { epoch, day, event });
+        self.change(epoch, day, Change::Poke(event), false);
+    }
+
+    /// Show `day` of the timeline played, earlier or later, without changing anything.
+    pub fn goto(&self, epoch: u64, day: u64) {
+        self.send(ToSim::GoTo { epoch, day });
+    }
+
+    /// Play timeline `id` from `day`.
+    pub fn switch(&self, epoch: u64, id: u32, day: u64) {
+        self.send(ToSim::Switch { epoch, id, day });
     }
 
     /// Explain what happened to `province` on `day`; the answer comes back as [`FromSim::Trace`].
@@ -127,11 +213,106 @@ impl Drop for Worker {
     }
 }
 
-fn run(mut sim: Sim, commands: Receiver<ToSim>, out: Sender<FromSim>, shown: Arc<AtomicU64>, wake: impl Fn()) {
+/// The worker's side: the timelines, the map frames share, and what can be given back per timeline.
+struct Run {
+    t: Timelines,
+    map: Arc<MapState>,
+    /// Per timeline, commands taken back, the latest last.
+    redo: HashMap<u32, Vec<Command>>,
+    out: Sender<FromSim>,
+}
+
+impl Run {
+    fn sim(&mut self) -> &mut Sim {
+        self.t.sim_mut()
+    }
+
+    /// The day's state, with the map frames share (made again only when the map changed).
+    fn state(&mut self) -> Arc<DayState> {
+        let id = self.t.active_id();
+        let (at, last) = self.t.sim().map_version();
+        if self.map.key != (id, at, last) {
+            self.map = Arc::new(MapState::of(id, self.t.sim()));
+        }
+        Arc::new(DayState::of(self.t.sim(), self.map.clone()))
+    }
+
+    fn status(&mut self, busy: Option<String>, message: Option<String>) -> bool {
+        let t = &self.t;
+        let sim = t.sim();
+        let edits = |s: &Sim| s.commands.len() - 1;
+        let status = Status {
+            timelines: t.list.iter().map(|x| TimelineInfo { id: x.id, parent: x.parent, commands: edits(&x.sim) }).collect(),
+            active: t.active_id(),
+            earliest: sim.earliest_day(),
+            can_undo: edits(sim) > 0,
+            can_redo: self.redo.get(&t.active_id()).is_some_and(|r| !r.is_empty()),
+            busy,
+            message,
+        };
+        self.out.send(FromSim::Status(status)).is_ok()
+    }
+
+    /// Say what is slow before doing it.
+    fn busy(&mut self, what: &str) -> bool {
+        self.status(Some(what.into()), None)
+    }
+
+    /// Make a change on `day`. Returns a message for the player if something was refused.
+    fn change(&mut self, day: u64, change: Change, branch: bool) -> Option<String> {
+        if branch {
+            if let Err(e) = self.t.branch(day) {
+                return Some(e);
+            }
+        } else if day < self.sim().day
+            && let Err(e) = self.sim().rewind(day)
+        {
+            return Some(e);
+        }
+        let id = self.t.active_id();
+        let skipped = self.sim().skipped_edits.len();
+        let result = match change {
+            Change::Poke(e) => {
+                self.sim().poke(e);
+                Ok(())
+            }
+            Change::Edit(e) => self.sim().edit(e),
+            Change::Undo => {
+                let last = self.sim().commands.len() - 1;
+                if last == 0 {
+                    return Some("nothing to take back".into());
+                }
+                self.busy("taking back the last change…");
+                self.t.sim_mut().withdraw(last).map(|c| self.redo.entry(id).or_default().push(c))
+            }
+            Change::Redo => match self.redo.get_mut(&id).and_then(Vec::pop) {
+                None => return Some("nothing to give back".into()),
+                Some(c) => {
+                    self.busy("giving the change back…");
+                    self.sim().reinstate(c)
+                }
+            },
+        };
+        let all = &self.t.sim().skipped_edits;
+        let left_out = &all[skipped.min(all.len())..];
+        match result {
+            Err(e) => Some(e),
+            Ok(()) if !left_out.is_empty() => Some(format!("left out, no longer fitting: {}", left_out.iter().map(|s| s.1.clone()).collect::<Vec<_>>().join("; "))),
+            Ok(()) => None,
+        }
+    }
+}
+
+fn run(t: Timelines, commands: Receiver<ToSim>, out: Sender<FromSim>, shown: Arc<AtomicU64>, wake: impl Fn()) {
+    let map = Arc::new(MapState::of(t.active_id(), t.sim()));
+    let mut r = Run { t, map, redo: HashMap::new(), out };
     let mut epoch = 0;
-    let mut state = Arc::new(DayState::of(&sim));
+    let mut state = r.state();
+    if !r.status(None, None) {
+        return;
+    }
     loop {
-        let ahead = sim.day >= shown.load(Ordering::Relaxed) + LOOKAHEAD;
+        let ahead = r.t.sim().day >= shown.load(Ordering::Relaxed) + LOOKAHEAD;
         let message = if ahead {
             match commands.recv_timeout(Duration::from_millis(5)) {
                 Ok(m) => Some(m),
@@ -145,33 +326,58 @@ fn run(mut sim: Sim, commands: Receiver<ToSim>, out: Sender<FromSim>, shown: Arc
                 Err(TryRecvError::Disconnected) => return,
             }
         };
-        match message {
-            Some(ToSim::Poke { epoch: e, day, event }) => {
-                if day < sim.day {
-                    sim.rewind(day).expect("the worker keeps every year since the world began");
+        // Changes, jumps and switches send the day they land on again, replacing the day on screen.
+        let moved = match message {
+            Some(ToSim::Change { epoch: e, day, change, branch }) => {
+                if matches!(change, Change::Poke(_) | Change::Edit(_)) {
+                    // A new change: what was taken back can't be given back any more.
+                    let id = if branch { None } else { Some(r.t.active_id()) };
+                    if let Some(id) = id {
+                        r.redo.remove(&id);
+                    }
                 }
-                epoch = e;
-                sim.poke(event);
-                state = Arc::new(DayState::of(&sim));
-                continue;
+                let message = r.change(day, change, branch);
+                Some((e, message))
+            }
+            Some(ToSim::GoTo { epoch: e, day }) => {
+                let far = day.abs_diff(r.t.sim().day) > 3 * 364;
+                if far && !r.busy("going to another day…") {
+                    return;
+                }
+                Some((e, r.sim().goto(day).err()))
+            }
+            Some(ToSim::Switch { epoch: e, id, day }) => {
+                let message = r.t.switch(id).and_then(|()| r.sim().goto(day)).err();
+                Some((e, message))
             }
             Some(ToSim::Trace { day, province }) => {
-                if out.send(FromSim::Trace(sim.trace(day, province))).is_err() {
+                if r.out.send(FromSim::Trace(r.t.sim_mut().trace(day, province))).is_err() {
                     return;
                 }
                 wake();
                 continue;
             }
             None if ahead => continue,
-            None => {}
+            None => None,
+        };
+        if let Some((e, message)) = moved {
+            epoch = e;
+            state = r.state();
+            let sim = r.t.sim();
+            let frame = Frame { replaces: Some(sim.event_log.entries.clone()), ..Frame::with(sim, epoch, state.clone()) };
+            if r.out.send(FromSim::Frame(frame)).is_err() || !r.status(None, message) {
+                return;
+            }
+            wake();
+            continue;
         }
         let t = Instant::now();
-        if sim.step_day() {
-            state = Arc::new(DayState::of(&sim));
+        if r.sim().step_day() {
+            state = r.state();
         }
         let ms = t.elapsed().as_secs_f64() * 1000.0;
-        let frame = Frame { day: sim.day, epoch, state: state.clone(), delivered: sim.delivered_today().to_vec(), applied: sim.applied_today.clone(), ms };
-        if out.send(FromSim::Frame(frame)).is_err() {
+        let frame = Frame { ms, ..Frame::with(r.t.sim(), epoch, state.clone()) };
+        if r.out.send(FromSim::Frame(frame)).is_err() {
             return;
         }
         wake();
