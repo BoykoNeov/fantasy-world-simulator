@@ -99,6 +99,8 @@ pub struct World {
     /// People who starved in each province since the last year start.
     pub starved_this_year: Vec<u64>,
     pub pops: Pops,
+    /// Share of the province's normal rain that is missing, per mille (0 = a normal year).
+    pub rain_shortfall: Vec<u64>,
 }
 
 impl World {
@@ -118,6 +120,7 @@ impl World {
             food_stock: Vec::new(),
             starved_this_year: Vec::new(),
             pops: Pops::default(),
+            rain_shortfall: Vec::new(),
         }
     }
 
@@ -168,6 +171,7 @@ impl World {
             "pop.religion" => U16(self.pops.religion.clone()),
             "pop.class" => U8(self.pops.class.clone()),
             "pop.size" => U64(self.pops.size.clone()),
+            "province.rain_shortfall" => U64(self.rain_shortfall.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -214,6 +218,7 @@ impl World {
             ("pop.religion", U16(v)) => self.pops.religion = v,
             ("pop.class", U8(v)) => self.pops.class = v,
             ("pop.size", U64(v)) => self.pops.size = v,
+            ("province.rain_shortfall", U64(v)) => self.rain_shortfall = v,
             _ => return wrong(),
         }
         Ok(())

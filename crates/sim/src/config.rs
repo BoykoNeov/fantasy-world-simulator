@@ -10,6 +10,7 @@ use crate::module::Module;
 use crate::pops::{PopParams, Population};
 use crate::provinces::ProvinceGrowth;
 use crate::terrain::{NoiseTerrain, NullTerrain};
+use crate::weather::Droughts;
 use crate::world::{Fertility, WorldParams};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -61,6 +62,8 @@ pub struct ModuleConfig {
     pub economics: Option<FoodParams>,
     /// Population v0, "basic".
     pub population: Option<PopParams>,
+    /// Weather v0, "droughts" (no parameters yet). Off means rain is always normal.
+    pub weather: bool,
 }
 
 impl Default for ModuleConfig {
@@ -70,6 +73,7 @@ impl Default for ModuleConfig {
             climate: ClimateVersion::default(),
             economics: Some(FoodParams::default()),
             population: Some(PopParams::default()),
+            weather: true,
         }
     }
 }
@@ -97,6 +101,9 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.population {
             out.push(Box::new(Population { params: params.clone() }));
+        }
+        if self.weather {
+            out.push(Box::new(Droughts::default()));
         }
         out
     }

@@ -1,7 +1,8 @@
 # sim: the simulation core
 
 Plain Rust with no graphics or engine dependency. It runs headless, for tests and batch runs. Build
-steps 1 (a thin slice you can watch) and 3 (the module contract) from the design doc.
+steps 1 (a thin slice you can watch), 3 (the module contract) and the simulation half of 4 (pokes,
+going back to an earlier day, and explaining a day) from the design doc.
 
 What exists:
 
@@ -39,6 +40,30 @@ What exists:
   | Biomes, Rivers, Fertility, Provinces | one each | at generation |
   | Economics | `food`: monthly harvest and spoilage, owns the food stores; or off | monthly |
   | Population | `basic`: asks for a month's food, then is born or starves on the grant; or off | monthly |
+  | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
+
+  Harvests shrink in proportion to the missing rain, so a drought cuts the crop.
+- **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
+  day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
+  far is a drought: a centre, a radius, how much rain goes missing, and for how long.
+- **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
+  that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
+  restoring the checkpoint before it and running forward; the days after are forgotten, so a poke
+  made then starts a new future. Fields written at generation are not kept: nothing changes them
+  once the world runs (step 5's map edits will have to add them).
+- **Why a value changed** (`Sim::trace`): runs a past day again with tracing on for one province,
+  then puts the world back exactly. The trace lists, in order, each module's own explanation (the
+  drought reaching the province, the harvest worked out from capacity, the year's luck, the month
+  and the rain, spoilage, how much food each pop got and what followed), the change requests made
+  and granted, events sent and delivered, and every value that changed. Tracing is off unless asked
+  for; modules check one number before explaining anything.
+- **Last changed**: for every value a running module owns, the engine stamps the day it last
+  changed (`Sim::last_change`).
+- **Story 1, first half** (`tests/stories.rs`): a three-year drought over the province that grows the
+  most food. In that test world, harvests fall to about 30% of normal, the region's stores fall to
+  18% of normal, and 22% of its people starve in the worst year (hardly anyone without the drought).
+  The famine ends once the rain returns. Every province outside the drought ends exactly as it would
+  have without it.
 
 - **PNG export** (`export.rs`): terrain, provinces, population, famine, temperature and rainfall maps,
   in the equirectangular projection (for convenience only).
@@ -55,7 +80,7 @@ random-number ID. Results for the same seed differ from step 2's.
 
 ## Running
 
-Tests (they take under a second):
+Tests (a few seconds; the story test runs a world twice for four years):
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim

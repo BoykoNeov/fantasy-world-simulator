@@ -45,7 +45,7 @@ static V0: Manifest = Manifest {
     version: "food",
     tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
-    reads: &["province.food_capacity", "province.center", "province.lat"],
+    reads: &["province.food_capacity", "province.center", "province.lat", "province.rain_shortfall"],
     owns: &["province.food_stock"],
     requests: &[],
     requires: &[],
@@ -76,11 +76,21 @@ impl Module for Food {
             let c = prov.center[id];
             let swing = 2.0 * p.harvest_variability * fbm([c[0] * 2.5, c[1] * 2.5, c[2] * 2.5], 3, harvest_key);
             let year_factor = (1.0 + swing).max(0.0);
-            let expected = prov.food_capacity[id] as f64 * year_factor * month_share(cal, p, date.month, prov.lat[id] as f64);
+            let share = month_share(cal, p, date.month, prov.lat[id] as f64);
+            // Crops fail in proportion to the missing rain; exactly 1 in a normal year.
+            let rain = 1.0 - w.rain_shortfall[id] as f64 / 1000.0;
+            let expected = prov.food_capacity[id] as f64 * year_factor * share * rain;
             let harvest = round_stochastic(expected, seed, Rng::Economics, day, e, purpose("harvest"));
             let stock = w.food_stock[id] + harvest;
             let spoil = round_stochastic(stock as f64 * p.spoilage_per_year * month_part, seed, Rng::Economics, day, e, purpose("spoil")).min(stock);
             w.food_stock[id] = stock - spoil;
+            if cx.traced(id as u32) {
+                cx.note(format!(
+                    "harvest {harvest} rations = {} a year in an average year × {year_factor:.2} for this year's luck × {:.3} of the year's crop due this month × {rain:.2} for the rain",
+                    prov.food_capacity[id], share
+                ));
+                cx.note(format!("{spoil} of {stock} stored rations spoiled ({:.0}% a year)", 100.0 * p.spoilage_per_year));
+            }
             produced += harvest;
             spoiled += spoil;
         }

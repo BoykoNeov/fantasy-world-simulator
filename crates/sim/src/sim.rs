@@ -17,7 +17,7 @@
 use crate::calendar::Calendar;
 use crate::config::Config;
 use crate::events::{delivery_order, Event, EventKind, EventLog, Posted};
-use crate::fields::{quantity_total, FieldId, QUANTITIES};
+use crate::fields::{quantity_total, FieldData, FieldId, QUANTITIES};
 use crate::module::{plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
 use crate::requests::{Cause, Request};
 use crate::world::{Fingerprint, World};
@@ -103,6 +103,83 @@ pub enum CommandKind {
     /// A configuration starts running here. The first command of every world; later ones will mark
     /// module version changes (save → convert → reload).
     StartSegment { modules: Vec<ModuleRecord> },
+    /// A player's poke. It is an ordinary event: sent on the command's day (by nobody, like the
+    /// engine's own events) and delivered the next day, so the world reacts by its own rules.
+    Poke { event: Event },
+}
+
+/// `last_change` value for "not since the world was made or loaded".
+pub const NEVER: u64 = u64::MAX;
+
+/// The parts of a day, as the inspector's trace names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    Generate,
+    Init,
+    /// Yesterday's events delivered.
+    Deliver,
+    /// A module's main logic.
+    Tick,
+    /// An owner applied the day's change requests.
+    Apply,
+}
+
+impl Stage {
+    /// Stages of a running world: checked for conservation, and tracked for "last changed".
+    fn running(self) -> bool {
+        !matches!(self, Stage::Generate | Stage::Init)
+    }
+}
+
+/// Everything that happened to one province during one day, in order: what each module did and
+/// why, and which values changed. Built by [`Sim::trace`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Trace {
+    pub day: u64,
+    pub province: u32,
+    pub steps: Vec<TraceStep>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TraceStep {
+    pub stage: Stage,
+    /// The module responsible: the one that explained or asked, or the owner of a changed field.
+    /// `None` for the engine.
+    pub module: Option<Slot>,
+    pub what: Traced,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Traced {
+    /// A module's own explanation (see [`Ctx::note`]).
+    Note(String),
+    /// A value of the province, or of one of its pops (`entity` is then the pop), changed.
+    Changed { field: FieldId, entity: u32, before: f64, after: f64 },
+    /// A change request about the province was made today; it is applied tonight.
+    Requested(Request),
+    /// A change request about the province was applied, and this much was granted.
+    Granted(Request, u64),
+    /// An event about the province was delivered today.
+    Delivered(Event),
+    /// An event about the province was sent today, for delivery tomorrow.
+    Sent(Event),
+}
+
+/// The state of the running world at the start of a day: every value that can change after world
+/// creation, each module's private state and everything in flight. Fields written at generation are
+/// left out: nothing changes them once the world runs (strict mode enforces it; step 5's map edits
+/// will have to add them).
+#[derive(Clone)]
+pub struct Checkpoint {
+    pub day: u64,
+    fields: Vec<(FieldId, FieldData)>,
+    modules: Vec<Vec<u8>>,
+    pending: Vec<Posted>,
+    year_flows: Flows,
+    history: Vec<YearSummary>,
+    problems: Problems,
+    applied_today: Vec<(Request, u64)>,
+    last_change: Vec<Vec<u64>>,
 }
 
 pub struct Sim {
@@ -128,8 +205,20 @@ pub struct Sim {
     pub applied_today: Vec<(Request, u64)>,
     /// Delivered events (not grants). Not part of saves.
     pub event_log: EventLog,
+    /// Where the last day's deliveries start in `event_log`.
+    log_today: usize,
     /// Stop with a panic when a module writes a field it doesn't own. Slow: for tests.
     pub strict: bool,
+    /// Index of the first command not yet sent (commands are in day order).
+    pub(crate) next_command: usize,
+    /// The world at the start of each year run so far, and where it was loaded: what
+    /// [`Sim::rewind`] and [`Sim::trace`] start from.
+    pub checkpoints: Vec<Checkpoint>,
+    /// Per field, the day each entity's value last changed while the world ran ([`NEVER`] if it
+    /// hasn't). Empty for fields only generation writes.
+    pub last_change: Vec<Vec<u64>>,
+    /// What was found so far while a day is replayed with tracing on.
+    trace: Option<Trace>,
 }
 
 impl Sim {
@@ -137,7 +226,7 @@ impl Sim {
     pub fn new(config: &Config) -> Result<Sim, ConfigError> {
         let mut sim = Sim::assemble(config)?;
         for &i in &sim.plan.generation.clone() {
-            sim.stage(&[i], false, |s| {
+            sim.stage(Stage::Generate, &[i], |s| {
                 s.modules[i].generate(&mut s.world);
                 Vec::new()
             });
@@ -146,7 +235,7 @@ impl Sim {
         sim.world.fill_defaults(&owned);
         for &i in &sim.plan.runtime.clone() {
             // Creating the starting stocks and people is not a flow, so no conservation check.
-            sim.stage(&[i], false, |s| vec![(i, s.call(i, |m, w, cx| m.init(w, cx)))]);
+            sim.stage(Stage::Init, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.init(w, cx)))]);
         }
         Ok(sim)
     }
@@ -174,7 +263,12 @@ impl Sim {
             commands: vec![Command { day: 0, kind: CommandKind::StartSegment { modules: records } }],
             applied_today: Vec::new(),
             event_log: EventLog::default(),
+            log_today: 0,
             strict: false,
+            next_command: 0,
+            checkpoints: Vec::new(),
+            last_change: vec![Vec::new(); crate::fields::FIELDS.len()],
+            trace: None,
         })
     }
 
@@ -195,6 +289,10 @@ impl Sim {
             self.applied_today.clear();
         }
         if self.calendar.is_year_start(self.day) {
+            // Replays pass year starts that already have one.
+            if self.checkpoints.last().is_none_or(|c| c.day < self.day) {
+                self.checkpoints.push(self.checkpoint());
+            }
             if self.day > 0 {
                 let summary = self.year_so_far();
                 self.history.push(summary);
@@ -203,14 +301,24 @@ impl Sim {
             self.event_log.prune(self.day);
             ran = true;
         }
+        self.log_today = self.event_log.entries.len();
         if !self.pending.is_empty() {
             self.deliver();
+            ran = true;
+        }
+        // Today's pokes go out after today's deliveries, so they arrive tomorrow like any event.
+        while let Some(c) = self.commands.get(self.next_command).filter(|c| c.day <= self.day) {
+            if let CommandKind::Poke { event } = &c.kind {
+                let event = event.clone();
+                self.post(None, event);
+            }
+            self.next_command += 1;
             ran = true;
         }
         for k in 0..self.plan.runtime.len() {
             let i = self.plan.runtime[k];
             if self.modules[i].manifest().cadence.due(&self.calendar, self.day) {
-                self.stage(&[i], true, |s| vec![(i, s.call(i, |m, w, cx| m.tick(w, cx)))]);
+                self.stage(Stage::Tick, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.tick(w, cx)))]);
                 ran = true;
             }
         }
@@ -236,6 +344,109 @@ impl Sim {
         }
     }
 
+    /// Poke the world today (the day about to run): the event is sent today and delivered
+    /// tomorrow. It goes into the command log, so replays and saves repeat it.
+    pub fn poke(&mut self, event: Event) {
+        let at = self.commands.partition_point(|c| c.day <= self.day);
+        self.commands.insert(at, Command { day: self.day, kind: CommandKind::Poke { event } });
+    }
+
+    /// Events delivered on the last day run (grants excluded).
+    pub fn delivered_today(&self) -> &[Posted] {
+        &self.event_log.entries[self.log_today.min(self.event_log.entries.len())..]
+    }
+
+    /// Fields that can change once the world runs: owned by a running module, or by nobody.
+    fn running_fields(&self) -> impl Iterator<Item = FieldId> + '_ {
+        FieldId::all().filter(|&id| !self.plan.owner[id.0 as usize].is_some_and(|o| self.plan.generation.contains(&o)))
+    }
+
+    /// The world as it stands now, between days.
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            day: self.day,
+            fields: self.running_fields().map(|id| (id, self.world.field(id))).collect(),
+            modules: self.modules.iter().map(|m| m.save_state()).collect(),
+            pending: self.pending.clone(),
+            year_flows: self.year_flows.clone(),
+            history: self.history.clone(),
+            problems: self.problems,
+            applied_today: self.applied_today.clone(),
+            last_change: self.last_change.clone(),
+        }
+    }
+
+    /// Put the world back as it was at `c`. The event log keeps only what was delivered before
+    /// that day; commands and checkpoints are left as they are.
+    pub fn restore(&mut self, c: &Checkpoint) {
+        for (id, data) in &c.fields {
+            self.world.set_field(*id, data.clone()).expect("a checkpoint of this world");
+        }
+        for (m, bytes) in self.modules.iter_mut().zip(&c.modules) {
+            m.load_state(bytes).expect("a checkpoint of this world");
+        }
+        self.day = c.day;
+        self.pending = c.pending.clone();
+        self.queue.clear();
+        self.seq = 0;
+        self.year_flows = c.year_flows.clone();
+        self.history = c.history.clone();
+        self.problems = c.problems;
+        self.applied_today = c.applied_today.clone();
+        self.last_change = c.last_change.clone();
+        let day = c.day;
+        self.event_log.entries.retain(|p| p.day + 1 < day);
+        self.log_today = self.event_log.entries.partition_point(|p| p.day + 2 < day);
+        self.next_command = self.commands.partition_point(|c| c.day < day);
+    }
+
+    /// Restore the latest checkpoint at or before the start of `day`, then run up to it.
+    fn replay_to(&mut self, day: u64) -> Result<(), String> {
+        if day > self.day {
+            return Err(format!("{} hasn't run yet", self.calendar.format(day)));
+        }
+        let k = self.checkpoints.partition_point(|c| c.day <= day);
+        let Some(c) = k.checked_sub(1).map(|k| self.checkpoints[k].clone()) else {
+            return Err(format!("nothing kept from as early as {}", self.calendar.format(day)));
+        };
+        self.restore(&c);
+        while self.day < day {
+            self.step_day();
+        }
+        Ok(())
+    }
+
+    /// Go back to the start of an earlier `day` and forget the days after it, so a poke made now
+    /// starts a new future. Commands already logged for later days stay and run again.
+    pub fn rewind(&mut self, day: u64) -> Result<(), String> {
+        self.replay_to(day)?;
+        self.checkpoints.retain(|c| c.day <= day);
+        Ok(())
+    }
+
+    /// Run `day` again with tracing on for `province`, then come back to exactly where the world
+    /// was. Determinism makes the replayed day the day that ran; nothing extra is stored to explain
+    /// it.
+    pub fn trace(&mut self, day: u64, province: u32) -> Result<Trace, String> {
+        if day >= self.day {
+            return Err(format!("{} hasn't run yet", self.calendar.format(day)));
+        }
+        if province as usize >= self.world.provinces.count {
+            return Err(format!("no province {province}"));
+        }
+        let now = self.checkpoint();
+        let (log, log_today) = (self.event_log.entries.clone(), self.log_today);
+        let result = self.replay_to(day).map(|()| {
+            self.trace = Some(Trace { day, province, steps: Vec::new() });
+            self.step_day();
+            self.trace.take().expect("set above")
+        });
+        self.restore(&now);
+        self.event_log.entries = log;
+        self.log_today = log_today;
+        result
+    }
+
     /// Place of a slot in the run order (generation modules first).
     fn rank(&self, slot: Slot) -> usize {
         let p = &self.plan;
@@ -245,8 +456,13 @@ impl Sim {
     fn deliver(&mut self) {
         let mut events = std::mem::take(&mut self.pending);
         delivery_order(&mut events, |s| self.rank(s));
+        if let Some(t) = &mut self.trace {
+            for p in events.iter().filter(|p| p.event.province() == Some(t.province)) {
+                t.steps.push(TraceStep { stage: Stage::Deliver, module: p.emitter, what: Traced::Delivered(p.event.clone()) });
+            }
+        }
         let runtime = self.plan.runtime.clone();
-        self.stage(&runtime, true, |s| {
+        self.stage(Stage::Deliver, &runtime, |s| {
             let mut outs = Vec::new();
             for p in &events {
                 for &i in &runtime {
@@ -274,7 +490,7 @@ impl Sim {
         let runs: Vec<(usize, Vec<Request>)> =
             queue.chunk_by(|a, b| owner(a) == owner(b)).map(|run| (owner(&run[0]), run.to_vec())).collect();
         for (i, run) in runs {
-            self.stage(&[i], true, |s| vec![(i, s.call(i, |m, w, cx| m.apply_requests(w, &run, cx)))]);
+            self.stage(Stage::Apply, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.apply_requests(w, &run, cx)))]);
         }
     }
 
@@ -282,14 +498,17 @@ impl Sim {
     fn call(&mut self, i: usize, f: impl FnOnce(&mut dyn Module, &mut World, &mut Ctx)) -> Outbox {
         let mut out = Outbox::default();
         let slot = self.modules[i].manifest().slot;
-        let mut cx = Ctx { day: self.day, seed: self.world.params.seed, calendar: &self.calendar, slot, out: &mut out };
+        let trace = self.trace.as_ref().map(|t| t.province);
+        let mut cx = Ctx { day: self.day, seed: self.world.params.seed, calendar: &self.calendar, slot, out: &mut out, trace };
         f(self.modules[i].as_mut(), &mut self.world, &mut cx);
         out
     }
 
-    /// Run a stage for `actors` and check its work: ownership (strict only), conservation (when
-    /// `conserve`), then field contracts. Then take in what the modules sent.
-    fn stage(&mut self, actors: &[usize], conserve: bool, body: impl FnOnce(&mut Self) -> Vec<(usize, Outbox)>) {
+    /// Run a stage for `actors` and check its work: ownership (strict only), then, once the world
+    /// runs, conservation; then field contracts. Then note what changed, and take in what the
+    /// modules sent.
+    fn stage(&mut self, kind: Stage, actors: &[usize], body: impl FnOnce(&mut Self) -> Vec<(usize, Outbox)>) {
+        let conserve = kind.running();
         let owned_by_actors = |s: &Self, id: FieldId| s.plan.owner[id.0 as usize].is_some_and(|o| actors.contains(&o));
         let guard: Vec<(FieldId, u64)> = if self.strict {
             FieldId::all().filter(|&id| !owned_by_actors(self, id)).map(|id| (id, self.field_hash(id))).collect()
@@ -297,6 +516,9 @@ impl Sim {
             Vec::new()
         };
         let before: Vec<u64> = if conserve { QUANTITIES.iter().map(|&q| quantity_total(&self.world, q)).collect() } else { Vec::new() };
+        // Only the actors can change anything (strict mode checks it), so only their fields are watched.
+        let watched: Vec<(FieldId, FieldData)> =
+            if conserve { FieldId::all().filter(|&id| owned_by_actors(self, id)).map(|id| (id, self.world.field(id))).collect() } else { Vec::new() };
 
         let outs = body(self);
 
@@ -322,14 +544,49 @@ impl Sim {
         for id in owned {
             self.enforce_contract(id, actors);
         }
+        for (id, old) in watched {
+            self.record_changes(kind, id, &old);
+        }
         for (i, out) in outs {
             let slot = self.modules[i].manifest().slot;
+            if let Some(t) = &mut self.trace {
+                let p = t.province;
+                let about = |r: &Request| r.entity == p && r.field.def().tier == crate::fields::Tier::Province;
+                let step = |what| TraceStep { stage: kind, module: Some(slot), what };
+                t.steps.extend(out.notes.into_iter().map(|n| step(Traced::Note(n))));
+                t.steps.extend(out.requests.iter().filter(|r| about(r)).map(|r| step(Traced::Requested(*r))));
+                t.steps.extend(out.applied.iter().filter(|(r, _)| about(r)).map(|&(r, g)| step(Traced::Granted(r, g))));
+                t.steps.extend(out.events.iter().filter(|e| e.province() == Some(p)).map(|e| step(Traced::Sent(e.clone()))));
+            }
             self.queue.extend(out.requests);
             self.year_flows.merge(&out.flows);
             self.applied_today.extend(out.applied);
             for e in out.events {
                 self.post(Some(slot), e);
             }
+        }
+    }
+
+    /// Stamp today on every value of `id` that differs from `old`, and trace the traced
+    /// province's changes.
+    fn record_changes(&mut self, kind: Stage, id: FieldId, old: &FieldData) {
+        let new = self.world.field(id);
+        let changed = old.differences(&new);
+        let stamps = &mut self.last_change[id.0 as usize];
+        stamps.resize(new.len(), NEVER);
+        for &e in &changed {
+            stamps[e as usize] = self.day;
+        }
+        let Some(t) = &mut self.trace else { return };
+        let mine = |e: u32| match id.def().tier {
+            crate::fields::Tier::Province => e == t.province,
+            crate::fields::Tier::Pop => self.world.pops.province.get(e as usize) == Some(&t.province),
+            crate::fields::Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
+        };
+        let module = self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot);
+        for e in changed.into_iter().filter(|&e| mine(e)) {
+            let what = Traced::Changed { field: id, entity: e, before: old.value(e as usize), after: new.value(e as usize) };
+            t.steps.push(TraceStep { stage: kind, module, what });
         }
     }
 

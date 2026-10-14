@@ -22,4 +22,5 @@ pub mod rng;
 pub mod save;
 pub mod sim;
 pub mod terrain;
+pub mod weather;
 pub mod world;

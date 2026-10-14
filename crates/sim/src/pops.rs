@@ -124,6 +124,12 @@ impl Module for Population {
         w.pops.size[k] = size + births - natural - starved;
         let province = w.pops.province[k];
         w.starved_this_year[province as usize] += starved;
+        if cx.traced(province) {
+            cx.note(format!(
+                "pop {k} ({size} people) got {:.0}% of the month's food it asked for: {births} born, {natural} died of old age and illness, {starved} starved",
+                100.0 * fed
+            ));
+        }
         cx.flow(Quantity::People, Cause::Births, births as i64);
         cx.flow(Quantity::People, Cause::Deaths, -(natural as i64));
         cx.flow(Quantity::People, Cause::Starvation, -(starved as i64));

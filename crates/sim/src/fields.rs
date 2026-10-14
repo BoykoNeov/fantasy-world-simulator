@@ -86,6 +86,8 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("pop.religion", Tier::Pop, "religion id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("pop.class", Tier::Pop, "class id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { conserved: Some(Quantity::People), default: Default::Empty, ..def("pop.size", Tier::Pop, "people", 0.0, COUNT_MAX) },
+    // Appended after the step-3 fields: saved events refer to fields by position.
+    FieldDef { default: Default::Zero, ..def("province.rain_shortfall", Tier::Province, "‰ of normal rain missing", 0.0, 1000.0) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {
@@ -181,6 +183,40 @@ impl FieldData {
             }
         }
         out
+    }
+
+    /// One value as a number, for display. A direction shows its first component.
+    pub fn value(&self, i: usize) -> f64 {
+        match self {
+            FieldData::F32(v) => v[i] as f64,
+            FieldData::F64(v) => v[i],
+            FieldData::U64(v) => v[i] as f64,
+            FieldData::U32(v) => v[i] as f64,
+            FieldData::U16(v) => v[i] as f64,
+            FieldData::U8(v) => v[i] as f64,
+            FieldData::Dir(v) => v[i][0],
+        }
+    }
+
+    /// Entities whose value differs from `new`'s, bit for bit. Entities only `new` has count as
+    /// changed.
+    pub fn differences(&self, new: &FieldData) -> Vec<u32> {
+        fn go<T: PartialEq>(a: &[T], b: &[T]) -> Vec<u32> {
+            (0..b.len()).filter(|&i| a.get(i) != Some(&b[i])).map(|i| i as u32).collect()
+        }
+        // Floats compare by bits, so a NaN that stays NaN is not a change.
+        let bits32 = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        let bits64 = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        match (self, new) {
+            (FieldData::F32(a), FieldData::F32(b)) => go(&bits32(a), &bits32(b)),
+            (FieldData::F64(a), FieldData::F64(b)) => go(&bits64(a), &bits64(b)),
+            (FieldData::U64(a), FieldData::U64(b)) => go(a, b),
+            (FieldData::U32(a), FieldData::U32(b)) => go(a, b),
+            (FieldData::U16(a), FieldData::U16(b)) => go(a, b),
+            (FieldData::U8(a), FieldData::U8(b)) => go(a, b),
+            (FieldData::Dir(a), FieldData::Dir(b)) => go(a, b),
+            _ => (0..new.len() as u32).collect(),
+        }
     }
 
     /// Sum of a conserved field. Only whole-number fields can be conserved.

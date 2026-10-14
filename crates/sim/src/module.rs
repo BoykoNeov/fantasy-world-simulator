@@ -31,6 +31,8 @@ pub enum Slot {
     /// Economics v0 is "food vs population": harvests and food stores.
     Economics,
     Population,
+    /// Weather v0 is "droughts": years of missing rain, started by a poke.
+    Weather,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +123,8 @@ pub struct Outbox {
     /// Requests applied, with what was granted; kept for the day so the inspector can say why a
     /// value changed.
     pub applied: Vec<(Request, u64)>,
+    /// Explanations for the province being traced (see [`Ctx::traced`]).
+    pub notes: Vec<String>,
 }
 
 /// Everything a module may use while it runs: the date, the seed, and ways to talk to the rest of
@@ -131,9 +135,22 @@ pub struct Ctx<'a> {
     pub calendar: &'a Calendar,
     pub slot: Slot,
     pub(crate) out: &'a mut Outbox,
+    /// The province being traced, when the inspector replays a day to explain it.
+    pub(crate) trace: Option<u32>,
 }
 
 impl Ctx<'_> {
+    /// Whether the inspector wants to know why `province` changes today. Modules check this before
+    /// building a [`Ctx::note`], so an untraced day costs one comparison.
+    pub fn traced(&self, province: u32) -> bool {
+        self.trace == Some(province)
+    }
+
+    /// Explain, in words, a step of the work for the traced province: the inputs and the result.
+    pub fn note(&mut self, text: String) {
+        self.out.notes.push(text);
+    }
+
     /// Ask the owner of `field` to remove `take` from `entity`. Applied at the end of today;
     /// the grant arrives tomorrow. `tag` comes back with the grant (e.g. which pop asked).
     pub fn request(&mut self, field: FieldId, entity: u32, take: u64, priority: Priority, cause: Cause, tag: u64) {

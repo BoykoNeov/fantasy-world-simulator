@@ -26,7 +26,8 @@ use std::path::Path;
 pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Bump on any change to the layout below, to any saved type, or to the order of slots, fields,
 /// causes or events (saved events refer to fields by position).
-pub const FORMAT_VERSION: u32 = 1;
+/// Format 2 (step 4): the Weather slot, the rain shortfall field, drought events and pokes.
+pub const FORMAT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
@@ -163,6 +164,9 @@ impl Sim {
         sim.history = snap.engine.history;
         sim.problems = snap.engine.problems;
         sim.commands = file.commands;
+        sim.next_command = sim.commands.partition_point(|c| c.day < sim.day);
+        // History before the load isn't kept: going back stops here.
+        sim.checkpoints = vec![sim.checkpoint()];
         Ok(sim)
     }
 
