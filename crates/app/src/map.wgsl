@@ -173,6 +173,50 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// The province drawn at face texel `f`. Of the four cells around the point, the province holding
+// the largest share of the bilinear weights wins; sea cells don't count. Its edge then runs smoothly
+// through the middle of each cell side, as the border lines do, instead of stepping along cell
+// edges. With `need_land`, points that are mostly sea have no province (for picking). Ties go to
+// the first cell in the order below. `Camera::pick_province` must give the same answer.
+fn province_at(f: vec3<f32>, need_land: bool) -> u32 {
+    // Written out for the four cells, without arrays or loops: much faster on integrated GPUs.
+    let face = i32(f.x);
+    let p = f.yz - 0.5;
+    let b = vec2<i32>(floor(p)) + vec2<i32>(1);
+    let t = fract(p);
+    let i0 = textureLoad(prov_tex, b, face, 0).r;
+    let i1 = textureLoad(prov_tex, b + vec2<i32>(1, 0), face, 0).r;
+    let i2 = textureLoad(prov_tex, b + vec2<i32>(0, 1), face, 0).r;
+    let i3 = textureLoad(prov_tex, b + vec2<i32>(1, 1), face, 0).r;
+    if (i0 == i1 && i0 == i2 && i0 == i3) {
+        return i0;
+    }
+    let w0 = (1.0 - t.x) * (1.0 - t.y);
+    let w1 = t.x * (1.0 - t.y);
+    let w2 = (1.0 - t.x) * t.y;
+    let w3 = t.x * t.y;
+    let l0 = select(w0, 0.0, i0 == NO_PROVINCE);
+    let l1 = select(w1, 0.0, i1 == NO_PROVINCE);
+    let l2 = select(w2, 0.0, i2 == NO_PROVINCE);
+    let l3 = select(w3, 0.0, i3 == NO_PROVINCE);
+    if (need_land && l0 + l1 + l2 + l3 < 0.5) {
+        return NO_PROVINCE;
+    }
+    // Each cell's province's share of the weights (zero for sea cells).
+    let s0 = select(0.0, l0 + select(0.0, l1, i1 == i0) + select(0.0, l2, i2 == i0) + select(0.0, l3, i3 == i0), l0 > 0.0);
+    let s1 = select(0.0, l1 + select(0.0, l0, i0 == i1) + select(0.0, l2, i2 == i1) + select(0.0, l3, i3 == i1), l1 > 0.0);
+    let s2 = select(0.0, l2 + select(0.0, l0, i0 == i2) + select(0.0, l1, i1 == i2) + select(0.0, l3, i3 == i2), l2 > 0.0);
+    let s3 = select(0.0, l3 + select(0.0, l0, i0 == i3) + select(0.0, l1, i1 == i3) + select(0.0, l2, i2 == i3), l3 > 0.0);
+    // Largest share; ties go to the earlier cell.
+    var best = NO_PROVINCE;
+    var best_s = 0.0;
+    if (s0 > best_s) { best = i0; best_s = s0; }
+    if (s1 > best_s) { best = i1; best_s = s1; }
+    if (s2 > best_s) { best = i2; best_s = s2; }
+    if (s3 > best_s) { best = i3; }
+    return best;
+}
+
 // The planet's colour at a point on the map.
 fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     let f = dir_to_face_texel(lonlat_to_dir(lon, lat));
@@ -198,15 +242,12 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     }
     col = mix(col, rainfall_color(fld.b), params.layers0.z);
 
-    // Province of this pixel. The coastline is smooth but provinces are whole cells, so a land
-    // pixel can fall in a sea cell; it then takes the nearest land cell among the four around it.
-    let p = f.yz - 0.5;
-    let base_t = vec2<i32>(floor(p)) + vec2<i32>(1);
-    let near = vec2<i32>(round(fract(p)));
-    var prov = textureLoad(prov_tex, base_t + near, face, 0).r;
-    for (var k = 0; k < 4 && prov == NO_PROVINCE; k++) {
-        prov = textureLoad(prov_tex, base_t + vec2<i32>(k & 1, k >> 1u), face, 0).r;
+    // Only look the province up when something on screen uses it.
+    let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.ids.x != NO_PROVINCE;
+    if (!wanted) {
+        return col;
     }
+    let prov = province_at(f, false);
     if (prov == NO_PROVINCE) {
         return col;
     }
@@ -277,6 +318,16 @@ fn fs_map(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 @fragment
 fn fs_pick(@builtin(position) pos: vec4<f32>) -> @location(0) u32 {
     return cell_at(pos.xy - params.screen.zw);
+}
+
+// Province drawn at each pixel (NO_PROVINCE off the map or at sea), for the picking test.
+@fragment
+fn fs_pick_province(@builtin(position) pos: vec4<f32>) -> @location(0) u32 {
+    let u = unproject(screen_to_projected(pos.xy - params.screen.zw));
+    if (u.z < 0.5) {
+        return NO_PROVINCE;
+    }
+    return province_at(dir_to_face_texel(lonlat_to_dir(wrap_lon(params.view.x + u.x), u.y)), true);
 }
 
 // ---------------------------------------------------------------------------------------------

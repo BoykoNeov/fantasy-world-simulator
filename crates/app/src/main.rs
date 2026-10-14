@@ -153,7 +153,10 @@ struct MapApp {
     cam: Option<Camera>,
     projection: Projection,
     layers: LayerSettings,
-    hover: Option<usize>,
+    /// Cell under the pointer, and the province drawn there (NONE at sea).
+    hover: Option<(usize, u32)>,
+    /// Province per texel of the bordered faces, as on the GPU, for picking provinces.
+    province_halo: Vec<u32>,
     // Scripted runs.
     frame: u32,
     last: Option<Instant>,
@@ -193,6 +196,7 @@ impl MapApp {
             gen_s,
             cam: None,
             hover: None,
+            province_halo: data.province_ids.clone(),
             frame: 0,
             last: None,
             last_dt_ms: 0.0,
@@ -245,8 +249,8 @@ impl MapApp {
         ui.checkbox(&mut l.graticule, "latitude and longitude lines");
         ui.separator();
 
-        if let Some(c) = self.hover {
-            self.cell_info(ui, c);
+        if let Some((c, p)) = self.hover {
+            self.cell_info(ui, c, p);
             ui.separator();
         }
         ui.small(format!("{} cells, {} provinces", s.world.grid.cells(), s.world.provinces.count));
@@ -259,7 +263,7 @@ impl MapApp {
         }
     }
 
-    fn cell_info(&self, ui: &mut egui::Ui, c: usize) {
+    fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {
         let w = &self.sim.world;
         let (lon, lat) = (w.grid.lon[c].to_degrees(), w.grid.lat[c].to_degrees());
         ui.label(format!("{:.1}°{} {:.1}°{}", lat.abs(), if lat >= 0.0 { "N" } else { "S" }, lon.abs(), if lon >= 0.0 { "E" } else { "W" }));
@@ -269,7 +273,6 @@ impl MapApp {
         if e >= 0.0 && w.river_flow[c] >= RIVER_MIN_FLOW {
             ui.label(format!("river, {:.0} m³/s", w.river_flow[c] as f64 * 1000.0 / (365.25 * 86400.0)));
         }
-        let p = w.provinces.of_cell[c];
         if p != NONE {
             let p = p as usize;
             let people = w.province_population()[p];
@@ -384,7 +387,8 @@ impl eframe::App for MapApp {
                     if scroll != 0.0 {
                         cam.zoom_at((scroll * 0.003).exp(), x, y, w, h);
                     }
-                    self.hover = cam.pick(&self.sim.world.grid, x, y, w, h);
+                    let grid = &self.sim.world.grid;
+                    self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(grid.n, &self.province_halo, x, y, w, h).unwrap_or(NONE)));
                 }
                 if response.dragged()
                     && let Some(p) = response.interact_pointer_pos()
@@ -400,7 +404,7 @@ impl eframe::App for MapApp {
             self.frame += 1;
             self.cam = Some(cam);
 
-            let hover_province = self.hover.map_or(NONE, |c| self.sim.world.provinces.of_cell[c]);
+            let hover_province = self.hover.map_or(NONE, |(_, p)| p);
             let uniforms = gpu::uniforms(&cam, self.sim.world.grid.n, w, h, origin, ppp, &self.layers, hover_province);
             let (first, last) = cam.visible_copies(w);
             let tables = self.pending_tables.take();

@@ -104,6 +104,8 @@ impl MapData {
 
 pub struct MapGpu {
     pub map_pipeline: wgpu::RenderPipeline,
+    /// Layout of `bind_group`, for extra pipelines over the same data (the picking test).
+    pub layout: wgpu::PipelineLayout,
     pub line_pipeline: wgpu::RenderPipeline,
     pub bind_group: wgpu::BindGroup,
     pub uniforms: wgpu::Buffer,
@@ -234,7 +236,7 @@ impl MapGpu {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        MapGpu { map_pipeline, line_pipeline, bind_group, uniforms, lines, line_ranges: data.line_ranges.clone(), tables, table_rows }
+        MapGpu { map_pipeline, layout, line_pipeline, bind_group, uniforms, lines, line_ranges: data.line_ranges.clone(), tables, table_rows }
     }
 
     /// Re-upload the per-province tables (after the simulation advanced). The per-cell layers are

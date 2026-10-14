@@ -409,7 +409,7 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - Smoothed coastlines and province borders (one curve per shared border, junctions pinned), rivers, and a 30° graticule.
    - Parchment look, layer sliders (terrain, temperature, rainfall, population, famine, province colours), a hover inspector, and "+1 / +10 years" buttons that re-upload only the per-province tables.
    - Picking is tested against the shader on the GPU.
-   - Left for later: place-name labels (nothing has names yet), mipmaps (not needed at current zoom limits), and province colours that still follow cell edges while their borders are smooth.
+   - Left for later: place-name labels (nothing has names yet), mipmaps (not needed at current zoom limits), and borders that are smooth but still run in fairly straight stretches. (Province colours used to step along cell edges; since Oct 14 they follow the same curve as the border lines.)
 3. **Extract the module contract.** Done Oct 14 (`crates/sim`, see its README).
    - Manifests for every module, generation stages included; the run order is derived from them, and bad configurations (two owners, unmet needs, cycles) are refused at load with a message.
    - Change requests with rationing (largest-remainder rule), grants delivered the next day; the pops were split into Economics v0 ("food": harvests and stores) and Population v0, so a real module asks another for food.
