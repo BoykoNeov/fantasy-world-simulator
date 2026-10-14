@@ -1,31 +1,59 @@
-//! The map view: generate a world, run it forward some years, and show it.
+//! The map view: generate a world, run it some years, then watch it live, poke it and ask why.
 //!
 //! fantasymap [--size small|medium|large|huge] [--seed S] [--n FACE] [--provinces N] [--years Y]
+//!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--days D] [--select best|P] [--explain]
+//!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
 //!            [--screenshot FILE.png] [--bench --out DIR --tag NAME]
 //!
-//! Layer names: terrain, temperature, rainfall, population, famine, provinces (0..1), and coasts,
-//! rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet height fits).
+//! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
+//! coasts, rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet
+//! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
+//! grows the most food), `--days` runs that many more days before the window opens, `--select`
+//! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
+//! playing.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
-use app::layers;
+use app::inspector::{self, group, LogEntry, Source};
+use app::layers::{self, ProvinceView};
+use app::playback::{Clock, DayState, Frame, FromSim, Rate, Speed, Worker};
 use app::projection::{Camera, Projection};
 use app::wobble::ProvinceLookup;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
+use sim::calendar::Calendar;
 use sim::config::Config;
+use sim::events::Event;
+use sim::fields::{FieldId, Tier};
 use sim::grid::NONE;
-use sim::sim::Sim;
-use sim::world::{Size, WorldParams, RIVER_MIN_FLOW};
+use sim::module::Slot;
+use sim::sim::{Sim, Stage, Trace, NEVER};
+use sim::world::{Size, World, WorldParams, RIVER_MIN_FLOW};
+use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::Instant;
+
+/// Where a drought poke from the command line goes.
+#[derive(Clone, Copy)]
+enum DroughtAt {
+    /// Over the province that grows the most food: 2,000 km radius, 70% of the rain, 3 years.
+    Best,
+    At { lon: f64, lat: f64, radius_km: f64, percent: f64, years: f64 },
+}
 
 struct Options {
     params: WorldParams,
     config: Config,
     size: Size,
     years: i64,
+    drought: Option<DroughtAt>,
+    days: u64,
+    /// `Some(None)`: the province that grows the most food.
+    select: Option<Option<u32>>,
+    explain: bool,
+    speed: Speed,
     projection: Projection,
     view: Option<(f64, f64, f64)>,
     layers: LayerSettings,
@@ -46,6 +74,11 @@ impl Options {
             config: Config::new(WorldParams::preset(Size::Large, 7)),
             size,
             years: 20,
+            drought: None,
+            days: 0,
+            select: None,
+            explain: false,
+            speed: Speed::Paused,
             projection: Projection::EqualEarth,
             view: None,
             layers: LayerSettings::default(),
@@ -58,6 +91,11 @@ impl Options {
         let value = |i: &mut usize| -> String {
             *i += 1;
             args.get(*i).cloned().unwrap_or_else(|| panic!("{} needs a value", args[*i - 1]))
+        };
+        let numbers = |v: &str, n: usize, what: &str| -> Vec<f64> {
+            let v: Vec<f64> = v.split(',').map(|x| x.trim().parse().unwrap_or_else(|_| panic!("{what}"))).collect();
+            assert_eq!(v.len(), n, "{what}");
+            v
         };
         while i < args.len() {
             match args[i].as_str() {
@@ -76,6 +114,25 @@ impl Options {
                 "--years" => o.years = value(&mut i).parse().expect("--years"),
                 "--terrain" => o.config.modules.terrain = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
                 "--climate" => o.config.modules.climate = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
+                "--drought" => {
+                    let v = value(&mut i);
+                    o.drought = Some(if v == "best" {
+                        DroughtAt::Best
+                    } else {
+                        let x = numbers(&v, 5, "--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS");
+                        DroughtAt::At { lon: x[0], lat: x[1], radius_km: x[2], percent: x[3], years: x[4] }
+                    });
+                }
+                "--days" => o.days = value(&mut i).parse().expect("--days"),
+                "--select" => {
+                    let v = value(&mut i);
+                    o.select = Some(if v == "best" { None } else { Some(v.parse().expect("--select best|PROVINCE")) });
+                }
+                "--explain" => o.explain = true,
+                "--speed" => {
+                    let v = value(&mut i);
+                    o.speed = if v == "max" { Speed::Max } else { Speed::DaysPerSecond(v.parse().expect("--speed DAYS_PER_SECOND|max")) };
+                }
                 "--projection" => {
                     o.projection = match value(&mut i).as_str() {
                         "oval" => Projection::EqualEarth,
@@ -84,8 +141,7 @@ impl Options {
                     }
                 }
                 "--view" => {
-                    let v: Vec<f64> = value(&mut i).split(',').map(|x| x.trim().parse().expect("--view LON,LAT,ZOOM")).collect();
-                    assert_eq!(v.len(), 3, "--view LON,LAT,ZOOM");
+                    let v = numbers(&value(&mut i), 3, "--view LON,LAT,ZOOM");
                     o.view = Some((v[0], v[1], v[2]));
                 }
                 "--layer" => {
@@ -99,6 +155,7 @@ impl Options {
                         "rainfall" => l.rainfall = x,
                         "population" => l.population = x,
                         "famine" => l.famine = x,
+                        "drought" => l.drought = x,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
                         "rivers" => l.rivers = x > 0.5,
@@ -143,11 +200,53 @@ fn main() -> eframe::Result {
     eframe::run_native("fantasymap", native, Box::new(move |cc| Ok(Box::new(MapApp::new(cc, opts)))))
 }
 
+/// Speeds on the time bar, as days a second.
+const SPEEDS: [(&str, Speed); 5] = [
+    ("1 day/s", Speed::DaysPerSecond(1.0)),
+    ("1 week/s", Speed::DaysPerSecond(6.0)),
+    ("1 month/s", Speed::DaysPerSecond(30.0)),
+    ("1 year/s", Speed::DaysPerSecond(364.0)),
+    ("fastest", Speed::Max),
+];
+
+/// The drought tool's settings.
+struct DroughtTool {
+    percent: f64,
+    radius_km: f64,
+    years: f64,
+}
+
 struct MapApp {
     opts: Options,
-    sim: Sim,
+    /// The world on screen: cells and provinces as generated, and the running values of the day
+    /// shown. The simulation itself lives on the worker thread.
+    geo: World,
+    calendar: Calendar,
+    /// Per field: which module sets it, in words, and the owning slot.
+    owners: Vec<(String, Option<Slot>)>,
+    worker: Worker,
+    /// The day shown first, then the days computed after it.
+    frames: VecDeque<Frame>,
+    /// Bumped by every poke; older frames are stale.
+    epoch: u64,
+    clock: Clock,
+    rate: Rate,
+    /// The day state copied into `geo`.
+    shown_state: Arc<DayState>,
+    /// What the province layers show right now (blended between days).
+    view: ProvinceView,
+    tables_for: Option<(u64, u64, u64)>,
     /// Province tables waiting for the next paint callback to upload them.
     pending_tables: Option<Vec<layers::Rgba>>,
+    /// Everything that happened on the days shown so far, oldest first.
+    log: Vec<LogEntry>,
+    hidden_sources: HashSet<Source>,
+    selected: Option<u32>,
+    /// A trace asked for (day, province), and the latest answer.
+    trace_pending: Option<(u64, u32)>,
+    trace: Option<((u64, u32), Result<Trace, String>)>,
+    drought: DroughtTool,
+    run_to_year: i64,
     adapter: String,
     line_segments: usize,
     gen_s: f64,
@@ -167,12 +266,39 @@ struct MapApp {
     bench_target: (f64, f64),
 }
 
+/// The province that grows the most food.
+fn breadbasket(w: &World) -> usize {
+    let p = &w.provinces;
+    (0..p.count).max_by_key(|&i| p.food_capacity[i]).unwrap_or(0)
+}
+
+fn drought_event(lon: f64, lat: f64, t: &DroughtTool, cal: &Calendar) -> Event {
+    let days = (t.years * cal.days_per_year() as f64).round() as u64;
+    Event::Drought { lon, lat, radius_km: t.radius_km, shortfall: (t.percent * 10.0).round() as u64, days }
+}
+
 impl MapApp {
     fn new(cc: &eframe::CreationContext<'_>, opts: Options) -> Self {
         let t0 = Instant::now();
         let mut sim = Sim::new(&opts.config).unwrap_or_else(|e| panic!("{e}"));
         let first = sim.calendar.def.first_year;
         sim.run_to_year(first + opts.years);
+        let mut drought = DroughtTool { percent: 70.0, radius_km: 2000.0, years: 3.0 };
+        if let Some(at) = opts.drought {
+            let (lon, lat) = match at {
+                DroughtAt::Best => {
+                    let (lon, lat) = sim::grid::dir_to_lonlat(sim.world.provinces.center[breadbasket(&sim.world)]);
+                    (lon.to_degrees(), lat.to_degrees())
+                }
+                DroughtAt::At { lon, lat, radius_km, percent, years } => {
+                    drought = DroughtTool { percent, radius_km, years };
+                    (lon, lat)
+                }
+            };
+            let e = drought_event(lon, lat, &drought, &sim.calendar);
+            sim.poke(e);
+        }
+        sim.run_days(opts.days);
         let gen_s = t0.elapsed().as_secs_f64();
         let data = MapData::build(&sim);
 
@@ -186,12 +312,45 @@ impl MapApp {
         let top = (0..people.len()).max_by_key(|&p| people[p]).unwrap_or(0);
         let bench_target = sim.world.provinces.center.get(top).map_or((0.0, 0.0), |&d| sim::grid::dir_to_lonlat(d));
 
-        MapApp {
+        let manifests = sim.manifests();
+        let owners = FieldId::all()
+            .map(|id| match sim.plan.owner[id.0 as usize] {
+                Some(o) => (format!("{} \"{}\"", inspector::slot_name(manifests[o].slot), manifests[o].version), Some(manifests[o].slot)),
+                None => ("nobody (a default)".into(), None),
+            })
+            .collect();
+        let frame = Frame::now(&sim, 0);
+        let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
+        // On the command line, explain the last day the province changed.
+        let trace_pending = opts.explain.then(|| {
+            let p = selected.unwrap_or(breadbasket(&sim.world) as u32);
+            let day = sim.running_fields().filter_map(|id| sim.last_change[id.0 as usize].get(p as usize).copied()).filter(|&d| d != NEVER).max();
+            (day.unwrap_or(sim.day.saturating_sub(1)), p)
+        });
+        let ctx = cc.egui_ctx.clone();
+        let app = MapApp {
+            geo: sim.world.clone(),
+            calendar: sim.calendar.clone(),
+            owners,
+            clock: Clock { speed: opts.speed, ..Clock::new(sim.day) },
+            run_to_year: sim.calendar.date(sim.day).year + 5,
+            log: sim.event_log.entries.iter().map(LogEntry::of_event).collect(),
+            shown_state: frame.state.clone(),
+            view: frame.state.view.clone(),
+            frames: VecDeque::from([frame]),
+            worker: Worker::start(sim, move || ctx.request_repaint()),
+            epoch: 0,
+            rate: Rate::default(),
+            tables_for: None,
+            pending_tables: None,
+            hidden_sources: HashSet::new(),
+            selected,
+            trace_pending,
+            trace: None,
+            drought,
             projection: opts.projection,
             layers: opts.layers,
             opts,
-            sim,
-            pending_tables: None,
             adapter: format!("{} ({:?})", info.name, info.backend),
             line_segments: data.lines.len(),
             gen_s,
@@ -204,31 +363,142 @@ impl MapApp {
             stats: bench::Stats::default(),
             screenshot_sent: false,
             bench_target,
+        };
+        if let Some((day, p)) = app.trace_pending {
+            app.worker.trace(day, p);
+        }
+        app
+    }
+
+    fn day(&self) -> u64 {
+        self.frames[0].day
+    }
+
+    /// Take in what the simulation sent.
+    fn pump(&mut self) {
+        while let Ok(m) = self.worker.rx.try_recv() {
+            match m {
+                FromSim::Frame(f) if f.epoch == self.epoch => self.frames.push_back(f),
+                FromSim::Frame(_) => {}
+                FromSim::Trace(t) => {
+                    if let Some(key) = self.trace_pending.take() {
+                        self.trace = Some((key, t));
+                    }
+                }
+            }
         }
     }
 
-    fn advance(&mut self, years: i64) {
-        let year = self.sim.calendar.date(self.sim.day).year;
-        self.sim.run_to_year(year + years);
-        // Only the per-province tables change; the per-cell layers stay as they are.
-        self.pending_tables = Some(layers::province_tables(&self.sim));
+    /// Move the clock on, and with it the day shown; then refresh what the map shows.
+    fn play(&mut self, dt: f64) {
+        let last = self.frames.back().map_or(0, |f| f.day);
+        self.clock.advance(dt, last);
+        let day = self.clock.day();
+        while self.frames.len() >= 2 && self.frames[1].day <= day {
+            self.frames.pop_front();
+            self.absorb();
+        }
+        self.worker.show(self.day());
+        self.rate.record(Instant::now(), self.day());
+
+        let front = &self.frames[0];
+        if !Arc::ptr_eq(&self.shown_state, &front.state) {
+            for (id, data) in &front.state.fields {
+                self.geo.set_field(*id, data.clone()).expect("the worker's world has the same shape");
+            }
+            self.shown_state = front.state.clone();
+        }
+        let t = self.clock.blend();
+        let next = self.frames.get(1).filter(|n| n.day == front.day + 1 && t > 0.0);
+        let key = (front.day, next.map_or(0, |_| t.to_bits()), Arc::as_ptr(&front.state) as u64 ^ self.epoch);
+        if self.tables_for != Some(key) {
+            self.view = match next {
+                Some(n) => ProvinceView::blend(&front.state.view, &n.state.view, t),
+                None => front.state.view.clone(),
+            };
+            self.pending_tables = Some(layers::province_tables(&self.geo, &self.view));
+            self.tables_for = Some(key);
+        }
+    }
+
+    /// The front frame was just reached: log what happened the day before it.
+    fn absorb(&mut self) {
+        let f = &self.frames[0];
+        self.log.extend(f.delivered.iter().map(LogEntry::of_event));
+        for (r, g) in f.applied.iter().filter(|(r, g)| *g < r.take) {
+            let owner = self.owners[r.field.0 as usize].1.unwrap_or(r.requester);
+            self.log.push(LogEntry::rationed(f.day - 1, owner, r, *g));
+        }
+        // Years of shortages add up; the oldest go first.
+        if self.log.len() > 400_000 {
+            self.log.drain(..100_000);
+        }
+    }
+
+    /// Poke the world on the day shown. The days computed ahead are thrown away.
+    fn poke(&mut self, event: Event) {
+        self.epoch += 1;
+        self.frames.truncate(1);
+        self.clock.pos = self.day() as f64;
+        self.worker.poke(self.epoch, self.day(), event);
+    }
+
+    fn explain(&mut self, day: u64, province: u32) {
+        self.trace_pending = Some((day, province));
+        self.worker.trace(day, province);
+    }
+
+    fn time_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.strong(self.calendar.format(self.day()));
+            ui.separator();
+            let paused = self.clock.speed == Speed::Paused;
+            if ui.selectable_label(paused, "⏸ pause").clicked() {
+                self.clock.pause();
+            }
+            for (name, speed) in SPEEDS {
+                if ui.selectable_label(self.clock.speed == speed && self.clock.stop_at.is_none(), name).clicked() {
+                    self.clock.play(speed);
+                }
+            }
+            ui.separator();
+            let today = self.day();
+            if ui.button("+1 day").clicked() {
+                self.clock.pause();
+                self.clock.run_to(today + 1);
+            }
+            if ui.button("+1 week").clicked() {
+                self.clock.pause();
+                self.clock.run_to(today + self.calendar.days_per_week() as u64);
+            }
+            ui.separator();
+            ui.label("run to year");
+            ui.add(egui::DragValue::new(&mut self.run_to_year).range(self.calendar.date(today).year + 1..=1_000_000));
+            if ui.button("go").clicked() {
+                self.clock.run_to(self.calendar.year_start(self.run_to_year));
+            }
+            ui.separator();
+            let ahead = self.frames.back().map_or(0, |f| f.day) - today;
+            let busy: Vec<f64> = self.frames.iter().map(|f| f.ms).filter(|&m| m > 0.0).collect();
+            let ms = if busy.is_empty() { 0.0 } else { busy.iter().sum::<f64>() / self.frames.len().max(1) as f64 };
+            ui.small(format!("showing {:.0} days a second · simulation {ahead} days ahead · {ms:.3} ms per simulated day", self.rate.days_per_second()));
+        });
+        // Space pauses and resumes at a day a second; the right arrow steps a day.
+        let (space, right) = ui.input(|i| (i.key_pressed(egui::Key::Space), i.key_pressed(egui::Key::ArrowRight)));
+        if space {
+            if self.clock.speed == Speed::Paused { self.clock.play(Speed::DaysPerSecond(1.0)) } else { self.clock.pause() }
+        }
+        if right {
+            self.clock.pause();
+            self.clock.run_to(self.day() + 1);
+        }
     }
 
     fn side_panel(&mut self, ui: &mut egui::Ui) {
-        let s = &self.sim;
+        let w = &self.geo;
         ui.heading("Fantasy Planet");
-        ui.label(format!("{:?} world, seed {}", self.opts.size, s.world.params.seed));
-        ui.label(s.calendar.format(s.day));
-        ui.label(format!("{} people", group(sim::fields::quantity_total(&s.world, sim::fields::Quantity::People))));
-        let mut years = 0;
-        ui.horizontal(|ui| {
-            if ui.button("+1 year").clicked() {
-                years = 1;
-            }
-            if ui.button("+10 years").clicked() {
-                years = 10;
-            }
-        });
+        ui.label(format!("{:?} world, seed {}", self.opts.size, w.params.seed));
+        ui.label(format!("{} people", group(self.view.people.iter().sum::<f64>().round() as u64)));
         ui.separator();
 
         ui.label("Map shape");
@@ -242,7 +512,8 @@ impl MapApp {
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
         ui.add(egui::Slider::new(&mut l.rainfall, 0.0..=1.0).text("rainfall"));
         ui.add(egui::Slider::new(&mut l.population, 0.0..=1.0).text("population"));
-        ui.add(egui::Slider::new(&mut l.famine, 0.0..=1.0).text("famine last year"));
+        ui.add(egui::Slider::new(&mut l.famine, 0.0..=1.0).text("famine, past year"));
+        ui.add(egui::Slider::new(&mut l.drought, 0.0..=1.0).text("drought"));
         ui.add(egui::Slider::new(&mut l.provinces, 0.0..=1.0).text("province colours"));
         ui.checkbox(&mut l.coasts, "coastlines");
         ui.checkbox(&mut l.rivers, "rivers");
@@ -254,20 +525,19 @@ impl MapApp {
             self.cell_info(ui, c, p);
             ui.separator();
         }
-        ui.small(format!("{} cells, {} provinces", s.world.grid.cells(), s.world.provinces.count));
+        ui.small("Click a province to inspect it. Space plays and pauses; the right arrow key steps a day.");
+        let w = &self.geo;
+        ui.small(format!("{} cells, {} provinces", w.grid.cells(), w.provinces.count));
         ui.small(format!("{} line segments", self.line_segments));
         ui.small(format!("world built and run in {:.1} s", self.gen_s));
         ui.small(format!("frame {:.1} ms", self.last_dt_ms));
         ui.small(format!("GPU: {}", self.adapter));
-        if years > 0 {
-            self.advance(years);
-        }
     }
 
     fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {
-        let w = &self.sim.world;
+        let w = &self.geo;
         let (lon, lat) = (w.grid.lon[c].to_degrees(), w.grid.lat[c].to_degrees());
-        ui.label(format!("{:.1}°{} {:.1}°{}", lat.abs(), if lat >= 0.0 { "N" } else { "S" }, lon.abs(), if lon >= 0.0 { "E" } else { "W" }));
+        ui.label(inspector::lat_lon(lat as f64, lon as f64));
         let e = w.elevation[c];
         ui.label(if e < 0.0 { format!("sea, {:.0} m deep", -e) } else { format!("{}, {:.0} m", w.biome[c].name(), e) });
         ui.label(format!("{:.0} °C, {:.0} mm rain a year", w.temperature[c], w.rainfall[c]));
@@ -276,15 +546,192 @@ impl MapApp {
         }
         if p != NONE {
             let p = p as usize;
-            let people = w.province_population()[p];
-            ui.label(format!("province {p}: {} people, {:.1} per km²", group(people), people as f64 / w.provinces.area_km2[p]));
+            let people = self.view.people[p];
+            ui.label(format!("province {p}: {} people, {:.1} per km²", group(people.round() as u64), people / w.provinces.area_km2[p]));
             ui.label(format!("food stock {} rations", group(w.food_stock[p])));
-            // The view always stops on the first day of a year, before the yearly reset, so the
-            // sim's "this year" count is the year just ended.
-            let starved = w.starved_this_year[p];
-            if starved > 0 {
-                ui.label(format!("{} starved last year", group(starved)));
+            if self.view.drought[p] > 0.0 {
+                ui.label(format!("drought: {:.0}% of the rain missing", 100.0 * self.view.drought[p]));
             }
+            let starved = self.view.starved[p].round() as u64;
+            if starved > 0 {
+                ui.label(format!("{} starved in the last 12 months", group(starved)));
+            }
+        }
+    }
+
+    /// Everything about the selected province: its values and where they come from, what happened
+    /// to it, why, and the drought tool.
+    fn inspector(&mut self, ui: &mut egui::Ui, p: u32) {
+        let pi = p as usize;
+        ui.horizontal(|ui| {
+            ui.heading(format!("Province {p}"));
+            if ui.small_button("close").clicked() {
+                self.selected = None;
+            }
+        });
+        let today = self.day();
+        let mut explain = None;
+
+        ui.label(egui::RichText::new("Values").strong());
+        let state = self.shown_state.clone();
+        let changed = |id: FieldId, i: usize| state.last_change.get(id.0 as usize).and_then(|v| v.get(i)).copied();
+        let mut when = |ui: &mut egui::Ui, id: FieldId, i: usize| match changed(id, i) {
+            _ if state.last_change[id.0 as usize].is_empty() && !state.fields.iter().any(|f| f.0 == id) => {
+                ui.label("when the world was made");
+            }
+            None | Some(NEVER) => {
+                ui.label("not since the start");
+            }
+            Some(d) => {
+                ui.horizontal(|ui| {
+                    ui.label(self.calendar.format(d));
+                    if ui.small_button("why?").on_hover_text("Run that day again and explain it").clicked() {
+                        explain = Some(d);
+                    }
+                });
+            }
+        };
+        egui::Grid::new("values").striped(true).num_columns(4).show(ui, |ui| {
+            ui.small("value");
+            ui.small("now");
+            ui.small("set by");
+            ui.small("last changed");
+            ui.end_row();
+            for id in FieldId::all().filter(|id| id.def().tier == Tier::Province) {
+                let data = self.geo.field(id);
+                ui.label(inspector::field_name(id));
+                ui.label(inspector::value(id, &data, pi));
+                ui.label(&self.owners[id.0 as usize].0);
+                when(ui, id, pi);
+                ui.end_row();
+            }
+        });
+        let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
+        let size = sim::fields::known("pop.size");
+        for &k in &pops {
+            let w = &self.geo.pops;
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "pop {k}: {} people (species {}, culture {}, religion {}, class {}), set by {}; size last changed",
+                    group(w.size[k]),
+                    w.species[k],
+                    w.culture[k],
+                    w.religion[k],
+                    w.class[k],
+                    self.owners[size.0 as usize].0
+                ));
+                when(ui, size, k);
+            });
+        }
+        if pops.is_empty() {
+            ui.small("Nobody lives here.");
+        }
+
+        let front = &self.frames[0];
+        let settled: Vec<String> = front.applied.iter().filter(|(r, _)| r.entity == p && r.field.def().tier == Tier::Province).map(|(r, g)| inspector::grant(r, *g)).collect();
+        if !settled.is_empty() {
+            ui.separator();
+            ui.label(egui::RichText::new(format!("Change requests settled on {}", self.calendar.format(today - 1))).strong());
+            for s in settled {
+                ui.label(s);
+            }
+        }
+
+        ui.separator();
+        // Most days nothing happens to a province; offer the last day something did.
+        let latest = state
+            .fields
+            .iter()
+            .flat_map(|(id, _)| {
+                let stamps = &state.last_change[id.0 as usize];
+                let mine: Vec<usize> = if id.def().tier == Tier::Pop { pops.clone() } else { vec![pi] };
+                mine.into_iter().filter_map(move |i| stamps.get(i).copied())
+            })
+            .filter(|&d| d != NEVER)
+            .max();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Why").strong());
+            if let Some(d) = latest
+                && ui.button(format!("explain the last change, {}", self.calendar.format(d))).clicked()
+            {
+                explain = Some(d);
+            }
+            if today > 0 && ui.small_button("explain the day before").clicked() {
+                explain = Some(today - 1);
+            }
+        });
+        if let Some((day, q)) = self.trace_pending
+            && q == p
+        {
+            ui.small(format!("running {} again…", self.calendar.format(day)));
+        } else if let Some(((day, q), result)) = &self.trace
+            && *q == p
+        {
+            ui.small(format!("What happened to province {p} on {}:", self.calendar.format(*day)));
+            match result {
+                Err(e) => {
+                    ui.label(e);
+                }
+                Ok(t) if t.steps.is_empty() => {
+                    ui.label("Nothing happened to this province that day.");
+                }
+                Ok(t) => {
+                    let mut stage: Option<Stage> = None;
+                    for s in &t.steps {
+                        if stage != Some(s.stage) {
+                            ui.label(egui::RichText::new(inspector::stage(s.stage)).italics());
+                            stage = Some(s.stage);
+                        }
+                        ui.label(format!("• {}", inspector::trace_step(s, &self.calendar)));
+                    }
+                }
+            }
+        }
+
+        ui.separator();
+        egui::CollapsingHeader::new("Start a drought here").show(ui, |ui| {
+            let t = &mut self.drought;
+            ui.add(egui::Slider::new(&mut t.percent, 10.0..=100.0).text("% of the rain missing").integer());
+            ui.add(egui::Slider::new(&mut t.radius_km, 200.0..=4000.0).text("radius, km").integer());
+            ui.add(egui::Slider::new(&mut t.years, 0.25..=10.0).text("years"));
+            if ui.button("start it").on_hover_text("Takes effect tomorrow; the days computed ahead are thrown away").clicked() {
+                let (lon, lat) = sim::grid::dir_to_lonlat(self.geo.provinces.center[pi]);
+                let e = drought_event(lon.to_degrees(), lat.to_degrees(), &self.drought, &self.calendar);
+                self.poke(e);
+            }
+        });
+
+        ui.separator();
+        ui.label(egui::RichText::new("What happened here").strong());
+        ui.horizontal_wrapped(|ui| {
+            for s in [Source::Module(Slot::Population), Source::Module(Slot::Economics), Source::Module(Slot::Weather), Source::Player, Source::Engine] {
+                let mut on = !self.hidden_sources.contains(&s);
+                if ui.checkbox(&mut on, s.name()).changed() {
+                    if on {
+                        self.hidden_sources.remove(&s);
+                    } else {
+                        self.hidden_sources.insert(s);
+                    }
+                }
+            }
+        });
+        let mut shown = 0;
+        for e in self.log.iter().rev() {
+            if e.province.is_some_and(|q| q != p) || (e.province.is_none() && e.source != Source::Player) || self.hidden_sources.contains(&e.source) {
+                continue;
+            }
+            ui.label(format!("{} · {} · {}", self.calendar.format(e.day), e.source.name(), e.text(&self.calendar)));
+            shown += 1;
+            if shown == 150 {
+                ui.small("(older entries not shown)");
+                break;
+            }
+        }
+        if shown == 0 {
+            ui.small("Nothing yet.");
+        }
+        if let Some(d) = explain {
+            self.explain(d, p);
         }
     }
 
@@ -305,7 +752,7 @@ impl MapApp {
         enc.write_header().and_then(|mut w| w.write_image_data(image.as_raw())).expect("png write");
         if self.opts.bench {
             let notes = format!("projection {:?}; pixels_per_point {}", self.projection, ctx.pixels_per_point());
-            let json = self.stats.to_json(&self.adapter, self.sim.world.grid.cells(), self.line_segments, (image.width() as u32, image.height() as u32), &notes);
+            let json = self.stats.to_json(&self.adapter, self.geo.grid.cells(), self.line_segments, (image.width() as u32, image.height() as u32), &notes);
             std::fs::write(path.with_extension("json"), json).expect("json write");
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -350,9 +797,18 @@ impl eframe::App for MapApp {
         let ctx = ui.ctx().clone();
         let ppp = ctx.pixels_per_point() as f64;
 
+        self.pump();
+        self.play(dt.as_secs_f64().min(0.25));
+
+        egui::Panel::top("time").show(ui, |ui| self.time_bar(ui));
         egui::Panel::left("controls").exact_size(270.0).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| self.side_panel(ui));
         });
+        if let Some(p) = self.selected {
+            egui::Panel::right("inspector").default_size(460.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui, p));
+            });
+        }
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
             let (w, h) = ((rect.width() as f64 * ppp).round(), (rect.height() as f64 * ppp).round());
@@ -388,8 +844,11 @@ impl eframe::App for MapApp {
                     if scroll != 0.0 {
                         cam.zoom_at((scroll * 0.003).exp(), x, y, w, h);
                     }
-                    let grid = &self.sim.world.grid;
+                    let grid = &self.geo.grid;
                     self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(&self.provinces, x, y, w, h).unwrap_or(NONE)));
+                }
+                if response.clicked() {
+                    self.selected = self.hover.map(|(_, p)| p).filter(|&p| p != NONE);
                 }
                 if response.dragged()
                     && let Some(p) = response.interact_pointer_pos()
@@ -398,36 +857,27 @@ impl eframe::App for MapApp {
                     let (_, y) = to_map(p);
                     cam.pan(d.x as f64 * ppp, d.y as f64 * ppp, y - d.y as f64 * ppp, h);
                 }
-                if self.opts.screenshot.is_some() && self.frame == 10 {
+                // Wait for an explanation asked for on the command line, so it is in the picture.
+                if self.opts.screenshot.is_some() && self.frame >= 10 && self.trace_pending.is_none() && !self.screenshot_sent {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+                    self.screenshot_sent = true;
                 }
             }
             self.frame += 1;
             self.cam = Some(cam);
 
             let hover_province = self.hover.map_or(NONE, |(_, p)| p);
-            let uniforms = gpu::uniforms(&cam, self.sim.world.grid.n, w, h, origin, ppp, &self.layers, hover_province);
+            let uniforms = gpu::uniforms(&cam, self.geo.grid.n, w, h, origin, ppp, &self.layers, hover_province, self.selected.unwrap_or(NONE));
             let (first, last) = cam.visible_copies(w);
             let tables = self.pending_tables.take();
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, MapCallback { uniforms, copies: (last - first + 1) as u32, tables }));
         });
 
-        if self.opts.bench || self.opts.screenshot.is_some() {
-            self.check_screenshot(&ctx);
+        if self.opts.bench || self.opts.screenshot.is_some() || self.clock.speed != Speed::Paused {
             ctx.request_repaint();
         }
-    }
-}
-
-/// 1234567 -> "1,234,567".
-fn group(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
+        if self.opts.bench || self.opts.screenshot.is_some() {
+            self.check_screenshot(&ctx);
         }
-        out.push(ch);
     }
-    out
 }

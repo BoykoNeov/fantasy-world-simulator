@@ -8,8 +8,8 @@ struct MapParams {
     proj: vec4<f32>,     // projection (0 Equal Earth, 1 rectangle), first world copy for lines, px per point, unused
     layers0: vec4<f32>,  // opacity: terrain, temperature, rainfall, population
     layers1: vec4<f32>,  // opacity: famine, provinces; lines: coasts, rivers
-    layers2: vec4<f32>,  // lines: province borders, graticule; unused, unused
-    ids: vec4<u32>,      // hovered province (or NO_PROVINCE), unused x3
+    layers2: vec4<f32>,  // lines: province borders, graticule; opacity: drought; unused
+    ids: vec4<u32>,      // hovered province, selected province (or NO_PROVINCE), unused x2
 };
 
 @group(0) @binding(0) var<uniform> params: MapParams;
@@ -256,7 +256,8 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     col = mix(col, rainfall_color(fld.b), params.layers0.z);
 
     // Only look the province up when something on screen uses it.
-    let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.ids.x != NO_PROVINCE;
+    let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0
+        || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
     if (!wanted) {
         return col;
     }
@@ -266,10 +267,14 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     }
     let pop = table(prov, 1);
     col = mix(col, pop.rgb, params.layers0.w * pop.a);
+    let dry = table(prov, 3);
+    col = mix(col, dry.rgb, params.layers2.z * dry.a);
     let fam = table(prov, 2);
     col = mix(col, fam.rgb, params.layers1.x * fam.a);
     col = mix(col, table(prov, 0).rgb, params.layers1.y * 0.55);
-    if (prov == params.ids.x) {
+    if (prov == params.ids.y) {
+        col = mix(col, vec3<f32>(1.0, 0.92, 0.55), 0.38);
+    } else if (prov == params.ids.x) {
         col = mix(col, vec3<f32>(1.0, 0.97, 0.86), 0.28);
     }
     return col;

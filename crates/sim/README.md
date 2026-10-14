@@ -114,6 +114,11 @@ machine fully busy: 0.7 s at best, 1.9 and 5.0 s in busier runs. The province st
 0.3 s. The century figure was measured before that change, which only affects generation; under the
 same load a century took 5.6–12 s. Worth re-measuring on a quiet machine.
 
+After step 4 (weather, pokes, checkpoints, last-changed stamps), 20 years on the small and large
+worlds give the same yearly results as before, and an idle day still costs 0.00006 ms. Days when
+something ran took 2.1 ms on the large world (3.4 ms just before the change, same session): the
+machine was busy, so these are not comparable with the 1.1 ms above.
+
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a
 forecast.

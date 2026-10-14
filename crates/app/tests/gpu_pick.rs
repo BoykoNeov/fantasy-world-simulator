@@ -136,7 +136,7 @@ fn gpu_and_cpu_pick_the_same_cells() {
         if zoom > 0.0 {
             cam.scale = cam.reference_scale(h) * zoom;
         }
-        let u = gpu::uniforms(&cam, grid.n, w, h, (0.0, 0.0), 1.0, &LayerSettings::default(), NONE);
+        let u = gpu::uniforms(&cam, grid.n, w, h, (0.0, 0.0), 1.0, &LayerSettings::default(), NONE, NONE);
         let got = gpu_cells(&device, &queue, &u);
         let (mut same, mut touching, mut on_map) = (0, 0, 0);
         for y in 0..H {
@@ -193,7 +193,7 @@ fn gpu_and_cpu_pick_the_same_provinces() {
         if zoom > 0.0 {
             cam.scale = cam.reference_scale(h) * zoom;
         }
-        let u = gpu::uniforms(&cam, n, w, h, (0.0, 0.0), 1.0, &LayerSettings::default(), NONE);
+        let u = gpu::uniforms(&cam, n, w, h, (0.0, 0.0), 1.0, &LayerSettings::default(), NONE, NONE);
         queue.write_buffer(&map.uniforms, 0, bytemuck::bytes_of(&u));
         let got = render_ids(&device, &queue, &pipeline, &map.bind_group);
         let cpu = |x: f64, y: f64| cam.pick_province(&look, x + 0.5, y + 0.5, w, h).unwrap_or(NONE);

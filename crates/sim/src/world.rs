@@ -14,6 +14,7 @@ use crate::module::{plan, Manifest, Module, Slot};
 use crate::pops::Pops;
 use crate::provinces::Provinces;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// World sizes from the design. Cell count and province count are separate settings; presets are
 /// just starting points.
@@ -78,9 +79,11 @@ impl Module for Fertility {
     }
 }
 
+/// Cloning shares the grid, which never changes; every field is copied.
+#[derive(Clone)]
 pub struct World {
     pub params: WorldParams,
-    pub grid: Grid,
+    pub grid: Arc<Grid>,
     /// Metres; below 0 is sea.
     pub elevation: Vec<f32>,
     /// Annual mean, °C.
@@ -108,7 +111,7 @@ impl World {
     pub fn empty(params: &WorldParams) -> World {
         World {
             params: params.clone(),
-            grid: Grid::new(params.n),
+            grid: Arc::new(Grid::new(params.n)),
             elevation: Vec::new(),
             temperature: Vec::new(),
             rainfall: Vec::new(),

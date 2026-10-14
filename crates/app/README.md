@@ -1,7 +1,8 @@
 # app: the map view
 
-The window that shows the planet: egui + wgpu over the `sim` crate. This is build step 2 from the design
-doc. The simulation code knows nothing about it; the map only reads the sim's fields.
+The window that shows the planet: egui + wgpu over the `sim` crate. Build steps 2 (the map view) and 4
+(time controls and the inspector) from the design doc. The simulation code knows nothing about it; the
+map only reads the sim's fields.
 
 What exists:
 
@@ -16,8 +17,24 @@ What exists:
   30° latitude/longitude grid. Borders are traced along cell sides and smoothed once per shared border,
   with the points where three regions meet held fixed, so neighbours never get gaps or double lines.
 - **Parchment look**: paper tint, grain, a vignette, and a double ink rule around the map's edge.
-- **Panel**: layer sliders (terrain, temperature, rainfall, population, famine, province colours), line
-  toggles, a hover inspector, and buttons that run the simulation 1 or 10 more years.
+- **Panel**: layer sliders (terrain, temperature, rainfall, population, famine in the past year,
+  drought, province colours), line toggles, and a hover inspector.
+- **Playback** (`playback.rs`): the simulation runs on its own thread, up to 120 days ahead of the day
+  shown, and sends one frame per day. Days on which nothing ran share their data with the day before.
+  The time bar plays at a day, a week, a month or a year a second, or as fast as the simulation goes;
+  it steps a day or a week, and runs to a chosen year. Space plays and pauses; the right arrow key
+  steps a day. Province colours blend between the two days either side of the moment shown. The bar
+  shows how many days a second actually go by, how far ahead the simulation is, and its cost per day.
+- **Inspector** (click a province; `inspector.rs`): every value of the province and its pops, with the
+  module that sets it and the day it last changed; the change requests settled the day before; and
+  "why?", which has the simulation run that day again with tracing on, then lists in order what each
+  module did and why (the drought reaching the province, the harvest worked out from capacity, luck,
+  month and rain, spoilage, the food each pop got, births and deaths) and every value that changed.
+- **Event log**: what happened to the province each day (famines, food shortages, droughts), newest
+  first, filterable by source.
+- **Drought tool**: start a drought centred on the selected province (how much rain is missing, radius,
+  years). It takes effect the next day; the days computed ahead are thrown away, and the simulation
+  goes back to the day shown and computes them again.
 
 - **Smooth province colours** (`province_at` in `map.wgsl`, mirrored by `Camera::pick_province`): of
   the four cells around a point, the province with the largest share of the blend wins. Colour edges
@@ -37,21 +54,27 @@ Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at c
 cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app --bin fantasymap
 ```
 
-Drag to pan, scroll to zoom. Options:
+Drag to pan, scroll to zoom, click a province to inspect it. Options:
 
 - `--size small|medium|large|huge`, `--seed S`, `--n FACE`, `--provinces N`: the world (default: large, seed 7).
 - `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
 - `--years Y`: how long to run before showing it (default 20).
+- `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
+  on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).
+- `--days D`: run D more days before showing it.
+- `--select best|P`: open the inspector on a province; `--explain`: explain its last change.
+- `--speed DAYS_PER_SECOND|max`: start playing.
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `provinces` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
+  `drought`, `provinces` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
 - `--screenshot FILE.png`: open, save a screenshot, close.
 - `--bench --out DIR --tag NAME`: a scripted full turn of the world, then a zoom to 8×. It writes a
   screenshot and a JSON file of frame times. Set `WGPU_POWER_PREF=low` (integrated GPU) or `high` first.
 
 Tests, including one that renders cell ids on the GPU and checks them against the CPU picking code
-(it skips if there is no GPU):
+(it skips if there is no GPU), and one that drives the simulation thread without a window: it stays
+within its lookahead, and a poke after it ran ahead gives exactly the future a fresh world gets:
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app

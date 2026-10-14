@@ -357,7 +357,7 @@ impl Sim {
     }
 
     /// Fields that can change once the world runs: owned by a running module, or by nobody.
-    fn running_fields(&self) -> impl Iterator<Item = FieldId> + '_ {
+    pub fn running_fields(&self) -> impl Iterator<Item = FieldId> + '_ {
         FieldId::all().filter(|&id| !self.plan.owner[id.0 as usize].is_some_and(|o| self.plan.generation.contains(&o)))
     }
 

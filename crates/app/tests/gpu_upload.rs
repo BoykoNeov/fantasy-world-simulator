@@ -27,9 +27,9 @@ fn build_the_map_then_advance_and_upload_the_tables() {
     let data = MapData::build(&sim);
     let gpu = MapGpu::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &data);
 
-    let before = layers::province_tables(&sim);
+    let before = layers::tables_now(&sim);
     sim.run_to_year(sim.calendar.def.first_year + 3);
-    let after = layers::province_tables(&sim);
+    let after = layers::tables_now(&sim);
     assert_eq!(before.len(), after.len(), "the table size never changes while the world runs");
     assert_ne!(before, after, "a year of growth and famine should change the tables");
     gpu.upload_tables(&queue, &after);

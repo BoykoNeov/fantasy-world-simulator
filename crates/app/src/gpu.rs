@@ -33,6 +33,7 @@ pub struct LayerSettings {
     pub population: f32,
     pub famine: f32,
     pub provinces: f32,
+    pub drought: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
@@ -48,6 +49,7 @@ impl Default for LayerSettings {
             population: 0.0,
             famine: 0.0,
             provinces: 0.0,
+            drought: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
@@ -58,7 +60,7 @@ impl Default for LayerSettings {
 
 /// Uniforms for one frame.
 #[allow(clippy::too_many_arguments)]
-pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp: f64, l: &LayerSettings, hover_province: u32) -> MapUniforms {
+pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp: f64, l: &LayerSettings, hover_province: u32, selected_province: u32) -> MapUniforms {
     let on = |b: bool| if b { 1.0 } else { 0.0 };
     let border_alpha = if l.borders { cam.province_line_alpha(h) as f32 } else { 0.0 };
     MapUniforms {
@@ -67,8 +69,8 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         proj: [cam.projection.index() as f32, cam.visible_copies(w).0 as f32, ppp as f32, 0.0],
         layers0: [l.terrain, l.temperature, l.rainfall, l.population],
         layers1: [l.famine, l.provinces, on(l.coasts), on(l.rivers)],
-        layers2: [border_alpha, on(l.graticule), 0.0, 0.0],
-        ids: [hover_province, 0, 0, 0],
+        layers2: [border_alpha, on(l.graticule), l.drought, 0.0],
+        ids: [hover_province, selected_province, 0, 0],
     }
 }
 
@@ -101,7 +103,7 @@ impl MapData {
             fields: layers::spread(&halo, &layers::fields(w)),
             province_ids: layers::spread(&halo, &w.provinces.of_cell),
             warp,
-            tables: layers::province_tables(sim),
+            tables: layers::tables_now(sim),
             lines,
             line_ranges,
         }

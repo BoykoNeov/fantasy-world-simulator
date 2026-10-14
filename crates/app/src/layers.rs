@@ -21,7 +21,50 @@ pub const TABLE_WIDTH: usize = 256;
 pub const TABLE_FILL: usize = 0;
 pub const TABLE_POPULATION: usize = 1;
 pub const TABLE_FAMINE: usize = 2;
-pub const TABLE_LAYERS: usize = 3;
+pub const TABLE_DROUGHT: usize = 3;
+pub const TABLE_LAYERS: usize = 4;
+
+/// What the province layers show, per province, as plain numbers so two days can be blended.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ProvinceView {
+    pub people: Vec<f64>,
+    /// People starved in the last 12 months.
+    pub starved: Vec<f64>,
+    /// Share of the normal rain that is missing, 0..1.
+    pub drought: Vec<f64>,
+}
+
+impl ProvinceView {
+    /// The view of the world as it stands.
+    pub fn now(sim: &Sim) -> Self {
+        let w = &sim.world;
+        let people = w.province_population().iter().map(|&p| p as f64).collect();
+        let starved = recent_famine(sim).iter().map(|&s| s as f64).collect();
+        let drought = (0..w.provinces.count).map(|p| w.rain_shortfall.get(p).map_or(0.0, |&s| s as f64 / 1000.0)).collect();
+        ProvinceView { people, starved, drought }
+    }
+
+    /// `a` blended towards `b` by `t` (0 = all `a`).
+    pub fn blend(a: &Self, b: &Self, t: f64) -> Self {
+        let mix = |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(x, y)| x + (y - x) * t).collect();
+        ProvinceView { people: mix(&a.people, &b.people), starved: mix(&a.starved, &b.starved), drought: mix(&a.drought, &b.drought) }
+    }
+}
+
+/// People starved per province in the last 12 months, from the famines delivered in that time.
+pub fn recent_famine(sim: &Sim) -> Vec<u64> {
+    let mut out = vec![0u64; sim.world.provinces.count];
+    let from = sim.day.saturating_sub(sim.calendar.days_per_year() as u64);
+    for p in &sim.event_log.entries {
+        // Delivered the day after it was sent.
+        if p.day + 1 >= from
+            && let sim::events::Event::Famine { province, starved } = p.event
+        {
+            out[province as usize] += starved;
+        }
+    }
+    out
+}
 
 /// For every texel of the bordered faces, the cell it shows. Border texels show the cell just
 /// across the face edge; the corner texels show the diagonal cell (at the 8 cube corners, where it
@@ -137,32 +180,41 @@ pub fn table_rows(count: usize) -> usize {
 }
 
 /// Province tables, layer after layer, each `TABLE_WIDTH` × `table_rows` texels. Alpha scales how
-/// strongly the colour covers the map (famine is clear where nobody starved).
-pub fn province_tables(sim: &Sim) -> Vec<Rgba> {
-    let w = &sim.world;
-    let count = w.provinces.count;
+/// strongly the colour covers the map (famine and drought are clear where there is none). `world`
+/// gives the provinces' areas and the seed for their colours; `v` the values shown.
+pub fn province_tables(world: &World, v: &ProvinceView) -> Vec<Rgba> {
+    let count = world.provinces.count;
     let size = TABLE_WIDTH * table_rows(count);
     let mut out = vec![[0u8; 4]; size * TABLE_LAYERS];
-    let people = w.province_population();
     for p in 0..count {
-        let [r, g, b] = province_color(p as u32, w.params.seed);
+        let [r, g, b] = province_color(p as u32, world.params.seed);
         out[TABLE_FILL * size + p] = [r, g, b, 255];
 
-        let density = people[p] as f64 / w.provinces.area_km2[p].max(1e-9);
+        let density = v.people[p] / world.provinces.area_km2[p].max(1e-9);
         let t = ((density.max(1e-3).log10() + 2.0) / 4.0).clamp(0.0, 1.0); // 0.01 .. 100 per km²
         let [r, g, b] = ramp(&[[250, 245, 210], [240, 180, 90], [200, 70, 40], [90, 20, 30]], t);
         out[TABLE_POPULATION * size + p] = [r, g, b, 255];
 
-        let starved = w.starved_this_year[p];
-        out[TABLE_FAMINE * size + p] = if starved == 0 {
+        let starved = v.starved[p];
+        out[TABLE_FAMINE * size + p] = if starved < 0.5 {
             [0, 0, 0, 0]
         } else {
-            let share = starved as f64 / (people[p] + starved) as f64;
+            let share = starved / (v.people[p] + starved);
             let [r, g, b] = ramp(&[[250, 200, 120], [230, 110, 50], [160, 15, 15]], (share * 5.0).clamp(0.0, 1.0));
             [r, g, b, 255]
         };
+
+        // Cracked-earth browns, stronger the more rain is missing.
+        let d = v.drought[p].clamp(0.0, 1.0);
+        let [r, g, b] = ramp(&[[214, 186, 120], [170, 110, 50], [110, 60, 25]], d);
+        out[TABLE_DROUGHT * size + p] = [r, g, b, (255.0 * (d * 1.6).min(1.0)).round() as u8];
     }
     out
+}
+
+/// The tables for the world as it stands.
+pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
+    province_tables(&sim.world, &ProvinceView::now(sim))
 }
 
 fn biome_color(b: Biome) -> [u8; 3] {

@@ -417,7 +417,12 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - Save format with all the fields listed under "What the save format needs", in `postcard`; a save taken while requests are in flight resumes bit for bit.
    - Null and simple versions of terrain and climate, chosen at world creation (`--terrain`, `--climate`).
    - Splitting food from people changed how a given seed plays out, so results differ from step 2 for the same seed.
-4. **Time controls and inspector.** Playback, interpolation, lookahead, stepping, the inspector with on-demand replay tracing, the daily event log. Target story 1 (famine half) passes.
+4. **Time controls and inspector.** Done Oct 14 (`crates/app` and `crates/sim`, see their READMEs).
+   - The simulation runs on its own thread, up to 120 days ahead of the day shown. Speeds: pause, a day, a week, a month or a year a second, and as fast as the simulation goes; step a day or a week; run to a year. Province values blend between days.
+   - Going back: a checkpoint at the start of every year, and `rewind` to any earlier day by replaying from it. A poke throws the days computed ahead away this way.
+   - The inspector: every value of a province with the module that sets it and the day it last changed; the change requests settled that day; "why?", which replays that day with tracing on and lists each module's own explanation and every change; and the province's daily event log, filterable by source.
+   - Story 1's famine half needed two things the step didn't list: a way to start a drought (a poke, stored in the command log) and harvests that fall when rain does (Weather v0 "droughts" owns a per-province rain shortfall, and the harvest reads it). Both are in. The story passes as a test (`crates/sim/tests/stories.rs`).
+   - Left for later: scrubbing back through history in the window, and branching a new timeline from a past day (step 5).
 5. **Scenario editor v1.**
    - Map painting with repair, province split/merge/redraw with pop reallocation, pop edits.
    - Command log, undo via snapshot replay, branching from a past day, scenario save/load.
