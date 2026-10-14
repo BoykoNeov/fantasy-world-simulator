@@ -151,6 +151,15 @@ impl Grid {
         4.0 * PI / self.cells() as f64
     }
 
+    /// One step of exactly conserved spreading over edge neighbours: every cell hands an eighth of
+    /// its amount (rounded down) to each of its 4 edge neighbours and keeps the rest.
+    pub fn diffuse_step(&self, values: &[u64], out: &mut [u64]) {
+        out.par_iter_mut().enumerate().for_each(|(c, o)| {
+            let kept = values[c] - 4 * (values[c] / 8);
+            *o = kept + self.neighbors[c].iter().map(|&m| values[m as usize] / 8).sum::<u64>();
+        });
+    }
+
     /// The up to 8 neighbours of a cell: 4 edge neighbours then the existing diagonals.
     pub fn neighbors8(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
         self.neighbors[idx]
@@ -403,6 +412,47 @@ mod tests {
             }
         }
         assert_eq!(poles, 2);
+    }
+
+    /// A required test from the design: spreading across a cube corner, where three faces meet.
+    /// Faces 0 (+X), 2 (+Y) and 4 (+Z) share the corner (1,1,1), and turning the cube a third of a
+    /// way around that corner swaps them. Starting with equal amounts in the three corner cells, the
+    /// result must be exactly the same after that turn, cell for cell, and nothing may be lost.
+    #[test]
+    fn diffusion_across_a_cube_corner_is_conserved_and_symmetric() {
+        for n in [8, 9] {
+            let g = Grid::new(n);
+            let corner = normalize([1.0, 1.0, 1.0]);
+            let corner_cells: Vec<usize> = [[1.02, 1.0, 1.0], [1.0, 1.02, 1.0], [1.0, 1.0, 1.02]]
+                .iter()
+                .map(|&d| g.dir_to_cell(normalize(d)))
+                .collect();
+            for &c in &corner_cells {
+                assert!(dot(g.center[c], corner) > 0.99, "n={n}: {c} is not at the corner");
+                assert_eq!(g.diagonals[c].iter().filter(|&&m| m == NONE).count(), 1);
+            }
+            let mut v = vec![0u64; g.cells()];
+            for &c in &corner_cells {
+                v[c] = 1_000_000;
+            }
+            let total: u64 = v.iter().sum();
+            let mut out = vec![0u64; g.cells()];
+            for _ in 0..40 {
+                g.diffuse_step(&v, &mut out);
+                std::mem::swap(&mut v, &mut out);
+                assert_eq!(v.iter().sum::<u64>(), total, "n={n}: amount not conserved");
+            }
+            let turn = |d: V3| [d[2], d[0], d[1]];
+            for c in 0..g.cells() {
+                let m = g.dir_to_cell(turn(g.center[c]));
+                assert_eq!(v[c], v[m], "n={n}: cells {c} and {m} differ after the turn");
+            }
+            // It actually spread well beyond the three starting cells, onto all three faces.
+            for f in [0, 2, 4] {
+                let on_face: u64 = (0..g.cells()).filter(|&c| g.face_of(c) == f).map(|c| v[c]).sum();
+                assert!(on_face > 0 && v[corner_cells[0]] < 1_000_000);
+            }
+        }
     }
 
     #[test]
