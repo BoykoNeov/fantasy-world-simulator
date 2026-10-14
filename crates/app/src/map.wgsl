@@ -18,6 +18,7 @@ struct MapParams {
 @group(0) @binding(3) var prov_tex: texture_2d_array<u32>;     // R32Uint: province per cell
 @group(0) @binding(4) var tables_tex: texture_2d_array<f32>;   // RGBA8: per-province colours
 @group(0) @binding(5) var smooth_samp: sampler;
+@group(0) @binding(6) var warp_tex: texture_2d_array<f32>;     // RG32Float: border wobble, in texels
 
 const PI: f32 = 3.14159265358979;
 const FRAC_PI_2: f32 = 1.57079632679490;
@@ -173,11 +174,23 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// Face texel `f` moved by the border wobble (`wobble.rs`): the bilinear blend of the four texels
+// around it, in the same order as `wobble::warp_at`.
+fn warped(f: vec3<f32>) -> vec3<f32> {
+    let face = i32(f.x);
+    let p = f.yz - 0.5;
+    let b = vec2<i32>(floor(p)) + vec2<i32>(1);
+    let t = fract(p);
+    let top = mix(textureLoad(warp_tex, b, face, 0).rg, textureLoad(warp_tex, b + vec2<i32>(1, 0), face, 0).rg, t.x);
+    let bottom = mix(textureLoad(warp_tex, b + vec2<i32>(0, 1), face, 0).rg, textureLoad(warp_tex, b + vec2<i32>(1, 1), face, 0).rg, t.x);
+    return vec3<f32>(f.x, f.yz + mix(top, bottom, t.y));
+}
+
 // The province drawn at face texel `f`. Of the four cells around the point, the province holding
 // the largest share of the bilinear weights wins; sea cells don't count. Its edge then runs smoothly
 // through the middle of each cell side, as the border lines do, instead of stepping along cell
 // edges. With `need_land`, points that are mostly sea have no province (for picking). Ties go to
-// the first cell in the order below. `Camera::pick_province` must give the same answer.
+// the first cell in the order below. `wobble::province_at` must give the same answer.
 fn province_at(f: vec3<f32>, need_land: bool) -> u32 {
     // Written out for the four cells, without arrays or loops: much faster on integrated GPUs.
     let face = i32(f.x);
@@ -247,7 +260,7 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     if (!wanted) {
         return col;
     }
-    let prov = province_at(f, false);
+    let prov = province_at(warped(f), false);
     if (prov == NO_PROVINCE) {
         return col;
     }
@@ -327,7 +340,7 @@ fn fs_pick_province(@builtin(position) pos: vec4<f32>) -> @location(0) u32 {
     if (u.z < 0.5) {
         return NO_PROVINCE;
     }
-    return province_at(dir_to_face_texel(lonlat_to_dir(wrap_lon(params.view.x + u.x), u.y)), true);
+    return province_at(warped(dir_to_face_texel(lonlat_to_dir(wrap_lon(params.view.x + u.x), u.y))), true);
 }
 
 // ---------------------------------------------------------------------------------------------

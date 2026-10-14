@@ -24,10 +24,12 @@ What exists:
   then run through the middle of each cell side, as the border lines do, instead of stepping along
   cell edges, and the hover inspector names exactly the province drawn under the pointer (checked on
   the GPU, pixel by pixel). The lookup is skipped when no province layer is on.
+- **Hand-drawn wobble on province borders** (`wobble.rs`): one smooth field, about 4 cells in
+  wavelength and under half a cell in reach, moves where province colours are looked up; each border
+  line is moved to match, and picking uses the same field. It fades out next to the sea and along big
+  rivers, so borders meet the coast exactly and river borders stay on their river.
 
 Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
-Borders still run in fairly straight stretches between grid directions: smooth, but not yet as
-irregular as real borders.
 
 ## Running
 
@@ -74,6 +76,8 @@ results are in `bench/results/`.
   two rounds each, oval map. Default layers: pan 9.3–9.5 → 10.2 ms, zoom 12.9–13.0 → 12.1–12.3 ms.
   Province colours on: pan 10.4–10.5 → 10.4 ms, zoom 13.4–14.5 → 12.3–13.0 ms. The same, within
   noise. A first version that used small arrays and loops cost 3–4 ms more per frame on this GPU.
+- **The border wobble** (same method): with province colours on, pan 9.1–9.6 → 9.9–10.3 ms and zoom
+  11.6–11.7 → 12.0–12.7 ms, about 0.7 ms a frame; with no province layer on, nothing.
 - **8.4 ms is a cap, not the rectangle's real cost.** Something system-wide holds frames to about 120 a
   second (the renderer trial hit the same 8.4 ms floor on the RTX 5090). The rectangle reaches it.
 - **The oval costs more than the rectangle**: each pixel's map position needs a few steps of Newton's

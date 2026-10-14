@@ -6,3 +6,4 @@ pub mod geometry;
 pub mod gpu;
 pub mod layers;
 pub mod projection;
+pub mod wobble;

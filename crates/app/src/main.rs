@@ -12,6 +12,7 @@ use app::bench;
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
 use app::layers;
 use app::projection::{Camera, Projection};
+use app::wobble::ProvinceLookup;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use sim::config::Config;
@@ -155,8 +156,8 @@ struct MapApp {
     layers: LayerSettings,
     /// Cell under the pointer, and the province drawn there (NONE at sea).
     hover: Option<(usize, u32)>,
-    /// Province per texel of the bordered faces, as on the GPU, for picking provinces.
-    province_halo: Vec<u32>,
+    /// Finds the province drawn under the pointer, as the GPU does.
+    provinces: ProvinceLookup,
     // Scripted runs.
     frame: u32,
     last: Option<Instant>,
@@ -196,7 +197,7 @@ impl MapApp {
             gen_s,
             cam: None,
             hover: None,
-            province_halo: data.province_ids.clone(),
+            provinces: ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() },
             frame: 0,
             last: None,
             last_dt_ms: 0.0,
@@ -388,7 +389,7 @@ impl eframe::App for MapApp {
                         cam.zoom_at((scroll * 0.003).exp(), x, y, w, h);
                     }
                     let grid = &self.sim.world.grid;
-                    self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(grid.n, &self.province_halo, x, y, w, h).unwrap_or(NONE)));
+                    self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(&self.provinces, x, y, w, h).unwrap_or(NONE)));
                 }
                 if response.dragged()
                     && let Some(p) = response.interact_pointer_pos()

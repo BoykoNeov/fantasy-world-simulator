@@ -5,7 +5,8 @@
 //! relative to the central meridian, so turning the world under the map is just a change of that
 //! meridian.
 
-use sim::grid::{ab_to_uv, dir_to_face_ab, lonlat_to_dir, wrap_lon, Grid, NONE};
+use crate::wobble::ProvinceLookup;
+use sim::grid::{lonlat_to_dir, wrap_lon, Grid, NONE};
 use std::f64::consts::{FRAC_PI_2, PI};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,43 +173,11 @@ impl Camera {
         self.screen_to_lonlat(x, y, w, h).map(|(lon, lat)| grid.dir_to_cell(lonlat_to_dir(lon, lat)))
     }
 
-    /// The province drawn under a pixel, by the shader's rule (`province_at` in `map.wgsl`): `None`
-    /// off the map or where the point is mostly sea. `halo_ids` is the province per texel of the
-    /// bordered faces of size `n`, as uploaded to the GPU.
-    pub fn pick_province(&self, n: usize, halo_ids: &[u32], x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
+    /// The province drawn under a pixel, by the shader's rule (`province_at` after `warped` in
+    /// `map.wgsl`): `None` off the map or where the point is mostly sea.
+    pub fn pick_province(&self, look: &ProvinceLookup, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
         let (lon, lat) = self.screen_to_lonlat(x, y, w, h)?;
-        let (face, a, b) = dir_to_face_ab(lonlat_to_dir(lon, lat));
-        let texel = |c: f64| (ab_to_uv(c) + 1.0) * 0.5 * n as f64 - 0.5;
-        let (px, py) = (texel(a), texel(b));
-        let (bx, by) = (px.floor() as i64 + 1, py.floor() as i64 + 1);
-        let (tx, ty) = (px - px.floor(), py - py.floor());
-        let m = n as i64 + 2;
-        let mut ids = [NONE; 4];
-        let mut wt = [0.0; 4];
-        let mut land = 0.0;
-        for k in 0..4 {
-            let (ox, oy) = (k as i64 & 1, k as i64 >> 1);
-            let (hx, hy) = ((bx + ox).clamp(0, m - 1), (by + oy).clamp(0, m - 1));
-            ids[k] = halo_ids[(face as i64 * m * m + hy * m + hx) as usize];
-            wt[k] = (if ox == 1 { tx } else { 1.0 - tx }) * (if oy == 1 { ty } else { 1.0 - ty });
-            if ids[k] != NONE {
-                land += wt[k];
-            }
-        }
-        if land < 0.5 {
-            return None;
-        }
-        let mut best = (NONE, 0.0);
-        for k in 0..4 {
-            if ids[k] == NONE {
-                continue;
-            }
-            let share: f64 = (0..4).filter(|&j| ids[j] == ids[k]).map(|j| wt[j]).sum();
-            if share > best.1 {
-                best = (ids[k], share);
-            }
-        }
-        Some(best.0)
+        Some(look.at(lonlat_to_dir(lon, lat))).filter(|&p| p != NONE)
     }
 
     /// Drag by (dx, dy) pixels. The point grabbed at screen row `grab_y` follows the cursor exactly:

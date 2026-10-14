@@ -175,6 +175,7 @@ fn gpu_and_cpu_pick_the_same_provinces() {
     let data = MapData::build(&sim);
     let map = MapGpu::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &data);
     let pipeline = id_pipeline(&device, Some(&map.layout), "fs_pick_province");
+    let look = app::wobble::ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
     let n = sim.world.grid.n;
     let (w, h) = (W as f64, H as f64);
     let views = [
@@ -195,7 +196,7 @@ fn gpu_and_cpu_pick_the_same_provinces() {
         let u = gpu::uniforms(&cam, n, w, h, (0.0, 0.0), 1.0, &LayerSettings::default(), NONE);
         queue.write_buffer(&map.uniforms, 0, bytemuck::bytes_of(&u));
         let got = render_ids(&device, &queue, &pipeline, &map.bind_group);
-        let cpu = |x: f64, y: f64| cam.pick_province(n, &data.province_ids, x + 0.5, y + 0.5, w, h).unwrap_or(NONE);
+        let cpu = |x: f64, y: f64| cam.pick_province(&look, x + 0.5, y + 0.5, w, h).unwrap_or(NONE);
         let mut differ = 0;
         for y in 0..H {
             for x in 0..W {

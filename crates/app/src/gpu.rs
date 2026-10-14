@@ -79,6 +79,8 @@ pub struct MapData {
     pub terrain: Vec<Rgba>,
     pub fields: Vec<Rgba>,
     pub province_ids: Vec<u32>,
+    /// Border wobble per texel, in texels (`wobble.rs`).
+    pub warp: Vec<[f32; 2]>,
     pub tables: Vec<Rgba>,
     pub lines: Vec<LineInstance>,
     pub line_ranges: [Range<u32>; 4],
@@ -88,13 +90,17 @@ impl MapData {
     pub fn build(sim: &Sim) -> Self {
         let w = &sim.world;
         let halo = layers::halo_cells(&w.grid);
-        let (lines, line_ranges) = crate::geometry::instances(&crate::geometry::all_lines(w));
+        let warp = crate::wobble::halo_warp(w, &halo);
+        let mut chains = crate::geometry::all_lines(w);
+        crate::wobble::warp_borders(&mut chains, w.grid.n, &warp);
+        let (lines, line_ranges) = crate::geometry::instances(&chains);
         MapData {
             n: w.grid.n,
             provinces: w.provinces.count,
             terrain: layers::spread(&halo, &layers::terrain(w)),
             fields: layers::spread(&halo, &layers::fields(w)),
             province_ids: layers::spread(&halo, &w.provinces.of_cell),
+            warp,
             tables: layers::province_tables(sim),
             lines,
             line_ranges,
@@ -140,6 +146,7 @@ impl MapGpu {
         let terrain = array_texture(device, queue, "terrain", (m, m, 6), rgba, bytemuck::cast_slice(&data.terrain));
         let fields = array_texture(device, queue, "fields", (m, m, 6), rgba, bytemuck::cast_slice(&data.fields));
         let provinces = array_texture(device, queue, "provinces", (m, m, 6), wgpu::TextureFormat::R32Uint, bytemuck::cast_slice(&data.province_ids));
+        let warp = array_texture(device, queue, "border wobble", (m, m, 6), wgpu::TextureFormat::Rg32Float, bytemuck::cast_slice(&data.warp));
         let table_rows = layers::table_rows(data.provinces) as u32;
         let tables = array_texture(device, queue, "province tables", (TABLE_WIDTH as u32, table_rows, TABLE_LAYERS as u32), rgba, bytemuck::cast_slice(&data.tables));
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -176,6 +183,7 @@ impl MapGpu {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                tex_entry(6, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
@@ -194,6 +202,7 @@ impl MapGpu {
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&array_view(&provinces)) },
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&array_view(&tables)) },
                 wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&array_view(&warp)) },
             ],
         });
 
