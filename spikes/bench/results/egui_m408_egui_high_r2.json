@@ -1,0 +1,13 @@
+{
+  "app": "egui",
+  "adapter": "NVIDIA GeForce RTX 5090 (Vulkan)",
+  "cells": 998784,
+  "border_segments": 121263,
+  "window": [2880, 1620],
+  "pan": {"n": 300, "mean_ms": 8.713, "p50_ms": 8.404, "p95_ms": 10.139, "p99_ms": 14.221, "max_ms": 32.990, "fps_mean": 115},
+  "zoom": {"n": 300, "mean_ms": 10.371, "p50_ms": 8.409, "p95_ms": 19.168, "p99_ms": 42.311, "max_ms": 160.216, "fps_mean": 96},
+  "brush": {"n": 300, "mean_ms": 8.409, "p50_ms": 8.403, "p95_ms": 8.679, "p99_ms": 9.659, "max_ms": 10.335, "fps_mean": 119},
+  "brush_cpu_ms": {"n": 300, "mean_ms": 0.035, "p50_ms": 0.035, "p95_ms": 0.045, "p99_ms": 0.055, "max_ms": 0.057, "fps_mean": 28591},
+  "brush_upload_bytes_avg": 1764,
+  "notes": "world gen 299 ms; partial texture upload per brush stroke; pixels_per_point 1.5"
+}

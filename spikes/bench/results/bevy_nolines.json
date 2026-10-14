@@ -1,0 +1,13 @@
+{
+  "app": "bevy",
+  "adapter": "NVIDIA GeForce RTX 5090 (Vulkan)",
+  "cells": 998784,
+  "border_segments": 121263,
+  "window": [2880, 1620],
+  "pan": {"n": 300, "mean_ms": 28.122, "p50_ms": 16.123, "p95_ms": 61.893, "p99_ms": 101.756, "max_ms": 1669.640, "fps_mean": 36},
+  "zoom": {"n": 300, "mean_ms": 19.262, "p50_ms": 8.548, "p95_ms": 70.428, "p99_ms": 180.764, "max_ms": 623.387, "fps_mean": 52},
+  "brush": {"n": 300, "mean_ms": 11.313, "p50_ms": 8.897, "p95_ms": 22.820, "p99_ms": 37.147, "max_ms": 61.500, "fps_mean": 88},
+  "brush_cpu_ms": {"n": 300, "mean_ms": 0.044, "p50_ms": 0.028, "p95_ms": 0.112, "p99_ms": 0.228, "max_ms": 1.598, "fps_mean": 22732},
+  "brush_upload_bytes_avg": 3995136,
+  "notes": "world gen 1443 ms; brush upload idiomatic whole-image re-upload; scale factor 1.5"
+}

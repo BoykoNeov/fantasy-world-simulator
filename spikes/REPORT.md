@@ -3,13 +3,16 @@
 October 14, 2026. Question from the design doc: which app shell should draw the map and the panels?
 
 **Recommendation: egui + wgpu (via eframe).** Both draw the same picture at about the same speed. egui wins
-on everything around the drawing:
+on what is certain:
 
-- It is stable on the weak integrated GPU, where Bevy crashed in 15 of 17 runs.
 - It updates only the part of a texture that changed. Bevy's standard path re-uploads the whole texture.
+- It needed no engine defaults switched off. Bevy needed three.
 - It rebuilds about 5× faster after a change, which matters when an agent iterates on the code.
 - It is a fifth of the size.
-- It needed no engine defaults switched off.
+
+**Open risk, not yet explained:** on the weak integrated GPU, Bevy crashed in 15 of 17 runs with border lines
+on, while egui never crashed drawing the same lines. I didn't find the cause, and it may be a mistake in my
+Bevy line setup rather than a Bevy defect (see Finding 2).
 
 Bevy would be worth revisiting if the project ever wants 3D, an asset pipeline, or many animated sprites.
 None of that is in the design today. **This is a recommendation; the decision is yours.**
@@ -61,7 +64,7 @@ better; 8.4 ms is 120 frames a second.
 | Crates pulled in | 168 | 370 |
 | Release program size | 14 MB | 72 MB |
 | Rebuild after a one-line change (debug / release) | 3.1 s / 2.4 s | 19.8 s / 13.0 s |
-| Breaking releases in 2026 | 0.34 May, 0.35 June, 0.36 August | 0.19 June, 0.20 October 8 |
+| Breaking releases in 2026 | 0.34.x by May, 0.35 June, 0.36 August | 0.19 June, 0.20 October 8 |
 | Crashes on the integrated Radeon | 0 of 8 runs | 15 of 17 runs with border lines; 0 of 4 without |
 
 How to read the numbers:
@@ -93,11 +96,15 @@ How to read the numbers:
 
 3. **Bevy's standard way of updating a texture re-uploads all of it.** Changing an `Image` asset makes
    Bevy copy the whole texture to the GPU, 3.9 MB per brush stroke against 1.7 KB for the patch that
-   changed. On this map the cost is small, about 0.6 ms per frame on the integrated GPU. It grows with world
-   size and with how often the simulation repaints a layer. The political layer changes daily, so a Huge
-   world at 365x would re-upload ~8 MB × 365 per second for that one layer. Uploading only the patch takes
-   ~25 lines of hand-written Bevy render-world code. It worked first time and closed the gap. In egui it is
-   one `write_texture` call.
+   changed. On this map the cost is small, about 0.6 ms per frame on the integrated GPU, and manageable at
+   today's sizes.
+   - It becomes a real cost only for per-cell layers that change often. Examples are the weather layer
+     (daily, per the design's rendering table), climate overlays (monthly), and terrain painting in the
+     scenario editor.
+   - Ownership changes are *not* affected. Realm colours live in a small per-province colour table, about
+     256×20 pixels. The per-cell province texture only changes when borders are redrawn.
+   - Uploading only the patch takes ~25 lines of hand-written Bevy render-world code. It worked first time
+     and closed the gap. In egui it is one `write_texture` call.
 
 4. **Bevy's game-engine defaults had to be switched off three times.**
    - It drops to 60 frames a second whenever its window loses focus. That made Bevy look half as fast until
@@ -160,6 +167,8 @@ Environment variables:
 - Bevy only: `BEVY_PARTIAL=1` (patch upload instead of whole-texture re-upload).
 - Bevy only, diagnostic switches: `BEVY_NO_LINES=1`, `BEVY_NO_TEXT=1`, `BEVY_FREEZE_MATERIALS=1`,
   `BEVY_SYNC_PIPELINES=1`.
+
+The benchmark scripts (Windows PowerShell; they write to `W:\temp\claude\fantasymap-spike\out` by default) and the raw per-run JSON results behind the tables are in `bench/`.
 
 Tests for the shared code:
 

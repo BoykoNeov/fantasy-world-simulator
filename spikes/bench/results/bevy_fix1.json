@@ -1,0 +1,13 @@
+{
+  "app": "bevy",
+  "adapter": "AMD Radeon(TM) Graphics (Vulkan)",
+  "cells": 998784,
+  "border_segments": 121263,
+  "window": [2880, 1620],
+  "pan": {"n": 300, "mean_ms": 11.194, "p50_ms": 11.142, "p95_ms": 11.955, "p99_ms": 12.741, "max_ms": 14.128, "fps_mean": 89},
+  "zoom": {"n": 300, "mean_ms": 10.976, "p50_ms": 10.854, "p95_ms": 12.154, "p99_ms": 14.238, "max_ms": 15.929, "fps_mean": 91},
+  "brush": {"n": 300, "mean_ms": 11.853, "p50_ms": 11.800, "p95_ms": 12.580, "p99_ms": 13.042, "max_ms": 13.428, "fps_mean": 84},
+  "brush_cpu_ms": {"n": 300, "mean_ms": 0.031, "p50_ms": 0.028, "p95_ms": 0.045, "p99_ms": 0.057, "max_ms": 0.137, "fps_mean": 32512},
+  "brush_upload_bytes_avg": 3995136,
+  "notes": "world gen 244 ms; brush upload idiomatic whole-image re-upload; scale factor 1.5"
+}

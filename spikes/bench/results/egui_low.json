@@ -1,0 +1,13 @@
+{
+  "app": "egui",
+  "adapter": "AMD Radeon(TM) Graphics (Vulkan)",
+  "cells": 998784,
+  "border_segments": 121263,
+  "window": [2880, 1620],
+  "pan": {"n": 300, "mean_ms": 12.353, "p50_ms": 12.374, "p95_ms": 13.588, "p99_ms": 15.366, "max_ms": 17.893, "fps_mean": 81},
+  "zoom": {"n": 300, "mean_ms": 15.430, "p50_ms": 12.339, "p95_ms": 34.316, "p99_ms": 68.595, "max_ms": 125.662, "fps_mean": 65},
+  "brush": {"n": 300, "mean_ms": 9.800, "p50_ms": 9.786, "p95_ms": 10.202, "p99_ms": 10.876, "max_ms": 12.609, "fps_mean": 102},
+  "brush_cpu_ms": {"n": 300, "mean_ms": 0.050, "p50_ms": 0.049, "p95_ms": 0.070, "p99_ms": 0.081, "max_ms": 0.088, "fps_mean": 20098},
+  "brush_upload_bytes_avg": 1764,
+  "notes": "world gen 264 ms; partial texture upload per brush stroke; pixels_per_point 1.5"
+}
