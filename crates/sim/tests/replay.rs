@@ -151,3 +151,30 @@ fn last_changed_days_follow_the_running_world() {
     // Generation's work never changes once the world runs.
     assert!(sim.last_change[elevation].is_empty());
 }
+
+#[test]
+fn going_back_years_and_forward_again_gives_the_same_world_and_log() {
+    use sim::edit::{Brush, Edit};
+    let mut a = Sim::new(&harsh(4)).unwrap();
+    a.strict = true;
+    a.run_to_year(1);
+    let (lon, lat) = sim::grid::dir_to_lonlat(a.world.provinces.center[0]);
+    a.edit(Edit::Paint { path: vec![[lon.to_degrees(), lat.to_degrees()]], radius_km: 800.0, brush: Brush::Raise(600.0) }).unwrap();
+    a.run_days(100);
+    let d = drought(&a);
+    a.poke(d);
+    let end = a.calendar.year_start(5) + 200;
+    a.run_days(end - a.day);
+    let (fp, events) = (a.fingerprint(), log(&a));
+
+    // Back four years (past the edit) and forward again: the forward jump starts from a kept
+    // checkpoint more than a year ahead.
+    a.goto(a.calendar.year_start(1) + 50).unwrap();
+    a.goto(end).unwrap();
+    assert_eq!(a.fingerprint(), fp);
+    // The year before the day is in the log again, as the famine layer needs it.
+    let year = a.calendar.days_per_year() as u64;
+    let recent = |l: &[Posted]| l.iter().filter(|p| p.day + year >= end).cloned().collect::<Vec<_>>();
+    assert_eq!(recent(&log(&a)), recent(&events));
+    assert_eq!(a.problems, Default::default());
+}

@@ -4,7 +4,7 @@
 //!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--days D] [--select best|P] [--explain]
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
-//!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P]
+//!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
@@ -12,9 +12,9 @@
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
-//! playing. `--paint` and `--split` edit the world through the window once it is open, as a
-//! player would (raise land along a short stroke; split half a province off), for scripted
-//! screenshots of an edited map.
+//! playing. `--paint`, `--split` and `--undo` edit the world through the window once it is open, in
+//! the order given, as a player would (raise land along a short stroke; split half a province off
+//! and select the new one; take back the last change), for scripted screenshots of an edited map.
 //! `--open` shows a saved world instead of making one: a scenario (`.toml`) or a save of its
 //! timelines (world options, `--years`, `--drought` and `--days` are then ignored).
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
@@ -47,8 +47,11 @@ use std::time::Instant;
 #[derive(Clone, Copy)]
 enum LiveEdit {
     Raise { lon: f64, lat: f64, radius_km: f64, metres: f32 },
-    /// Half of a province (`None`: the one that grows the most food) becomes a new one.
+    /// Half of a province (`None`: the one that grows the most food) becomes a new one, which is
+    /// then selected.
     Split(Option<u32>),
+    /// Take back the last change.
+    Undo,
 }
 
 /// Where a drought poke from the command line goes.
@@ -192,6 +195,7 @@ impl Options {
                     let x = numbers(&value(&mut i), 4, "--paint LON,LAT,RADIUS_KM,METRES");
                     o.live_edits.push(LiveEdit::Raise { lon: x[0], lat: x[1], radius_km: x[2], metres: x[3] as f32 });
                 }
+                "--undo" => o.live_edits.push(LiveEdit::Undo),
                 "--split" => {
                     let v = value(&mut i);
                     o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
@@ -534,6 +538,11 @@ impl MapApp {
                 self.geo.set_field(*id, data.clone()).expect("the worker's world has the same shape");
             }
             self.shown_state = front.state.clone();
+            // Fewer provinces now (an undone split, going back past one, another timeline): a
+            // selected province past the end is gone.
+            if self.selected.is_some_and(|p| p as usize >= self.geo.provinces.count) {
+                (self.selected, self.pop_edit, self.food_edit) = (None, None, None);
+            }
         }
         self.rebuild_map();
         let front = &self.frames[0];
@@ -624,9 +633,10 @@ impl MapApp {
                 let w = &self.geo;
                 let p = p.unwrap_or(breadbasket(w) as u32);
                 let cells: Vec<u32> = (0..w.grid.cells() as u32).filter(|&c| w.provinces.of_cell[c as usize] == p).collect();
-                self.selected = Some(p);
+                self.selected = Some(w.provinces.count as u32);
                 Edit::Split { cells: cells[..cells.len() / 2].to_vec() }
             }
+            LiveEdit::Undo => return self.change(Change::Undo),
         };
         self.send_edit(Ok(edit));
     }
@@ -708,7 +718,10 @@ impl MapApp {
             ui.small(format!("showing {:.0} days a second · simulation {ahead} days ahead · {ms:.3} ms per simulated day", self.rate.days_per_second()));
         });
         self.history_bar(ui);
+        // Keys typed into a text box are not shortcuts.
+        let typing = ui.ctx().egui_wants_keyboard_input();
         let (undo, redo) = ui.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::Z), i.modifiers.command && i.key_pressed(egui::Key::Y)));
+        let (undo, redo) = (undo && !typing, redo && !typing);
         if self.at_the_edge() && self.waiting.is_none() {
             if undo && self.status.can_undo {
                 self.change(Change::Undo);
@@ -719,6 +732,7 @@ impl MapApp {
         }
         // Space pauses and resumes at a day a second; the right arrow steps a day.
         let (space, right) = ui.input(|i| (i.key_pressed(egui::Key::Space), i.key_pressed(egui::Key::ArrowRight)));
+        let (space, right) = (space && !typing, right && !typing);
         if space {
             if self.clock.speed == Speed::Paused { self.clock.play(Speed::DaysPerSecond(1.0)) } else { self.clock.pause() }
         }
@@ -1189,7 +1203,8 @@ impl eframe::App for MapApp {
         egui::Panel::left("controls").exact_size(270.0).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| self.side_panel(ui));
         });
-        if let Some(p) = self.selected {
+        // Only a province the day shown has (a selection can outlive it, or come before it).
+        if let Some(p) = self.selected.filter(|&p| (p as usize) < self.geo.provinces.count) {
             egui::Panel::right("inspector").default_size(460.0).show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui, p));
             });
@@ -1230,7 +1245,9 @@ impl eframe::App for MapApp {
                         cam.zoom_at((scroll * 0.003).exp(), x, y, w, h);
                     }
                     let grid = &self.geo.grid;
-                    self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(&self.provinces, x, y, w, h).unwrap_or(NONE)));
+                    // The picture may still show a map with more provinces than the day shown has.
+                    let count = self.geo.provinces.count as u32;
+                    self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(&self.provinces, x, y, w, h).filter(|&p| p < count).unwrap_or(NONE)));
                 }
                 let draws = self.editor.draws();
                 let planet_km = self.geo.params.radius_km;

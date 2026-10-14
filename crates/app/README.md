@@ -89,8 +89,10 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
   `drought`, `provinces` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
-- `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`: once the window is open, raise land along a
-  short stroke, or split half a province off, as a player would (for scripted screenshots).
+- `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`, `--undo`: once the window is open, in the
+  order given, raise land along a short stroke, split half a province off (and select the new one),
+  or take back the last change, as a player would (for scripted screenshots; `--split best --undo`
+  checks that the window copes with provinces going away).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.
 - `--bench --out DIR --tag NAME`: a scripted full turn of the world, then a zoom to 8×. It writes a
