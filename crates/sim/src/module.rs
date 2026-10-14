@@ -1,0 +1,367 @@
+//! The module contract.
+//!
+//! Every module fills a slot and declares a manifest: the fields it reads, owns and sends change
+//! requests to, its cadence, and the events it emits and handles. Modules never call each other.
+//! They read fields, write only the fields they own, ask owners for changes, and send events.
+//!
+//! The engine checks a configuration once, at world creation or load ([`plan`]): no field has two
+//! owners, every request goes to an owner, everything read exists, and there are no cycles. The
+//! run order within a day is derived from the manifests (owners before their readers), with ties
+//! broken by slot id, so it is the same every time.
+
+use crate::calendar::Calendar;
+use crate::events::{Event, EventKind};
+use crate::fields::{self, FieldId, Quantity};
+use crate::requests::{Cause, Priority, Request};
+use crate::world::World;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use std::fmt;
+
+/// A domain that versions fill. The order is the tie-break for run order, and saves store slots by
+/// position: append new slots at the end, never reorder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Slot {
+    Terrain,
+    Climate,
+    Biomes,
+    Rivers,
+    Fertility,
+    Provinces,
+    /// Economics v0 is "food vs population": harvests and food stores.
+    Economics,
+    Population,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Cadence {
+    /// Runs once, while the world is generated.
+    Generation,
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+impl Cadence {
+    pub fn due(self, cal: &Calendar, day: u64) -> bool {
+        match self {
+            Cadence::Generation => false,
+            Cadence::Daily => true,
+            Cadence::Weekly => cal.is_week_start(day),
+            Cadence::Monthly => cal.is_month_start(day),
+            Cadence::Yearly => cal.is_year_start(day),
+        }
+    }
+}
+
+pub struct Manifest {
+    pub slot: Slot,
+    /// Name of this version within its slot, e.g. "null" or "noise".
+    pub version: &'static str,
+    pub cadence: Cadence,
+    pub reads: &'static [&'static str],
+    pub owns: &'static [&'static str],
+    /// Fields this module asks the owner to change. Grants come back the next day as
+    /// [`Event::Granted`], addressed to this module.
+    pub requests: &'static [&'static str],
+    /// Fields that must have an active owner (beyond what `reads` needs).
+    pub requires: &'static [&'static str],
+    pub emits: &'static [EventKind],
+    pub handles: &'static [EventKind],
+    /// Layout of the module's private state in saves. Change it whenever that layout changes.
+    pub state_schema: &'static str,
+}
+
+impl Manifest {
+    /// A generation module: it reads some fields and writes the ones it owns, once.
+    pub const fn generation(slot: Slot, version: &'static str, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
+        Manifest { slot, version, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+    }
+}
+
+/// Per-day running totals of conserved quantities that moved, by cause.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Flows(pub Vec<(Quantity, Cause, i64)>);
+
+impl Flows {
+    pub fn add(&mut self, q: Quantity, cause: Cause, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        match self.0.iter_mut().find(|(fq, fc, _)| *fq == q && *fc == cause) {
+            Some(f) => f.2 += delta,
+            None => self.0.push((q, cause, delta)),
+        }
+    }
+    pub fn get(&self, q: Quantity, cause: Cause) -> i64 {
+        self.0.iter().find(|(fq, fc, _)| *fq == q && *fc == cause).map_or(0, |f| f.2)
+    }
+    pub fn net(&self, q: Quantity) -> i64 {
+        self.0.iter().filter(|f| f.0 == q).map(|f| f.2).sum()
+    }
+    pub fn merge(&mut self, o: &Flows) {
+        for &(q, c, d) in &o.0 {
+            self.add(q, c, d);
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// What modules produce during one stage; the engine collects it after each call.
+#[derive(Default)]
+pub struct Outbox {
+    pub requests: Vec<Request>,
+    pub events: Vec<Event>,
+    pub flows: Flows,
+    /// Requests applied, with what was granted; kept for the day so the inspector can say why a
+    /// value changed.
+    pub applied: Vec<(Request, u64)>,
+}
+
+/// Everything a module may use while it runs: the date, the seed, and ways to talk to the rest of
+/// the world without calling anyone.
+pub struct Ctx<'a> {
+    pub day: u64,
+    pub seed: u64,
+    pub calendar: &'a Calendar,
+    pub slot: Slot,
+    pub(crate) out: &'a mut Outbox,
+}
+
+impl Ctx<'_> {
+    /// Ask the owner of `field` to remove `take` from `entity`. Applied at the end of today;
+    /// the grant arrives tomorrow. `tag` comes back with the grant (e.g. which pop asked).
+    pub fn request(&mut self, field: FieldId, entity: u32, take: u64, priority: Priority, cause: Cause, tag: u64) {
+        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, take, priority, cause, tag });
+    }
+
+    pub fn emit(&mut self, e: Event) {
+        self.out.events.push(e);
+    }
+
+    /// Report that a conserved quantity was created (positive) or destroyed (negative).
+    pub fn flow(&mut self, q: Quantity, cause: Cause, delta: i64) {
+        self.out.flows.add(q, cause, delta);
+    }
+
+    /// For owners applying requests: record the grant, report the flow, and tell the requester
+    /// tomorrow.
+    pub fn grant(&mut self, r: &Request, granted: u64) {
+        if let Some(q) = r.field.def().conserved {
+            self.out.flows.add(q, r.cause, -(granted as i64));
+        }
+        self.out.applied.push((*r, granted));
+        self.out.events.push(Event::Granted { request: *r, granted });
+    }
+}
+
+/// A module version. Generation modules implement `generate`; runtime modules implement the rest.
+pub trait Module: Send {
+    fn manifest(&self) -> &'static Manifest;
+
+    /// Generation modules: write the fields this module owns, from the fields it reads.
+    fn generate(&self, _w: &mut World) {}
+
+    /// Runtime modules: set up owned fields at world creation, after generation.
+    fn init(&mut self, _w: &mut World, _cx: &mut Ctx) {}
+
+    /// Main logic, on the module's cadence.
+    fn tick(&mut self, _w: &mut World, _cx: &mut Ctx) {}
+
+    /// Owners: apply today's requests for owned fields, in the fixed order given, and grant each.
+    fn apply_requests(&mut self, _w: &mut World, _requests: &[Request], _cx: &mut Ctx) {}
+
+    /// Events delivered today (emitted yesterday), and grants for this module's requests.
+    fn handle(&mut self, _w: &mut World, _e: &Event, _cx: &mut Ctx) {}
+
+    fn save_state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        if bytes.is_empty() { Ok(()) } else { Err(format!("{:?} keeps no private state", self.manifest().slot)) }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigError(pub String);
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "bad module configuration: {}", self.0)
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+/// A checked configuration: run orders, as indices into the manifest list, and each field's owner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Plan {
+    pub generation: Vec<usize>,
+    pub runtime: Vec<usize>,
+    pub owner: Vec<Option<usize>>,
+}
+
+/// Check a configuration and derive its run order. Fails with a message naming the modules and
+/// fields involved.
+pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
+    let err = |s: String| Err(ConfigError(s));
+    let name = |m: &Manifest| format!("{:?} \"{}\"", m.slot, m.version);
+    let lookup = |m: &Manifest, f: &str| fields::id(f).ok_or_else(|| ConfigError(format!("{} names unknown field {f}", name(m))));
+
+    let mut slots = BTreeSet::new();
+    let mut owner: Vec<Option<usize>> = vec![None; fields::FIELDS.len()];
+    for (i, m) in manifests.iter().enumerate() {
+        if !slots.insert(m.slot) {
+            return err(format!("two modules fill the {:?} slot", m.slot));
+        }
+        for f in m.owns {
+            let id = lookup(m, f)?;
+            if let Some(o) = owner[id.0 as usize] {
+                return err(format!("{f} has two owners: {} and {}", name(manifests[o]), name(m)));
+            }
+            owner[id.0 as usize] = Some(i);
+        }
+    }
+    let generation = |i: usize| manifests[i].cadence == Cadence::Generation;
+    for (i, m) in manifests.iter().enumerate() {
+        for f in m.reads {
+            let id = lookup(m, f)?;
+            match owner[id.0 as usize] {
+                None if id.def().default == fields::Default::Required => {
+                    return err(format!("{} reads {f}, but no active module provides it", name(m)));
+                }
+                Some(o) if generation(i) && !generation(o) => {
+                    return err(format!("{} runs at generation but reads {f}, which {} only sets later", name(m), name(manifests[o])));
+                }
+                _ => {}
+            }
+        }
+        for f in m.requires {
+            if owner[lookup(m, f)?.0 as usize].is_none() {
+                return err(format!("{} requires {f}, but no active module owns it", name(m)));
+            }
+        }
+        for f in m.requests {
+            match owner[lookup(m, f)?.0 as usize] {
+                None => return err(format!("{} sends change requests to {f}, but no active module owns it", name(m))),
+                Some(o) if o == i => return err(format!("{} owns {f}; it writes it directly instead of requesting", name(m))),
+                Some(o) if generation(o) || generation(i) => {
+                    return err(format!("{} requests {f}: requests are for running modules, not generation", name(m)));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let order = |phase: bool| -> Result<Vec<usize>, ConfigError> {
+        let members: Vec<usize> = (0..manifests.len()).filter(|&i| generation(i) == phase).collect();
+        // Edge owner -> reader, within the phase.
+        let mut after: Vec<Vec<usize>> = vec![Vec::new(); manifests.len()];
+        let mut waiting = vec![0usize; manifests.len()];
+        for &i in &members {
+            let mut from = BTreeSet::new();
+            for f in manifests[i].reads {
+                if let Some(o) = owner[fields::known(f).0 as usize]
+                    && o != i
+                    && generation(o) == phase
+                {
+                    from.insert(o);
+                }
+            }
+            for o in from {
+                after[o].push(i);
+                waiting[i] += 1;
+            }
+        }
+        let mut ready: BTreeSet<(Slot, usize)> = members.iter().filter(|&&i| waiting[i] == 0).map(|&i| (manifests[i].slot, i)).collect();
+        let mut out = Vec::new();
+        while let Some(first) = ready.pop_first() {
+            out.push(first.1);
+            for &j in &after[first.1] {
+                waiting[j] -= 1;
+                if waiting[j] == 0 {
+                    ready.insert((manifests[j].slot, j));
+                }
+            }
+        }
+        if out.len() < members.len() {
+            let stuck: Vec<String> = members.iter().filter(|i| !out.contains(i)).map(|&i| name(manifests[i])).collect();
+            return Err(ConfigError(format!("same-day dependency cycle among {}", stuck.join(", "))));
+        }
+        Ok(out)
+    };
+    Ok(Plan { generation: order(true)?, runtime: order(false)?, owner })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
+        Manifest { slot, version: "test", cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+    }
+
+    #[test]
+    fn owners_run_before_readers_and_ties_go_by_slot() {
+        let a = m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]);
+        let b = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.food_stock"]);
+        let c = m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]);
+        let d = m(Slot::Climate, Cadence::Generation, &["cell.elevation"], &["cell.temperature"]);
+        let p = plan(&[&d, &b, &a, &c]).unwrap();
+        // Economics has the lower slot id but reads what Population owns, so it runs second.
+        assert_eq!(p.runtime, vec![2, 1]);
+        assert_eq!(p.generation, vec![3, 0]);
+        // Independent modules: slot order, whatever order they were listed in.
+        let e = m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]);
+        let f = m(Slot::Economics, Cadence::Monthly, &[], &["province.food_stock"]);
+        assert_eq!(plan(&[&e, &f]).unwrap().runtime, vec![1, 0]);
+    }
+
+    fn fails(ms: &[&Manifest], needle: &str) {
+        let e = plan(ms).expect_err("configuration should be refused");
+        assert!(e.0.contains(needle), "message was: {e}");
+    }
+
+    #[test]
+    fn two_owners_are_refused() {
+        let a = m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]);
+        let b = m(Slot::Climate, Cadence::Generation, &[], &["cell.elevation"]);
+        fails(&[&a, &b], "cell.elevation has two owners");
+    }
+
+    #[test]
+    fn unmet_needs_are_refused() {
+        let reads = m(Slot::Climate, Cadence::Generation, &["cell.elevation"], &["cell.temperature"]);
+        fails(&[&reads], "reads cell.elevation, but no active module provides it");
+        let requires = Manifest { requires: &["province.food_stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
+        fails(&[&requires], "requires province.food_stock");
+        let requests = Manifest { requests: &["province.food_stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
+        fails(&[&requests], "sends change requests to province.food_stock, but no active module owns it");
+        let typo = m(Slot::Climate, Cadence::Generation, &["cell.elevaton"], &[]);
+        fails(&[&typo], "unknown field cell.elevaton");
+        // A field with a documented default may be read without an owner.
+        let ok = m(Slot::Population, Cadence::Monthly, &["province.food_stock"], &["pop.size"]);
+        assert!(plan(&[&ok]).is_ok());
+    }
+
+    #[test]
+    fn cycles_are_refused() {
+        let a = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.food_stock"]);
+        let b = m(Slot::Population, Cadence::Monthly, &["province.food_stock"], &["pop.size"]);
+        fails(&[&a, &b], "same-day dependency cycle among Economics \"test\", Population \"test\"");
+    }
+
+    #[test]
+    fn duplicate_slots_and_generation_reading_runtime_fields_are_refused() {
+        let a = m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]);
+        let b = m(Slot::Terrain, Cadence::Generation, &[], &["cell.temperature"]);
+        fails(&[&a, &b], "two modules fill the Terrain slot");
+        let run = m(Slot::Economics, Cadence::Monthly, &[], &["province.food_stock"]);
+        let gen_reader = m(Slot::Provinces, Cadence::Generation, &["province.food_stock"], &[]);
+        fails(&[&run, &gen_reader], "runs at generation but reads province.food_stock");
+    }
+}

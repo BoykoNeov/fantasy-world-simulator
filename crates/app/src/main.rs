@@ -14,15 +14,15 @@ use app::layers;
 use app::projection::{Camera, Projection};
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use sim::calendar::Calendar;
+use sim::config::Config;
 use sim::grid::NONE;
-use sim::pops::PopParams;
 use sim::sim::Sim;
 use sim::world::{Size, WorldParams, RIVER_MIN_FLOW};
 use std::time::Instant;
 
 struct Options {
     params: WorldParams,
+    config: Config,
     size: Size,
     years: i64,
     projection: Projection,
@@ -42,6 +42,7 @@ impl Options {
         let (mut n, mut provinces) = (None, None);
         let mut o = Options {
             params: WorldParams::preset(Size::Large, 7),
+            config: Config::new(WorldParams::preset(Size::Large, 7)),
             size,
             years: 20,
             projection: Projection::EqualEarth,
@@ -72,6 +73,8 @@ impl Options {
                 "--n" => n = Some(value(&mut i).parse().expect("--n")),
                 "--provinces" => provinces = Some(value(&mut i).parse().expect("--provinces")),
                 "--years" => o.years = value(&mut i).parse().expect("--years"),
+                "--terrain" => o.config.modules.terrain = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
+                "--climate" => o.config.modules.climate = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
                 "--projection" => {
                     o.projection = match value(&mut i).as_str() {
                         "oval" => Projection::EqualEarth,
@@ -119,6 +122,7 @@ impl Options {
         if let Some(p) = provinces {
             o.params.provinces = p;
         }
+        o.config.world = o.params.clone();
         o
     }
 }
@@ -162,7 +166,7 @@ struct MapApp {
 impl MapApp {
     fn new(cc: &eframe::CreationContext<'_>, opts: Options) -> Self {
         let t0 = Instant::now();
-        let mut sim = Sim::new(&opts.params, Calendar::standard(), PopParams::default());
+        let mut sim = Sim::new(&opts.config).unwrap_or_else(|e| panic!("{e}"));
         let first = sim.calendar.def.first_year;
         sim.run_to_year(first + opts.years);
         let gen_s = t0.elapsed().as_secs_f64();
@@ -174,7 +178,7 @@ impl MapApp {
         let info = rs.adapter.get_info();
 
         // The most populous province, for the benchmark zoom.
-        let people = sim.pops.province_population(sim.world.provinces.count);
+        let people = sim.world.province_population();
         let top = (0..people.len()).max_by_key(|&p| people[p]).unwrap_or(0);
         let bench_target = sim.world.provinces.center.get(top).map_or((0.0, 0.0), |&d| sim::grid::dir_to_lonlat(d));
 
@@ -210,7 +214,7 @@ impl MapApp {
         ui.heading("Fantasy Planet");
         ui.label(format!("{:?} world, seed {}", self.opts.size, s.world.params.seed));
         ui.label(s.calendar.format(s.day));
-        ui.label(format!("{} people", group(s.pops.total_population())));
+        ui.label(format!("{} people", group(sim::fields::quantity_total(&s.world, sim::fields::Quantity::People))));
         let mut years = 0;
         ui.horizontal(|ui| {
             if ui.button("+1 year").clicked() {
@@ -268,12 +272,12 @@ impl MapApp {
         let p = w.provinces.of_cell[c];
         if p != NONE {
             let p = p as usize;
-            let people = self.sim.pops.province_population(w.provinces.count)[p];
+            let people = w.province_population()[p];
             ui.label(format!("province {p}: {} people, {:.1} per km²", group(people), people as f64 / w.provinces.area_km2[p]));
-            ui.label(format!("food stock {} rations", group(self.sim.pops.food_stock[p])));
+            ui.label(format!("food stock {} rations", group(w.food_stock[p])));
             // The view always stops on the first day of a year, before the yearly reset, so the
             // sim's "this year" count is the year just ended.
-            let starved = self.sim.pops.starved_this_year[p];
+            let starved = w.starved_this_year[p];
             if starved > 0 {
                 ui.label(format!("{} starved last year", group(starved)));
             }

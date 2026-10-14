@@ -73,7 +73,7 @@ pub fn render(sim: &Sim, layer: Layer, width: u32, pixels: &[u32]) -> Vec<u8> {
             })
             .collect(),
         Layer::Population => {
-            let people = sim.pops.province_population(w.provinces.count);
+            let people = w.province_population();
             let density: Vec<f64> = (0..w.provinces.count).map(|p| people[p] as f64 / w.provinces.area_km2[p].max(1e-9)).collect();
             per_province(sim, &terrain, |p| {
                 let t = ((density[p].max(1e-3).log10() + 2.0) / 4.0).clamp(0.0, 1.0); // 0.01 .. 100 per km²
@@ -81,9 +81,9 @@ pub fn render(sim: &Sim, layer: Layer, width: u32, pixels: &[u32]) -> Vec<u8> {
             })
         }
         Layer::Famine => {
-            let people = sim.pops.province_population(w.provinces.count);
+            let people = w.province_population();
             per_province(sim, &terrain, |p| {
-                let starved = sim.pops.starved_this_year[p];
+                let starved = w.starved_this_year[p];
                 if starved == 0 {
                     return [205, 212, 190];
                 }

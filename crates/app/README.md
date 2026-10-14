@@ -31,6 +31,7 @@ cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p a
 Drag to pan, scroll to zoom. Options:
 
 - `--size small|medium|large|huge`, `--seed S`, `--n FACE`, `--provinces N`: the world (default: large, seed 7).
+- `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
 - `--years Y`: how long to run before showing it (default 20).
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.

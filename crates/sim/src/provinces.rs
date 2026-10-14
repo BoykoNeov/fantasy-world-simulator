@@ -6,10 +6,34 @@
 //! Unreached land (islands without a seed) gets new seeds of its own.
 
 use crate::grid::{Grid, NONE, V3};
+use crate::module::{Manifest, Module as SimModule, Slot};
+use crate::world::World;
 use crate::rng::{draw, purpose, unit, Module};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+/// Provinces v0: organic growth from fertile seeds.
+pub struct ProvinceGrowth;
+
+static V0: Manifest = Manifest::generation(
+    Slot::Provinces,
+    "growth",
+    &["cell.elevation", "cell.food_yield"],
+    &["cell.province", "province.cells", "province.area_km2", "province.center", "province.lat", "province.food_capacity"],
+);
+
+impl SimModule for ProvinceGrowth {
+    fn manifest(&self) -> &'static Manifest {
+        &V0
+    }
+    fn generate(&self, w: &mut World) {
+        let p = &w.params;
+        let of_cell = generate(&w.grid, &w.elevation, &w.food_per_cell, p.provinces, p.seed);
+        w.provinces = aggregate(&w.grid, of_cell, &w.food_per_cell, p.radius_km);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Provinces {
     /// Province per cell, [`NONE`] for sea.
     pub of_cell: Vec<u32>,

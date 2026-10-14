@@ -6,10 +6,35 @@
 //! so every drop reaches the sea (or, on land with no sea at all, the lowest point of that land).
 
 use crate::grid::{Grid, NONE};
+use crate::module::{Manifest, Module, Slot};
+use crate::world::World;
 use rayon::prelude::*;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+/// Rivers v0: drainage tree and yearly flow.
+pub struct Rivers;
+
+static V0: Manifest = Manifest::generation(
+    Slot::Rivers,
+    "drainage",
+    &["cell.elevation", "cell.temperature", "cell.rainfall"],
+    &["cell.drainage_receiver", "cell.drainage_order", "cell.river_flow"],
+);
+
+impl Module for Rivers {
+    fn manifest(&self) -> &'static Manifest {
+        &V0
+    }
+    fn generate(&self, w: &mut World) {
+        let drainage = drainage(&w.grid, &w.elevation);
+        let runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km);
+        w.river_flow = accumulate(&drainage, &runoff);
+        w.drainage = drainage;
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Drainage {
     /// Downstream cell, or [`NONE`] for a sink (sea, or the low point of a landmass with no sea).
     pub receiver: Vec<u32>,

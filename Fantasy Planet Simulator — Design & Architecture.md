@@ -36,7 +36,7 @@ The scheduler runs each module on its own cadence. Every module reads fields, su
 - **Timing within a day.** Modules run in their fixed order. An owner's own main-tick writes are visible to modules later in the same day; that is why run order matters. Requests submitted on day N are applied in **one pass at the end of day N**, owner by owner in a fixed order, after every module has run. Nobody sees another module's request take effect halfway through a day.
 - Every owner takes part in that end-of-day pass **on every day it has pending requests**, even if its own main logic runs weekly or monthly. The pass is cheap: it works through a queue and is separate from the owner's main tick. This stops a daily army from eating food that a weekly economy thinks it still has.
 - Within one owner, requests are applied in a fixed order (see Determinism).
-- If requests ask for more than exists, the owner **rations**. Requests carry a priority class. Within a class the available amount is split proportionally. The amount actually granted is reported back to the requester the next day.
+- If requests ask for more than exists, the owner **rations**. Requests carry a priority class, and classes are served in order. Within the class that runs short, the available amount is split proportionally (largest-remainder rule); later classes get nothing. The amount actually granted is reported back to the requester the next day, as an event addressed to it.
 - Every applied request is kept with its cause. This is what the inspector's "why did this change" view reads.
 
 **Module contract.** Every module declares, in its manifest:
@@ -90,7 +90,7 @@ The simulation lives in its own plain-Rust crate with no engine dependency. The 
 | Simulation core | Plain Rust crate (`sim`) | No GC pauses at 1M cells; `rayon` for parallel array passes; runs headless for tests and batch runs |
 | Renderer / UI | **egui + wgpu (via eframe)**, decided Oct 14 after a renderer trial against Bevy (`spikes/REPORT.md`) | Same picture at about the same speed as Bevy; updates only the changed part of a texture, needed no engine defaults switched off, rebuilds ~5× faster, a fifth of the size. The sim doesn't use an engine ECS, so nothing in the sim depended on the choice. Bevy is worth revisiting only if the project ever wants 3D, an asset pipeline or many animated sprites |
 | Config and content | TOML / RON | Human-editable, mod-friendly, no rebuild to rebalance |
-| Saves | Command log + snapshots, `bincode`, versioned format | Deterministic replay, small files, future save → convert → reload |
+| Saves | Command log + snapshots, `postcard`, versioned format | Deterministic replay, small files, future save → convert → reload. `postcard` replaced the planned `bincode` in step 3: bincode was abandoned in 2025 and its last release is deliberately a compile error |
 | Tests | `cargo test` on `sim` with fixed seeds | Quick per-module tests run a few simulated decades headless in seconds; century-scale and 1000-year runs go to nightly / CI |
 
 The `sim`/`app` split matters for modularity too. The renderer only ever sees field arrays and events, so it never depends on which module version is active.
@@ -409,9 +409,13 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - Parchment look, layer sliders (terrain, temperature, rainfall, population, famine, province colours), a hover inspector, and "+1 / +10 years" buttons that re-upload only the per-province tables.
    - Picking is tested against the shader on the GPU.
    - Left for later: place-name labels (nothing has names yet), mipmaps (not needed at current zoom limits), and province colours that still follow cell edges while their borders are smooth.
-3. **Extract the module contract** from the modules that now exist:
-   - manifests, change requests and rationing, event delivery order, field contracts, exact conserved quantities, the save format (with the fields listed under "What the save format needs");
-   - null + simple versions for terrain and climate, to prove choosing versions at world creation.
+3. **Extract the module contract.** Done Oct 14 (`crates/sim`, see its README).
+   - Manifests for every module, generation stages included; the run order is derived from them, and bad configurations (two owners, unmet needs, cycles) are refused at load with a message.
+   - Change requests with rationing (largest-remainder rule), grants delivered the next day; the pops were split into Economics v0 ("food": harvests and stores) and Population v0, so a real module asks another for food.
+   - Event delivery on day N+1 in a documented priority order; field contracts (clamp and report); exact conservation checked after every stage and blamed on the module whose stage broke it.
+   - Save format with all the fields listed under "What the save format needs", in `postcard`; a save taken while requests are in flight resumes bit for bit.
+   - Null and simple versions of terrain and climate, chosen at world creation (`--terrain`, `--climate`).
+   - Splitting food from people changed how a given seed plays out, so results differ from step 2 for the same seed.
 4. **Time controls and inspector.** Playback, interpolation, lookahead, stepping, the inspector with on-demand replay tracing, the daily event log. Target story 1 (famine half) passes.
 5. **Scenario editor v1.**
    - Map painting with repair, province split/merge/redraw with pop reallocation, pop edits.
@@ -448,8 +452,9 @@ After step 5 the game is already a watchable, editable living map; everything af
 - **World sizes:** Small / Medium / Large / Huge presets, with cell count and province count as separate settings. Speed depends on world size × module complexity; smaller worlds (especially fewer provinces) are how to run complex modules fast.
 - **Named characters:** get substantial agency (ambitions, plots, decisions that act on the world), not just aggregate politics.
 - **Planets:** one planet per save.
+- **Rationing:** when requests ask for more than exists, priority classes are served in order and the class that runs short shares proportionally (decided Oct 14). Strict priority alone was rejected because it can starve whole modules out.
+- **Day by day:** the clock ticks daily and each module runs its main logic on its own cadence (decided Oct 14). Running every module every day would make slow modules such as climate cost far more for no visible gain.
 
 ## Open questions
 
-- [ ] Default rationing rule when requests exceed what exists: proportional within priority classes (current proposal), or strict priority only?
-- [ ] "Day by day": does it mean the clock ticks daily while each module keeps its own cadence (current proposal), or that every module runs every day?
+None right now.

@@ -1,13 +1,19 @@
-//! A generated planet: the cell fields and the provinces built on them.
+//! The world: every shared field, as typed arrays keyed by cell, province or pop.
 //!
-//! Generation order: terrain → climate → biomes → rivers → provinces. Each stage is a plain function
-//! over field arrays for now; the module contract is extracted later, from these and the pops.
+//! Generation modules fill the cell and province fields once, in the order their manifests give
+//! (by default: terrain → climate → biomes → rivers → farmland → provinces). Runtime modules then
+//! own the food stores and the pops. Every field can also be read and written by name, as
+//! [`FieldData`], for contracts, fingerprints and saves.
 
 use crate::biome::{self, Biome};
+use crate::config::ModuleConfig;
+use crate::fields::{FieldData, FieldId, Tier, FIELDS};
 use crate::grid::Grid;
-use crate::hydrology::{self, Drainage};
-use crate::provinces::{self, Provinces};
-use crate::{climate, terrain};
+use crate::hydrology::Drainage;
+use crate::module::{plan, Manifest, Module, Slot};
+use crate::pops::Pops;
+use crate::provinces::Provinces;
+use serde::{Deserialize, Serialize};
 
 /// World sizes from the design. Cell count and province count are separate settings; presets are
 /// just starting points.
@@ -19,7 +25,7 @@ pub enum Size {
     Huge,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WorldParams {
     /// Cube face size: the planet has 6 × n × n cells.
     pub n: usize,
@@ -51,6 +57,27 @@ pub const RIVER_MIN_FLOW: u64 = 20_000_000;
 /// How much more food a cell yields when a river runs through it.
 const RIVER_FOOD_BONUS: f64 = 1.6;
 
+/// Farmland v0: food per cell from its biome, its area and whether a river runs through it.
+pub struct Fertility;
+
+static FERTILITY: Manifest =
+    Manifest::generation(Slot::Fertility, "biome yield", &["cell.biome", "cell.river_flow", "cell.elevation"], &["cell.food_yield"]);
+
+impl Module for Fertility {
+    fn manifest(&self) -> &'static Manifest {
+        &FERTILITY
+    }
+    fn generate(&self, w: &mut World) {
+        let km2_per_sr = w.params.radius_km * w.params.radius_km;
+        w.food_per_cell = (0..w.grid.cells())
+            .map(|i| {
+                let river = if w.river_flow[i] >= RIVER_MIN_FLOW && w.elevation[i] >= 0.0 { RIVER_FOOD_BONUS } else { 1.0 };
+                w.biome[i].food_per_km2() * w.grid.area[i] * km2_per_sr * river
+            })
+            .collect();
+    }
+}
+
 pub struct World {
     pub params: WorldParams,
     pub grid: Grid,
@@ -60,66 +87,184 @@ pub struct World {
     pub temperature: Vec<f32>,
     /// Annual total, mm.
     pub rainfall: Vec<f32>,
-    pub coast_distance_km: Vec<f32>,
     pub biome: Vec<Biome>,
     pub drainage: Drainage,
     /// Water passing through each cell per year, thousand m³.
     pub river_flow: Vec<u64>,
-    /// Food a cell yields in an average year, rations.
+    /// Food a cell yields in an average year, rations (field `cell.food_yield`).
     pub food_per_cell: Vec<f64>,
     pub provinces: Provinces,
+    /// Stored food per province, rations.
+    pub food_stock: Vec<u64>,
+    /// People who starved in each province since the last year start.
+    pub starved_this_year: Vec<u64>,
+    pub pops: Pops,
 }
 
 impl World {
-    pub fn generate(params: &WorldParams) -> World {
-        let p = params;
-        let grid = Grid::new(p.n);
-        let elevation = terrain::generate(&grid, p.seed, p.land_fraction);
-        let c = climate::generate(&grid, &elevation, p.seed, p.radius_km);
-        let biome = biome::generate(&elevation, &c.temperature, &c.rainfall);
-        let drainage = hydrology::drainage(&grid, &elevation);
-        let runoff = hydrology::runoff(&grid, &elevation, &c.temperature, &c.rainfall, p.radius_km);
-        let river_flow = hydrology::accumulate(&drainage, &runoff);
-
-        let km2_per_sr = p.radius_km * p.radius_km;
-        let food_per_cell: Vec<f64> = (0..grid.cells())
-            .map(|i| {
-                let river = if river_flow[i] >= RIVER_MIN_FLOW && elevation[i] >= 0.0 { RIVER_FOOD_BONUS } else { 1.0 };
-                biome[i].food_per_km2() * grid.area[i] * km2_per_sr * river
-            })
-            .collect();
-        let of_cell = provinces::generate(&grid, &elevation, &food_per_cell, p.provinces, p.seed);
-        let provinces = provinces::aggregate(&grid, of_cell, &food_per_cell, p.radius_km);
-
+    /// A world with its grid built and every field empty.
+    pub fn empty(params: &WorldParams) -> World {
         World {
-            params: p.clone(),
-            grid,
-            elevation,
-            temperature: c.temperature,
-            rainfall: c.rainfall,
-            coast_distance_km: c.coast_distance_km,
-            biome,
-            drainage,
-            river_flow,
-            food_per_cell,
-            provinces,
+            params: params.clone(),
+            grid: Grid::new(params.n),
+            elevation: Vec::new(),
+            temperature: Vec::new(),
+            rainfall: Vec::new(),
+            biome: Vec::new(),
+            drainage: Drainage::default(),
+            river_flow: Vec::new(),
+            food_per_cell: Vec::new(),
+            provinces: Provinces::default(),
+            food_stock: Vec::new(),
+            starved_this_year: Vec::new(),
+            pops: Pops::default(),
         }
     }
 
-    /// Bit-exact hash of every generated field.
+    /// Generate with the default module versions (no runtime modules run).
+    pub fn generate(params: &WorldParams) -> World {
+        let modules = ModuleConfig::default().build();
+        let manifests: Vec<&Manifest> = modules.iter().map(|m| m.manifest()).collect();
+        let plan = plan(&manifests).expect("the default configuration is valid");
+        let mut w = World::empty(params);
+        for &i in &plan.generation {
+            modules[i].generate(&mut w);
+        }
+        w
+    }
+
+    pub fn province_population(&self) -> Vec<u64> {
+        let mut out = vec![0u64; self.provinces.count];
+        for (k, &p) in self.pops.province.iter().enumerate() {
+            out[p as usize] += self.pops.size[k];
+        }
+        out
+    }
+
+    /// A copy of one field's values.
+    pub fn field(&self, id: FieldId) -> FieldData {
+        use FieldData::*;
+        let p = &self.provinces;
+        match id.def().name {
+            "cell.elevation" => F32(self.elevation.clone()),
+            "cell.temperature" => F32(self.temperature.clone()),
+            "cell.rainfall" => F32(self.rainfall.clone()),
+            "cell.biome" => U8(self.biome.iter().map(|&b| b as u8).collect()),
+            "cell.drainage_receiver" => U32(self.drainage.receiver.clone()),
+            "cell.drainage_order" => U32(self.drainage.order.clone()),
+            "cell.river_flow" => U64(self.river_flow.clone()),
+            "cell.food_yield" => F64(self.food_per_cell.clone()),
+            "cell.province" => U32(p.of_cell.clone()),
+            "province.cells" => U32(p.cells.clone()),
+            "province.area_km2" => F64(p.area_km2.clone()),
+            "province.center" => Dir(p.center.clone()),
+            "province.lat" => F32(p.lat.clone()),
+            "province.food_capacity" => U64(p.food_capacity.clone()),
+            "province.food_stock" => U64(self.food_stock.clone()),
+            "province.starved_this_year" => U64(self.starved_this_year.clone()),
+            "pop.province" => U32(self.pops.province.clone()),
+            "pop.species" => U16(self.pops.species.clone()),
+            "pop.culture" => U16(self.pops.culture.clone()),
+            "pop.religion" => U16(self.pops.religion.clone()),
+            "pop.class" => U8(self.pops.class.clone()),
+            "pop.size" => U64(self.pops.size.clone()),
+            other => unreachable!("field {other} has no storage"),
+        }
+    }
+
+    /// Replace one field's values. Refuses data of the wrong type or length.
+    pub fn set_field(&mut self, id: FieldId, data: FieldData) -> Result<(), String> {
+        use FieldData::*;
+        let def = id.def();
+        let expect = match def.tier {
+            Tier::Cell => Some(self.grid.cells()),
+            // The province count is set by the province fields themselves; pops vary.
+            Tier::Province | Tier::Pop => None,
+        };
+        if let Some(n) = expect.filter(|&n| n != data.len() && def.name != "cell.drainage_order") {
+            return Err(format!("{}: {} values for {n} cells", def.name, data.len()));
+        }
+        let wrong = || Err(format!("{}: wrong value type", def.name));
+        let p = &mut self.provinces;
+        match (def.name, data) {
+            ("cell.elevation", F32(v)) => self.elevation = v,
+            ("cell.temperature", F32(v)) => self.temperature = v,
+            ("cell.rainfall", F32(v)) => self.rainfall = v,
+            ("cell.biome", U8(v)) => {
+                self.biome = v.iter().map(|&b| biome::ALL.get(b as usize).copied().ok_or(format!("cell.biome: no biome {b}"))).collect::<Result<_, _>>()?
+            }
+            ("cell.drainage_receiver", U32(v)) => self.drainage.receiver = v,
+            ("cell.drainage_order", U32(v)) => self.drainage.order = v,
+            ("cell.river_flow", U64(v)) => self.river_flow = v,
+            ("cell.food_yield", F64(v)) => self.food_per_cell = v,
+            ("cell.province", U32(v)) => p.of_cell = v,
+            ("province.cells", U32(v)) => p.cells = v,
+            ("province.area_km2", F64(v)) => {
+                p.count = v.len();
+                p.area_km2 = v
+            }
+            ("province.center", Dir(v)) => p.center = v,
+            ("province.lat", F32(v)) => p.lat = v,
+            ("province.food_capacity", U64(v)) => p.food_capacity = v,
+            ("province.food_stock", U64(v)) => self.food_stock = v,
+            ("province.starved_this_year", U64(v)) => self.starved_this_year = v,
+            ("pop.province", U32(v)) => self.pops.province = v,
+            ("pop.species", U16(v)) => self.pops.species = v,
+            ("pop.culture", U16(v)) => self.pops.culture = v,
+            ("pop.religion", U16(v)) => self.pops.religion = v,
+            ("pop.class", U8(v)) => self.pops.class = v,
+            ("pop.size", U64(v)) => self.pops.size = v,
+            _ => return wrong(),
+        }
+        Ok(())
+    }
+
+    /// Check that province and pop fields agree on their lengths (after a load).
+    pub fn check_lengths(&self) -> Result<(), String> {
+        let n = self.provinces.count;
+        let pops = self.pops.size.len();
+        for id in FieldId::all() {
+            let (def, len) = (id.def(), self.field(id).len());
+            let want = match def.tier {
+                Tier::Province => n,
+                Tier::Pop => pops,
+                Tier::Cell => continue,
+            };
+            if len != want {
+                return Err(format!("{}: {len} values, expected {want}", def.name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Bit-exact hash of every field.
     pub fn fingerprint(&self, h: &mut Fingerprint) {
-        h.f32s(&self.elevation);
-        h.f32s(&self.temperature);
-        h.f32s(&self.rainfall);
-        h.f32s(&self.coast_distance_km);
-        h.bytes(&self.biome.iter().map(|&b| b as u8).collect::<Vec<_>>());
-        h.u32s(&self.drainage.receiver);
-        h.u32s(&self.drainage.order);
-        h.u64s(&self.river_flow);
-        h.f64s(&self.food_per_cell);
-        h.u32s(&self.provinces.of_cell);
-        h.f64s(&self.provinces.area_km2);
-        h.u64s(&self.provinces.food_capacity);
+        for id in FieldId::all() {
+            self.field(id).fingerprint(h);
+        }
+    }
+
+    /// Fill fields no active module owns with their documented defaults.
+    pub fn fill_defaults(&mut self, owned: &[bool]) {
+        for (k, def) in FIELDS.iter().enumerate() {
+            if owned[k] {
+                continue;
+            }
+            let id = FieldId(k as u16);
+            let data = match (def.default, self.field(id)) {
+                (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; self.provinces.count]),
+                (crate::fields::Default::Empty, d) => match d {
+                    FieldData::U64(_) => FieldData::U64(Vec::new()),
+                    FieldData::U32(_) => FieldData::U32(Vec::new()),
+                    FieldData::U16(_) => FieldData::U16(Vec::new()),
+                    FieldData::U8(_) => FieldData::U8(Vec::new()),
+                    other => other,
+                },
+                // Required fields are always owned in a valid configuration.
+                (_, d) => d,
+            };
+            self.set_field(id, data).expect("defaults have the field's own type");
+        }
     }
 }
 

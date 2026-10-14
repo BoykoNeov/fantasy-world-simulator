@@ -10,3 +10,4 @@ rayon.workspace = true
 serde.workspace = true
 ron.workspace = true
 png.workspace = true
+postcard.workspace = true

@@ -4,10 +4,11 @@ A native-desktop, god/observer fantasy planet simulator. A colourful, layered 2D
 develops its geology, climate, nature, peoples, economies, wars, magic, religions and cultures while you
 watch, poke, edit and fast-forward it.
 
-**Status:** build steps 1 and 2 done.
+**Status:** build steps 1 to 3 done.
 
 - [`crates/sim`](crates/sim/): the simulation core. It generates a planet, runs pops that grow and
-  starve, and writes PNG maps without a window.
+  starve, saves and loads worlds, and writes PNG maps without a window. Every part of the
+  simulation is a module with a declared contract, and some come in several versions.
 - [`crates/app`](crates/app/): the map window. It shows the planet as an oval world map or a repeating
   rectangle, with a parchment look, layer sliders, smoothed borders and rivers, and a hover inspector.
 

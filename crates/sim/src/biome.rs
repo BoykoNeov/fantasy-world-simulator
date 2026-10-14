@@ -1,6 +1,22 @@
 //! Biomes v0: a lookup from annual temperature, rainfall and elevation.
 
+use crate::module::{Manifest, Module, Slot};
+use crate::world::World;
 use rayon::prelude::*;
+
+/// Biomes v0: the lookup below.
+pub struct Biomes;
+
+static V0: Manifest = Manifest::generation(Slot::Biomes, "lookup", &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome"]);
+
+impl Module for Biomes {
+    fn manifest(&self) -> &'static Manifest {
+        &V0
+    }
+    fn generate(&self, w: &mut World) {
+        w.biome = generate(&w.elevation, &w.temperature, &w.rainfall);
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]

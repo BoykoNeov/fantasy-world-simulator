@@ -143,7 +143,7 @@ pub fn province_tables(sim: &Sim) -> Vec<Rgba> {
     let count = w.provinces.count;
     let size = TABLE_WIDTH * table_rows(count);
     let mut out = vec![[0u8; 4]; size * TABLE_LAYERS];
-    let people = sim.pops.province_population(count);
+    let people = w.province_population();
     for p in 0..count {
         let [r, g, b] = province_color(p as u32, w.params.seed);
         out[TABLE_FILL * size + p] = [r, g, b, 255];
@@ -153,7 +153,7 @@ pub fn province_tables(sim: &Sim) -> Vec<Rgba> {
         let [r, g, b] = ramp(&[[250, 245, 210], [240, 180, 90], [200, 70, 40], [90, 20, 30]], t);
         out[TABLE_POPULATION * size + p] = [r, g, b, 255];
 
-        let starved = sim.pops.starved_this_year[p];
+        let starved = w.starved_this_year[p];
         out[TABLE_FAMINE * size + p] = if starved == 0 {
             [0, 0, 0, 0]
         } else {

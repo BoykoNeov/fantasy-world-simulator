@@ -5,7 +5,7 @@
 //! a draw doesn't shift anyone else's numbers.
 
 /// Which part of the simulation a draw belongs to. Values are fixed forever: changing one changes
-/// every world that uses it.
+/// every world that uses it. Add new ones at the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u64)]
 pub enum Module {
@@ -13,6 +13,8 @@ pub enum Module {
     Climate = 2,
     Provinces = 3,
     Pops = 4,
+    /// Economics v0 (food). Harvests drew from `Pops` before the module split.
+    Economics = 5,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

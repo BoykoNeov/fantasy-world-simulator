@@ -6,8 +6,7 @@
 use app::gpu::{MapData, MapGpu};
 use app::layers;
 use eframe::egui_wgpu::wgpu;
-use sim::calendar::Calendar;
-use sim::pops::PopParams;
+use sim::config::Config;
 use sim::sim::Sim;
 use sim::world::WorldParams;
 
@@ -22,7 +21,7 @@ fn build_the_map_then_advance_and_upload_the_tables() {
 
     // More than 256 provinces, so the tables have several rows.
     let params = WorldParams { n: 48, provinces: 400, seed: 3, land_fraction: 0.4, radius_km: 6371.0 };
-    let mut sim = Sim::new(&params, Calendar::standard(), PopParams::default());
+    let mut sim = Sim::new(&Config::new(params)).unwrap();
     sim.run_to_year(sim.calendar.def.first_year + 2);
     assert!(sim.world.provinces.count > layers::TABLE_WIDTH);
     let data = MapData::build(&sim);

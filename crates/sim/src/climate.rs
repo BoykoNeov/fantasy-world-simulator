@@ -1,11 +1,48 @@
-//! Climate v0: annual mean temperature from latitude and elevation, annual rainfall from latitude
-//! bands and distance to the sea. No wind, no rain shadow, no seasons in the fields themselves.
+//! Climate, two versions:
+//!
+//! - **latitude**: annual mean temperature from latitude and elevation, annual rainfall from
+//!   latitude bands and distance to the sea. No wind, no rain shadow, no seasons in the fields.
+//! - **null**: the same mild climate everywhere.
 
 use crate::grid::{Grid, NONE};
+use crate::module::{Manifest, Module as SimModule, Slot};
 use crate::rng::{draw, purpose, Module};
 use crate::terrain::fbm;
+use crate::world::World;
 use rayon::prelude::*;
 use std::collections::VecDeque;
+
+pub struct LatitudeClimate;
+pub struct NullClimate;
+
+const OWNS: &[&str] = &["cell.temperature", "cell.rainfall"];
+static LATITUDE: Manifest = Manifest::generation(Slot::Climate, "latitude", &["cell.elevation"], OWNS);
+static NULL: Manifest = Manifest::generation(Slot::Climate, "null", &[], OWNS);
+
+/// The null climate: a temperate place with enough rain to farm.
+pub const NULL_TEMPERATURE: f32 = 15.0;
+pub const NULL_RAINFALL: f32 = 800.0;
+
+impl SimModule for LatitudeClimate {
+    fn manifest(&self) -> &'static Manifest {
+        &LATITUDE
+    }
+    fn generate(&self, w: &mut World) {
+        let c = generate(&w.grid, &w.elevation, w.params.seed, w.params.radius_km);
+        w.temperature = c.temperature;
+        w.rainfall = c.rainfall;
+    }
+}
+
+impl SimModule for NullClimate {
+    fn manifest(&self) -> &'static Manifest {
+        &NULL
+    }
+    fn generate(&self, w: &mut World) {
+        w.temperature = vec![NULL_TEMPERATURE; w.grid.cells()];
+        w.rainfall = vec![NULL_RAINFALL; w.grid.cells()];
+    }
+}
 
 pub struct Climate {
     /// Annual mean, °C.

@@ -1,9 +1,39 @@
-//! Terrain v0: noise elevation. Domain-warped continents, detail, and ridged mountain chains, then a
-//! sea level chosen so a set fraction of the planet is land.
+//! Terrain, two versions:
+//!
+//! - **noise**: domain-warped continents, detail, and ridged mountain chains;
+//! - **null**: a smooth planet of a few broad, gentle landmasses, the same for every seed.
+//!
+//! Both then pick a sea level so a set fraction of the planet is land.
 
 use crate::grid::{Grid, V3};
+use crate::module::{Manifest, Module as SimModule, Slot};
 use crate::rng::{draw, mix, purpose, Module};
+use crate::world::World;
 use rayon::prelude::*;
+
+pub struct NoiseTerrain;
+pub struct NullTerrain;
+
+static NOISE: Manifest = Manifest::generation(Slot::Terrain, "noise", &[], &["cell.elevation"]);
+static NULL: Manifest = Manifest::generation(Slot::Terrain, "null", &[], &["cell.elevation"]);
+
+impl SimModule for NoiseTerrain {
+    fn manifest(&self) -> &'static Manifest {
+        &NOISE
+    }
+    fn generate(&self, w: &mut World) {
+        w.elevation = generate(&w.grid, w.params.seed, w.params.land_fraction);
+    }
+}
+
+impl SimModule for NullTerrain {
+    fn manifest(&self) -> &'static Manifest {
+        &NULL
+    }
+    fn generate(&self, w: &mut World) {
+        w.elevation = generate_null(&w.grid, w.params.land_fraction);
+    }
+}
 
 /// Integer lattice value in [-1, 1].
 fn lattice(x: i64, y: i64, z: i64, key: u64) -> f64 {
@@ -66,10 +96,24 @@ fn raw_height(d: V3, seed: u64) -> f64 {
 
 /// Elevation in metres per cell; below 0 is sea. `land_fraction` of cells end up at or above 0.
 pub fn generate(grid: &Grid, seed: u64, land_fraction: f64) -> Vec<f32> {
-    let cells = grid.cells();
     let raw: Vec<f64> = grid.center.par_iter().map(|&d| raw_height(d, seed)).collect();
+    to_elevation(&raw, land_fraction)
+}
 
-    let mut sorted = raw.clone();
+/// The null version: a few smooth waves over the sphere, no noise and no seed. Seas, coasts and
+/// rivers still exist, so everything downstream has something to work with.
+pub fn generate_null(grid: &Grid, land_fraction: f64) -> Vec<f32> {
+    let raw: Vec<f64> =
+        grid.center.par_iter().map(|&[x, y, z]| 0.8 * x + 0.5 * (2.5 * y).sin() * (2.0 * z).cos() + 0.3 * z * z).collect();
+    to_elevation(&raw, land_fraction)
+}
+
+/// Raw heights to metres: sea level at the rank that leaves `land_fraction` of cells dry, land
+/// rising to 5,200 m and sea falling to 5,500 m.
+fn to_elevation(raw: &[f64], land_fraction: f64) -> Vec<f32> {
+    let cells = raw.len();
+
+    let mut sorted = raw.to_vec();
     sorted.par_sort_unstable_by(|a, b| a.total_cmp(b));
     let sea_rank = (((1.0 - land_fraction) * cells as f64) as usize).min(cells - 1);
     let sea = sorted[sea_rank];
@@ -103,5 +147,14 @@ mod tests {
         let g = Grid::new(16);
         assert_ne!(generate(&g, 1, 0.4), generate(&g, 2, 0.4));
         assert_eq!(generate(&g, 1, 0.4), generate(&g, 1, 0.4));
+    }
+
+    #[test]
+    fn null_terrain_has_land_and_sea_and_ignores_the_seed() {
+        let g = Grid::new(24);
+        let e = generate_null(&g, 0.4);
+        let land = e.iter().filter(|&&h| h >= 0.0).count() as f64 / g.cells() as f64;
+        assert!((land - 0.4).abs() < 0.01, "{land}");
+        assert!(e.iter().any(|&h| h > 1000.0) && e.iter().any(|&h| h < -1000.0));
     }
 }

@@ -1,17 +1,17 @@
 //! Same seed, config and (empty) command log give the same world, bit for bit, however many
 //! threads do the work.
 
-use sim::calendar::Calendar;
-use sim::pops::PopParams;
+use sim::config::Config;
+use sim::fields::{quantity_total, Quantity};
 use sim::sim::Sim;
 use sim::world::WorldParams;
 
-fn params(seed: u64) -> WorldParams {
-    WorldParams { n: 24, provinces: 40, seed, land_fraction: 0.4, radius_km: 6371.0 }
+fn config(seed: u64) -> Config {
+    Config::new(WorldParams { n: 24, provinces: 40, seed, land_fraction: 0.4, radius_km: 6371.0 })
 }
 
 fn run(seed: u64, years: i64) -> (u64, Sim) {
-    let mut sim = Sim::new(&params(seed), Calendar::standard(), PopParams::default());
+    let mut sim = Sim::new(&config(seed)).unwrap();
     sim.run_to_year(1 + years);
     (sim.fingerprint(), sim)
 }
@@ -43,11 +43,11 @@ fn different_seeds_give_different_worlds() {
 
 #[test]
 fn the_world_changes_as_time_passes() {
-    let mut sim = Sim::new(&params(9), Calendar::standard(), PopParams::default());
+    let mut sim = Sim::new(&config(9)).unwrap();
     let start = sim.fingerprint();
-    let people = sim.pops.total_population();
+    let people = quantity_total(&sim.world, Quantity::People);
     sim.run_to_year(6);
     assert_ne!(sim.fingerprint(), start);
-    assert_ne!(sim.pops.total_population(), people);
+    assert_ne!(quantity_total(&sim.world, Quantity::People), people);
     assert_eq!(sim.day, 5 * sim.calendar.days_per_year() as u64);
 }
