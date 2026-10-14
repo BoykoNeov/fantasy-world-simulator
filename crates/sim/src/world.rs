@@ -227,6 +227,18 @@ impl World {
         Ok(())
     }
 
+    /// Give the province values that change as the world runs an entry for every province, after an
+    /// edit added provinces. New provinces start with nothing. (Add new running province fields
+    /// here.)
+    pub fn grow_province_fields(&mut self) {
+        let n = self.provinces.count;
+        for v in [&mut self.food_stock, &mut self.starved_this_year, &mut self.rain_shortfall] {
+            if v.len() < n {
+                v.resize(n, 0);
+            }
+        }
+    }
+
     /// Check that province and pop fields agree on their lengths (after a load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;

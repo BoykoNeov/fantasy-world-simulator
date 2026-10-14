@@ -241,6 +241,29 @@ pub fn aggregate(grid: &Grid, of_cell: Vec<u32>, food_per_cell: &[f64], radius_k
     Provinces { of_cell, count, cells, area_km2, center, lat, food_capacity }
 }
 
+/// Recompute every province's aggregates after an edit moved cells, keeping province numbers: there
+/// are `count` provinces, and one left with no land keeps its old centre (and gets nothing else).
+pub fn reaggregate(w: &mut World, count: usize) {
+    let old = std::mem::take(&mut w.provinces);
+    // `aggregate` counts up to the highest number in use, and gives empty provinces no centre.
+    let mut p = aggregate(&w.grid, old.of_cell, &w.food_per_cell, w.params.radius_km);
+    p.count = count;
+    p.cells.resize(count, 0);
+    p.area_km2.resize(count, 0.0);
+    p.food_capacity.resize(count, 0);
+    p.center.resize(count, [0.0, 0.0, 1.0]);
+    p.lat.resize(count, 0.0);
+    for id in 0..count {
+        if p.cells[id] == 0
+            && let Some(&c) = old.center.get(id)
+        {
+            p.center[id] = c;
+            p.lat[id] = old.lat[id];
+        }
+    }
+    w.provinces = p;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

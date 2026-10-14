@@ -47,7 +47,8 @@ What exists:
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world
-  react (so far: a pop's size and what it is, a new pop, a province's food store). Edits go into the
+  react (so far: a pop's size and what it is, a new pop, a province's food store, and reshaping
+  provinces: moving land between them, splitting one, merging two). Edits go into the
   command log like pokes and take effect at the start of their day, so the world shown for that day
   already has them. People and food an edit creates or removes are counted as the edit's own cause,
   so every year still balances. `Sim::withdraw` takes a command (an edit or a poke) back:
@@ -55,6 +56,12 @@ What exists:
   giving exactly the world that never had it. `Sim::reinstate` gives it again. An edit that no
   longer fits when its day comes (it changed a pop that a withdrawn edit had added) is left out and
   listed in `Sim::skipped_edits`.
+- **Reshaping provinces** (`edit.rs`): when land changes province, its people and food go with it,
+  in proportion to the farmland that moved (by area where there is no farmland), in whole people
+  and rations by the largest-remainder rule; people join a pop of their own kind there or make one.
+  Province numbers never change: a province merged away stays as an empty placeholder that keeps
+  its centre, and a split's new province is numbered after the last. Pops are only ever added, so
+  food on its way to a pop still finds it.
 - **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
   that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
   restoring the checkpoint before it and running forward; the days after are forgotten, so a poke
