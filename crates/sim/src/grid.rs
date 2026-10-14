@@ -146,6 +146,12 @@ impl Grid {
         Shape { n: self.n }.dir_to_cell(d)
     }
 
+    /// Direction of a cell corner; `ci`, `cj` run 0..=n. A corner on a face edge is shared with the
+    /// next face, which gives the same point (to rounding) under its own coordinates.
+    pub fn corner_dir(&self, face: usize, ci: usize, cj: usize) -> V3 {
+        Shape { n: self.n }.corner_dir(face, ci, cj)
+    }
+
     /// Mean cell area in steradians.
     pub fn mean_area(&self) -> f64 {
         4.0 * PI / self.cells() as f64

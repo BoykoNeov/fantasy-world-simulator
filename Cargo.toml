@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/sim"]
+members = ["crates/sim", "crates/app"]
 # Throwaway prototypes keep their own workspace.
 exclude = ["spikes"]
 

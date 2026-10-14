@@ -1,0 +1,20 @@
+[package]
+name = "app"
+description = "The map view: egui + wgpu over the sim crate."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "fantasymap"
+path = "src/main.rs"
+
+[dependencies]
+sim = { path = "../sim" }
+# Pinned to the version the renderer trial was built and measured with.
+eframe = { version = "=0.36.2", features = ["wgpu"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+png.workspace = true
+
+[dev-dependencies]
+pollster = "1.0"

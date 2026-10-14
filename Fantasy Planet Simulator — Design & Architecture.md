@@ -105,7 +105,7 @@ The planet is a **cube sphere**: six square grids folded onto a sphere. Each fac
 - **Seams are the bug magnet.** Rivers, flows and diffusion crossing a face edge are where errors will hide. A required test routes a river across a seam and checks water conservation, and another runs diffusion across a cube corner.
 - **Sim resolution ≠ drawing resolution.** The map looks detailed through shader texture and noise, not through more simulated cells. Detail on screen does not require raising N.
 
-**Projection is a renderer concern, not a simulation concern.** The sim only knows cells on a sphere, and the map view picks a flat projection (see Open questions). There is no globe view.
+**Projection is a renderer concern, not a simulation concern.** The sim only knows cells on a sphere, and the map view picks a flat projection (see Decisions: an oval Equal Earth map by default, a repeating rectangle as the alternative). There is no globe view.
 
 World generation order for a new planet: tectonic plates → elevation → erosion and rivers → ocean currents (optional) → climate → biomes → resources → initial populations. Each stage is itself a module with versions, so a quick noise-based terrain is as valid as full plate tectonics.
 
@@ -172,7 +172,7 @@ The simulation thread and the render thread are fully separate. The sim produces
 
 ## Rendering
 
-The map is composited on the GPU from **independent layer textures**. Each one is sampled straight from a field array and re-uploaded only when its owner marks it dirty. Because the planet is a cube sphere, each layer is a **6-layer 2D array texture**, one layer per cube face. Hardware cubemap sampling is *not* used: it assumes the plain cube mapping, and our equi-angular cells would come out misplaced. The map shader instead converts every screen pixel through the chosen projection to a direction on the sphere, then does its own direction → (face, equi-angular u, v) maths. That maths mirrors the CPU picking code exactly, and the two are tested against each other.
+The map is composited on the GPU from **independent layer textures**. Each one is sampled straight from a field array and re-uploaded only when its owner marks it dirty. Because the planet is a cube sphere, each layer is a **6-layer 2D array texture**, one layer per cube face. Each face carries a one-cell border copied from its neighbouring faces, so smooth sampling reads real data across face edges and the seams don't show. Hardware cubemap sampling is *not* used: it assumes the plain cube mapping, and our equi-angular cells would come out misplaced. The map shader instead converts every screen pixel through the chosen projection to a direction on the sphere, then does its own direction → (face, equi-angular u, v) maths. That maths mirrors the CPU picking code exactly, and the two are tested against each other.
 
 | Layer | Source fields | Dirty when |
 | --- | --- | --- |
@@ -402,7 +402,13 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - A minimal daily scheduler with hashed randomness, and a calendar as data.
    - Headless PNG export (one projection) for eyeballing.
    - Tests: same seed gives same world, water conserved across a seam, speed per simulated day measured from here on.
-2. **Map view.** The renderer trial is done and egui + wgpu was picked (`spikes/REPORT.md`). Remaining: cubemap layers, projection, pan/zoom/wrap, parchment look, layer toggles, picking. First "it's pretty" milestone.
+2. **Map view.** Done Oct 14 (`crates/app`, see its README for how to run it and measured speed).
+   - Oval Equal Earth map (default) or repeating rectangle, switchable; dragging sideways turns the world under the map.
+   - Per-face array textures with a one-cell border, so face seams don't show.
+   - Smoothed coastlines and province borders (one curve per shared border, junctions pinned), rivers, and a 30° graticule.
+   - Parchment look, layer sliders (terrain, temperature, rainfall, population, famine, province colours), a hover inspector, and "+1 / +10 years" buttons that re-upload only the per-province tables.
+   - Picking is tested against the shader on the GPU.
+   - Left for later: place-name labels (nothing has names yet), mipmaps (not needed at current zoom limits), and province colours that still follow cell edges while their borders are smooth.
 3. **Extract the module contract** from the modules that now exist:
    - manifests, change requests and rationing, event delivery order, field contracts, exact conserved quantities, the save format (with the fields listed under "What the save format needs");
    - null + simple versions for terrain and climate, to prove choosing versions at world creation.
@@ -437,6 +443,7 @@ After step 5 the game is already a watchable, editable living map; everything af
 - **Hardware floor:** a laptop with integrated graphics.
 - **Renderer:** egui + wgpu via eframe, decided Oct 14 from the renderer trial (`spikes/REPORT.md`). Caveat kept on record: Bevy crashed on the integrated GPU with border lines on, and the cause was never found (it may have been the trial's own Bevy setup).
 - **Map view:** flat map only; no globe view.
+- **Map projection:** both, switchable (decided Oct 14). The default is Equal Earth, an oval world map that keeps true areas; panning sideways turns the world under it. The alternative is the plain rectangle (equirectangular), which repeats sideways and stretches the poles.
 - **1x speed:** aims for one simulated day per second. With complex module sets the sim may not keep up, and that is acceptable.
 - **World sizes:** Small / Medium / Large / Huge presets, with cell count and province count as separate settings. Speed depends on world size × module complexity; smaller worlds (especially fewer provinces) are how to run complex modules fast.
 - **Named characters:** get substantial agency (ambitions, plots, decisions that act on the world), not just aggregate politics.
@@ -444,6 +451,5 @@ After step 5 the game is already a watchable, editable living map; everything af
 
 ## Open questions
 
-- [ ] Map view projection: equirectangular (simple, stretched near the poles), a compromise projection that looks more like a classic world map, or several selectable?
 - [ ] Default rationing rule when requests exceed what exists: proportional within priority classes (current proposal), or strict priority only?
 - [ ] "Day by day": does it mean the clock ticks daily while each module keeps its own cadence (current proposal), or that every module runs every day?
