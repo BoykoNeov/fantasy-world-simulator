@@ -1,0 +1,12 @@
+[package]
+name = "spike_bevy"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+spike_world = { path = "../spike_world" }
+# The "2d" collection: app, platform (window, input, default font), 2D rendering, scenes, picking.
+bevy = { version = "=0.20.0", default-features = false, features = ["2d"] }
+bevy_egui = "=0.43.1"
+bytemuck = "1.25"

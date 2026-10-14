@@ -1,0 +1,9 @@
+[package]
+name = "spike_world"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+# Deliberately no GPU or engine dependency: everything both renderer spikes share lives here.
+[dependencies]
+bytemuck = { version = "1.25", features = ["derive"] }

@@ -1,0 +1,11 @@
+[package]
+name = "spike_egui"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+spike_world = { path = "../spike_world" }
+eframe = { version = "=0.36.2", features = ["wgpu"] }
+bytemuck = "1.25"
+png = "0.18"
