@@ -3,11 +3,13 @@
 //!
 //! simrun [--size small|medium|large|huge] [--n FACE] [--provinces N] [--seed S] [--years Y]
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
-//!        [--save FILE] [--load FILE]
+//!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
-//! `--save` writes the world at the end.
+//! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
+//! and `--write-scenario` writes the world at the end as one.
 
+use sim::branch::Timelines;
 use sim::config::Config;
 use sim::fields::{quantity_total, Quantity};
 use sim::sim::Sim;
@@ -45,13 +47,20 @@ fn main() {
     }
 
     let t = Instant::now();
-    let mut sim = match get("--load") {
-        Some(file) => {
+    let mut sim = match (get("--load"), get("--scenario")) {
+        (Some(file), _) => {
             let sim = Sim::load_from(file.as_ref()).unwrap_or_else(|e| panic!("{e}"));
             println!("loaded {file} at {}", sim.calendar.format(sim.day));
             sim
         }
-        None => {
+        (None, Some(file)) => {
+            let text = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{file}: {e}"));
+            let mut t = Timelines::from_scenario_text(&text).unwrap_or_else(|e| panic!("{file}: {e}"));
+            let sim = t.list.swap_remove(t.active).sim;
+            println!("opened scenario {file} at {}", sim.calendar.format(sim.day));
+            sim
+        }
+        (None, None) => {
             println!("world: {size:?}, face {} ({} cells), target {} provinces, seed {}", params.n, 6 * params.n * params.n, params.provinces, seed);
             Sim::new(&config).unwrap_or_else(|e| panic!("{e}"))
         }
@@ -121,6 +130,10 @@ fn main() {
         sim.save_to(file.as_ref()).expect("write save");
         let mb = std::fs::metadata(&file).map_or(0.0, |m| m.len() as f64 / 1e6);
         println!("saved {file} ({mb:.1} MB) in {:.2} s", t.elapsed().as_secs_f64());
+    }
+    if let Some(file) = get("--write-scenario") {
+        std::fs::write(&file, Timelines::new(sim.fork()).scenario_text()).expect("write scenario");
+        println!("wrote scenario {file}");
     }
 
     if let Some(dir) = &out {

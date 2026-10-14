@@ -22,6 +22,7 @@ pub mod provinces;
 pub mod requests;
 pub mod rng;
 pub mod save;
+pub mod scenario;
 pub mod sim;
 pub mod terrain;
 pub mod weather;

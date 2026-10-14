@@ -87,6 +87,15 @@ What exists:
   simulation, so switching is instant; a new one copies the world and shares the checkpoints and
   map changes they have in common, so each costs about one world's worth of memory.
   `Timelines::save` writes every timeline, each as its own save.
+- **Scenario files** (`scenario.rs`): every timeline as readable TOML that can be edited by hand:
+  the world's settings, module versions and parameters, calendar, and each timeline's commands
+  (each a day with an `edit` or a `poke`, including pokes scheduled for days still to come with
+  `Sim::schedule`) and the day it reached. Opening one makes the world from its settings and
+  replays the commands, giving exactly the world that was written; that takes as long as running
+  those days did. Assertions (expected ranges at chosen years) wait for the combination tester.
+- **Undo cost**: taking back the latest edit replays at most a year. Taking back an older map edit
+  also works out every later map edit again (about 0.2 s per brush stroke on a large world), and
+  taking back an old poke replays every year since.
 - **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
   that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
   restoring the checkpoint before it and running forward; the days after are forgotten, so a poke
@@ -136,8 +145,9 @@ cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p s
 ```
 
 Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (map width in pixels),
-`--terrain null|noise`, `--climate null|latitude`, `--save FILE`, and `--load FILE` (continue a saved
-world for `--years` more years).
+`--terrain null|noise`, `--climate null|latitude`, `--save FILE`, `--load FILE` (continue a saved
+world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
+and `--write-scenario FILE`.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 

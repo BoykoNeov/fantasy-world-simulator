@@ -329,7 +329,7 @@ impl Sim {
         self.apply_todays_edits()
     }
 
-    fn apply_todays_edits(&mut self) -> bool {
+    pub(crate) fn apply_todays_edits(&mut self) -> bool {
         let mut any = false;
         while let Some(c) = self.commands.get(self.edits_done).filter(|c| c.day <= self.day) {
             if let CommandKind::Edit { edit } = &c.kind {
@@ -410,6 +410,20 @@ impl Sim {
         self.commands.insert(at, Command { day: self.day, kind: CommandKind::Poke { event } });
         // Every edit before it is applied.
         self.edits_done = at + 1;
+    }
+
+    /// Poke the world on a day still to come (or today); it goes into the command log like any poke.
+    pub fn schedule(&mut self, day: u64, event: Event) -> Result<(), String> {
+        if day < self.day {
+            return Err(format!("{} has passed", self.calendar.format(day)));
+        }
+        if day == self.day {
+            self.poke(event);
+        } else {
+            let at = self.commands.partition_point(|c| c.day <= day);
+            self.commands.insert(at, Command { day, kind: CommandKind::Poke { event } });
+        }
+        Ok(())
     }
 
     /// Edit the world today (the day about to run). It takes effect at once, so the world as it
