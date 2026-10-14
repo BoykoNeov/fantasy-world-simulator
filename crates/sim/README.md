@@ -43,6 +43,12 @@ What exists:
 - **PNG export** (`export.rs`): terrain, provinces, population, famine, temperature and rainfall maps,
   in the equirectangular projection (for convenience only).
 
+Provinces grow in all eight directions over land whose roughness varies smoothly from place to
+place, and big rivers and ridges are costly to cross. Borders therefore meander and often follow
+rivers and mountains, instead of running straight along the grid. `examples/province_stats.rs`
+measures the result (large world, seed 7: farmland spread 0.80 against area 0.99; the earlier
+four-way growth gave 0.72 against 0.89). This also changed every seed's provinces.
+
 Splitting food from people in step 3 changed how a given seed plays out: starting stores are now
 counted in days of harvest, people learn their share a day after asking, and harvests use their own
 random-number ID. Results for the same seed differ from step 2's.
