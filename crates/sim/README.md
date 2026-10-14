@@ -77,12 +77,17 @@ Large world (face 408, about 1M cells, 5,092 provinces), seed 7, 100 years:
 
 | | Time | Design target |
 | --- | --- | --- |
-| World generation | 0.4 s | — |
+| World generation | 0.7 s (0.4 s before provinces grew in eight directions) | — |
 | Average simulated day | 0.12 ms | ~1.5 ms |
 | A day when something ran (month starts, the day after, year starts) | 1.1 ms | — |
 | An idle day | 0.00004 ms | well under 0.1 ms |
 | A century, headless | 4.4 s | under a minute |
 | Save / load | 0.10 s / 0.10 s, 32 MB | — |
+
+World generation was re-timed after the province change while another project's tests kept the
+machine fully busy: 0.7 s at best, 1.9 and 5.0 s in busier runs. The province step itself took about
+0.3 s. The century figure was measured before that change, which only affects generation; under the
+same load a century took 5.6–12 s. Worth re-measuring on a quiet machine.
 
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a

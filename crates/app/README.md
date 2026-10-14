@@ -78,6 +78,9 @@ results are in `bench/results/`.
   noise. A first version that used small arrays and loops cost 3–4 ms more per frame on this GPU.
 - **The border wobble** (same method): with province colours on, pan 9.1–9.6 → 9.9–10.3 ms and zoom
   11.6–11.7 → 12.0–12.7 ms, about 0.7 ms a frame; with no province layer on, nothing.
+- Raw results of these two checks are in `bench/results/borders_*.json`: `fill_loops_*` is the first
+  version against the one before it, `fill_*` the final smooth colours (`old`/`new`, `def` = default
+  layers, `prov` = province colours on), `wobble_*` without (`nw`) and with (`w`) the wobble.
 - **8.4 ms is a cap, not the rectangle's real cost.** Something system-wide holds frames to about 120 a
   second (the renderer trial hit the same 8.4 ms floor on the RTX 5090). The rectangle reaches it.
 - **The oval costs more than the rectangle**: each pixel's map position needs a few steps of Newton's

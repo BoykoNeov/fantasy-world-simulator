@@ -1,0 +1,10 @@
+{
+  "app": "fantasymap",
+  "adapter": "AMD Radeon(TM) Graphics (Vulkan)",
+  "cells": 998784,
+  "line_segments": 318248,
+  "window": [2880, 1620],
+  "pan": {"n": 300, "mean_ms": 9.333, "p50_ms": 9.060, "p95_ms": 12.086, "p99_ms": 13.262, "max_ms": 21.415},
+  "zoom": {"n": 300, "mean_ms": 11.913, "p50_ms": 11.544, "p95_ms": 17.418, "p99_ms": 30.904, "max_ms": 43.213},
+  "notes": "projection EqualEarth; pixels_per_point 1.5"
+}
