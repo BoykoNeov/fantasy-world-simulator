@@ -324,7 +324,7 @@ impl MapApp {
         // On the command line, explain the last day the province changed.
         let trace_pending = opts.explain.then(|| {
             let p = selected.unwrap_or(breadbasket(&sim.world) as u32);
-            let day = sim.running_fields().filter_map(|id| sim.last_change[id.0 as usize].get(p as usize).copied()).filter(|&d| d != NEVER).max();
+            let day = inspector::latest_change(&sim.last_change, sim.running_fields(), &sim.world.pops.province, p);
             (day.unwrap_or(sim.day.saturating_sub(1)), p)
         });
         let ctx = cc.egui_ctx.clone();
@@ -381,7 +381,13 @@ impl MapApp {
                 FromSim::Frame(f) if f.epoch == self.epoch => self.frames.push_back(f),
                 FromSim::Frame(_) => {}
                 FromSim::Trace(t) => {
-                    if let Some(key) = self.trace_pending.take() {
+                    // An answer says which day and province it explains; a later question may
+                    // still be waiting.
+                    let key = t.as_ref().map(|t| (t.day, t.province)).ok().or(self.trace_pending);
+                    if let Some(key) = key {
+                        if self.trace_pending == Some(key) || t.is_err() {
+                            self.trace_pending = None;
+                        }
                         self.trace = Some((key, t));
                     }
                 }
@@ -639,16 +645,7 @@ impl MapApp {
 
         ui.separator();
         // Most days nothing happens to a province; offer the last day something did.
-        let latest = state
-            .fields
-            .iter()
-            .flat_map(|(id, _)| {
-                let stamps = &state.last_change[id.0 as usize];
-                let mine: Vec<usize> = if id.def().tier == Tier::Pop { pops.clone() } else { vec![pi] };
-                mine.into_iter().filter_map(move |i| stamps.get(i).copied())
-            })
-            .filter(|&d| d != NEVER)
-            .max();
+        let latest = inspector::latest_change(&state.last_change, state.fields.iter().map(|f| f.0), &self.geo.pops.province, p);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Why").strong());
             if let Some(d) = latest

@@ -6,7 +6,8 @@ use sim::events::{Event, Posted};
 use sim::fields::{FieldData, FieldId};
 use sim::module::Slot;
 use sim::requests::{Cause, Request};
-use sim::sim::{Stage, TraceStep, Traced};
+use sim::fields::Tier;
+use sim::sim::{Stage, TraceStep, Traced, NEVER};
 
 /// 1234567 -> "1,234,567".
 pub fn group(n: u64) -> String {
@@ -19,6 +20,23 @@ pub fn group(n: u64) -> String {
         out.push(ch);
     }
     out
+}
+
+/// The last day any of `fields` changed for `province` or one of its pops (`pop_province` gives
+/// each pop's province), from the engine's last-changed stamps.
+pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = FieldId>, pop_province: &[u32], province: u32) -> Option<u64> {
+    fields
+        .flat_map(|id| {
+            let stamps = &last_change[id.0 as usize];
+            let mine: Vec<usize> = match id.def().tier {
+                Tier::Province => vec![province as usize],
+                Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
+                Tier::Cell => Vec::new(),
+            };
+            mine.into_iter().filter_map(move |i| stamps.get(i).copied())
+        })
+        .filter(|&d| d != NEVER)
+        .max()
 }
 
 /// A field's name for people: "province.food_stock" -> "food stock".

@@ -119,6 +119,22 @@ worlds give the same yearly results as before, and an idle day still costs 0.000
 something ran took 2.1 ms on the large world (3.4 ms just before the change, same session): the
 machine was busy, so these are not comparable with the 1.1 ms above.
 
+**Going back** (Oct 14, below-normal priority, seed 7). The worst case is a day near a year's end,
+since the replay starts from that year's first day:
+
+| | Large (5,092 provinces) | Huge (20,066 provinces) |
+| --- | --- | --- |
+| Explain (trace) a year's last day | 47–49 ms | 164–170 ms |
+| Rewind to a year's last day | 46 ms | 242 ms |
+| One yearly checkpoint | 0.58 MB (0.22 values + 0.36 last-changed stamps) | 2.3 MB |
+| Checkpoints kept for a century / a millennium | 58 MB / 0.58 GB | 0.23 GB / 2.3 GB |
+
+That is fast enough that checkpoints more often than yearly aren't needed. Memory is the cost:
+checkpoints are never dropped, so a 1,000-year run on a huge world holds about 2.3 GB of them.
+Most of it is the last-changed stamps (8 bytes for every province and pop value). Not trimmed yet;
+storing stamps as 4-byte day numbers, or keeping only every tenth year beyond the last few, would
+cut it when long runs need it.
+
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a
 forecast.
