@@ -231,7 +231,7 @@ An interactive editor for **every aspect of the world**: the map, peoples, realm
 - An **edit** is an authorial change that sets values directly and bypasses world rules. Example: "this province has 40,000 people, all of faith X".
 - Both are **commands**, stamped with the day they apply on and stored in the command log. That is what keeps replay, branching and saves working with edits.
 
-**When edits apply.** Edits are made while paused or running, and they take effect at the next day boundary. Applying one throws away the lookahead buffer. An edit made while viewing a **past** day starts a new branch of history from that day; the original timeline is kept.
+**When edits apply.** Edits are made while paused or running, and they take effect at the start of the day being shown, so it shows them at once. Applying one throws away the lookahead buffer. An edit made while viewing a **past** day starts a new branch of history from that day; the original timeline is kept.
 
 **Undo/redo.** Undo works by reloading the nearest snapshot and replaying the command log without the undone command. A snapshot is taken when an editing session starts, so this is fast. No hand-written reverse operation is needed for each command.
 
@@ -459,6 +459,8 @@ After step 5 the game is already a watchable, editable living map; everything af
 - **Named characters:** get substantial agency (ambitions, plots, decisions that act on the world), not just aggregate politics.
 - **Planets:** one planet per save.
 - **Rationing:** when requests ask for more than exists, priority classes are served in order and the class that runs short shares proportionally (decided Oct 14). Strict priority alone was rejected because it can starve whole modules out.
+- **Editor scope for step 5** (decided Oct 14): branching keeps both timelines, with a switcher; a new branch does not carry over the old timeline's later pokes and edits. Map painting covers height, sea level, biome and climate overrides, and drawing or redirecting rivers and lakes; resources, minerals and mana wait for the modules that use them. Scenarios are readable TOML files whose edits are replayed on load. The window goes back in time with a history slider.
+- **Edits take effect at once** (decided Oct 14): an edit logged for a day applies at the start of that day, so the world shown for the day the player is looking at already has it. Painting while paused would otherwise show nothing until a day passed.
 - **Day by day:** the clock ticks daily and each module runs its main logic on its own cadence (decided Oct 14). Running every module every day would make slow modules such as climate cost far more for no visible gain.
 
 ## Open questions

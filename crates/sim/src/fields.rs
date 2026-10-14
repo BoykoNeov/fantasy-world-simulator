@@ -219,6 +219,41 @@ impl FieldData {
         }
     }
 
+    /// The values at entities `at`, in that order.
+    pub fn gather(&self, at: &[u32]) -> FieldData {
+        fn go<T: Copy>(v: &[T], at: &[u32]) -> Vec<T> {
+            at.iter().map(|&i| v[i as usize]).collect()
+        }
+        match self {
+            FieldData::F32(v) => FieldData::F32(go(v, at)),
+            FieldData::F64(v) => FieldData::F64(go(v, at)),
+            FieldData::U64(v) => FieldData::U64(go(v, at)),
+            FieldData::U32(v) => FieldData::U32(go(v, at)),
+            FieldData::U16(v) => FieldData::U16(go(v, at)),
+            FieldData::U8(v) => FieldData::U8(go(v, at)),
+            FieldData::Dir(v) => FieldData::Dir(go(v, at)),
+        }
+    }
+
+    /// Write `values` (as [`FieldData::gather`] returns them) back at entities `at`.
+    pub fn scatter(&mut self, at: &[u32], values: &FieldData) {
+        fn go<T: Copy>(v: &mut [T], at: &[u32], x: &[T]) {
+            for (&i, &x) in at.iter().zip(x) {
+                v[i as usize] = x;
+            }
+        }
+        match (self, values) {
+            (FieldData::F32(v), FieldData::F32(x)) => go(v, at, x),
+            (FieldData::F64(v), FieldData::F64(x)) => go(v, at, x),
+            (FieldData::U64(v), FieldData::U64(x)) => go(v, at, x),
+            (FieldData::U32(v), FieldData::U32(x)) => go(v, at, x),
+            (FieldData::U16(v), FieldData::U16(x)) => go(v, at, x),
+            (FieldData::U8(v), FieldData::U8(x)) => go(v, at, x),
+            (FieldData::Dir(v), FieldData::Dir(x)) => go(v, at, x),
+            _ => panic!("scatter: the values are of another type"),
+        }
+    }
+
     /// Sum of a conserved field. Only whole-number fields can be conserved.
     pub fn total(&self) -> u64 {
         match self {

@@ -32,6 +32,8 @@ pub enum Cause {
     Starvation,
     /// A field contract clamped a value back into bounds.
     ContractClamp,
+    /// The player set a value directly (an edit): a declared source or sink.
+    Edit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -90,6 +90,7 @@ fn cause(c: Cause) -> &'static str {
         Cause::Deaths => "deaths",
         Cause::Starvation => "starvation",
         Cause::ContractClamp => "a value pulled back into bounds",
+        Cause::Edit => "your edit",
     }
 }
 
@@ -208,6 +209,7 @@ pub fn stage(s: Stage) -> &'static str {
         Stage::Deliver => "yesterday's events and answers arrive",
         Stage::Tick => "modules do their work",
         Stage::Apply => "change requests are settled",
+        Stage::Edit => "your edits",
     }
 }
 

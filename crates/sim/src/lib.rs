@@ -9,6 +9,7 @@ pub mod calendar;
 pub mod climate;
 pub mod config;
 pub mod economy;
+pub mod edit;
 pub mod events;
 pub mod export;
 pub mod fields;

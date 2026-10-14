@@ -18,6 +18,7 @@ use crate::calendar::Calendar;
 use crate::config::Config;
 use crate::events::{delivery_order, Event, EventKind, EventLog, Posted};
 use crate::fields::{quantity_total, FieldData, FieldId, QUANTITIES};
+use crate::edit::{Edit, MapChange};
 use crate::module::{plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
 use crate::requests::{Cause, Request};
 use crate::world::{Fingerprint, World};
@@ -39,6 +40,9 @@ pub struct Ledger {
     /// people after = before + births − deaths + people_clamped.
     pub food_clamped: i64,
     pub people_clamped: i64,
+    /// Net change from the player's edits, which balance the year in the same way.
+    pub food_edited: i64,
+    pub people_edited: i64,
 }
 
 impl Ledger {
@@ -55,6 +59,8 @@ impl Ledger {
             starved,
             food_clamped: f.get(Quantity::Food, Cause::ContractClamp),
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
+            food_edited: f.get(Quantity::Food, Cause::Edit),
+            people_edited: f.get(Quantity::People, Cause::Edit),
         }
     }
 }
@@ -106,6 +112,8 @@ pub enum CommandKind {
     /// A player's poke. It is an ordinary event: sent on the command's day (by nobody, like the
     /// engine's own events) and delivered the next day, so the world reacts by its own rules.
     Poke { event: Event },
+    /// A player's edit: it sets values directly, at the start of the command's day.
+    Edit { edit: Edit },
 }
 
 /// `last_change` value for "not since the world was made or loaded".
@@ -122,6 +130,8 @@ pub enum Stage {
     Tick,
     /// An owner applied the day's change requests.
     Apply,
+    /// A player's edit, at the start of the day.
+    Edit,
 }
 
 impl Stage {
@@ -166,12 +176,15 @@ pub enum Traced {
 }
 
 /// The state of the running world at the start of a day: every value that can change after world
-/// creation, each module's private state and everything in flight. Fields written at generation are
-/// left out: nothing changes them once the world runs (strict mode enforces it; step 5's map edits
-/// will have to add them).
+/// creation, each module's private state and everything in flight. Fields written at generation (the
+/// map) are left out: only edits change them, and the map is put back from the edits' changes.
 #[derive(Clone)]
 pub struct Checkpoint {
     pub day: u64,
+    /// How many of the edits' map changes the map had.
+    map_at: usize,
+    /// Commands before this one had been applied, if edits.
+    edits_done: usize,
     fields: Vec<(FieldId, FieldData)>,
     modules: Vec<Vec<u8>>,
     pending: Vec<Posted>,
@@ -209,10 +222,21 @@ pub struct Sim {
     log_today: usize,
     /// Stop with a panic when a module writes a field it doesn't own. Slow: for tests.
     pub strict: bool,
-    /// Index of the first command not yet sent (commands are in day order).
+    /// Index of the first poke not yet sent (commands are in day order).
     pub(crate) next_command: usize,
+    /// Commands before this index have been applied, if edits. Between days, every edit logged for
+    /// today or earlier has been.
+    pub(crate) edits_done: usize,
+    /// What each edit applied so far did to the map, in the order applied: going back undoes them,
+    /// and a replay that applies the same edit again reuses its change.
+    map_changes: Vec<MapChange>,
+    /// How many of `map_changes` the map has now.
+    map_at: usize,
+    /// Edits that no longer fit the world when their day came (for example, after an earlier edit
+    /// they relied on was taken back), with the day and why. They are left out.
+    pub skipped_edits: Vec<(u64, String)>,
     /// The world at the start of each year run so far, and where it was loaded: what
-    /// [`Sim::rewind`] and [`Sim::trace`] start from.
+    /// [`Sim::rewind`] and [`Sim::trace`] start from. Taken before that day's edits.
     pub checkpoints: Vec<Checkpoint>,
     /// Per field, the day each entity's value last changed while the world ran ([`NEVER`] if it
     /// hasn't). Empty for fields only generation writes.
@@ -237,6 +261,7 @@ impl Sim {
             // Creating the starting stocks and people is not a flow, so no conservation check.
             sim.stage(Stage::Init, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.init(w, cx)))]);
         }
+        sim.arrive();
         Ok(sim)
     }
 
@@ -266,6 +291,10 @@ impl Sim {
             log_today: 0,
             strict: false,
             next_command: 0,
+            edits_done: 0,
+            map_changes: Vec::new(),
+            map_at: 0,
+            skipped_edits: Vec::new(),
             checkpoints: Vec::new(),
             last_change: vec![Vec::new(); crate::fields::FIELDS.len()],
             trace: None,
@@ -281,18 +310,46 @@ impl Sim {
         self.modules.iter().map(|m| m.manifest()).collect()
     }
 
-    /// Run one day. Returns whether anything ran (false = an idle day).
+    /// Run one day, then arrive at the next: apply the edits logged for it. Returns whether anything
+    /// ran (false = an idle day).
     pub fn step_day(&mut self) -> bool {
-        let mut ran = false;
+        let ran = self.run_day();
+        self.arrive() || ran
+    }
+
+    /// Arrive at the start of today: keep a checkpoint if a year starts, then apply the edits logged
+    /// for today. Returns whether there were any.
+    fn arrive(&mut self) -> bool {
         self.seq = 0;
+        // Replays pass year starts that already have one.
+        if self.calendar.is_year_start(self.day) && self.checkpoints.last().is_none_or(|c| c.day < self.day) {
+            self.checkpoints.push(self.checkpoint());
+        }
+        self.apply_todays_edits()
+    }
+
+    fn apply_todays_edits(&mut self) -> bool {
+        let mut any = false;
+        while let Some(c) = self.commands.get(self.edits_done).filter(|c| c.day <= self.day) {
+            if let CommandKind::Edit { edit } = &c.kind {
+                let (day, edit) = (c.day, edit.clone());
+                if let Err(why) = self.apply_edit(&edit) {
+                    self.skipped_edits.push((day, format!("{}: {why}", edit.describe())));
+                }
+                any = true;
+            }
+            self.edits_done += 1;
+        }
+        any
+    }
+
+    /// Run today, up to the end of the day.
+    fn run_day(&mut self) -> bool {
+        let mut ran = false;
         if !self.applied_today.is_empty() {
             self.applied_today.clear();
         }
         if self.calendar.is_year_start(self.day) {
-            // Replays pass year starts that already have one.
-            if self.checkpoints.last().is_none_or(|c| c.day < self.day) {
-                self.checkpoints.push(self.checkpoint());
-            }
             if self.day > 0 {
                 let summary = self.year_so_far();
                 self.history.push(summary);
@@ -307,13 +364,14 @@ impl Sim {
             ran = true;
         }
         // Today's pokes go out after today's deliveries, so they arrive tomorrow like any event.
+        // (Today's edits were applied on arriving at the day.)
         while let Some(c) = self.commands.get(self.next_command).filter(|c| c.day <= self.day) {
             if let CommandKind::Poke { event } = &c.kind {
                 let event = event.clone();
                 self.post(None, event);
+                ran = true;
             }
             self.next_command += 1;
-            ran = true;
         }
         for k in 0..self.plan.runtime.len() {
             let i = self.plan.runtime[k];
@@ -349,6 +407,62 @@ impl Sim {
     pub fn poke(&mut self, event: Event) {
         let at = self.commands.partition_point(|c| c.day <= self.day);
         self.commands.insert(at, Command { day: self.day, kind: CommandKind::Poke { event } });
+        // Every edit before it is applied.
+        self.edits_done = at + 1;
+    }
+
+    /// Edit the world today (the day about to run). It takes effect at once, so the world as it
+    /// stands shows it, and goes into the command log. Refused, with the reason, if it doesn't fit
+    /// the world as it is.
+    pub fn edit(&mut self, edit: Edit) -> Result<(), String> {
+        let at = self.commands.partition_point(|c| c.day <= self.day);
+        debug_assert_eq!(self.edits_done, at, "between days, today's edits are applied");
+        self.apply_edit(&edit)?;
+        self.commands.insert(at, Command { day: self.day, kind: CommandKind::Edit { edit } });
+        self.edits_done = at + 1;
+        Ok(())
+    }
+
+    /// Take back command `index` (an edit or a poke) as if it had never been given: the world goes
+    /// back to the last checkpoint before it and runs again to today without it. Edits made later
+    /// that relied on it are left out (see [`Sim::skipped_edits`]).
+    pub fn withdraw(&mut self, index: usize) -> Result<Command, String> {
+        let Some(c) = self.commands.get(index) else { return Err(format!("no command {index}")) };
+        if matches!(c.kind, CommandKind::StartSegment { .. }) {
+            return Err("the world's configuration can't be taken back".into());
+        }
+        let day = c.day;
+        let mut taken = None;
+        self.change_history(day, index, |cs| taken = Some(cs.remove(index)))?;
+        Ok(taken.expect("removed above"))
+    }
+
+    /// Give a command again (one taken back by [`Sim::withdraw`]), after the others of its day; the
+    /// world runs again from the last checkpoint before it.
+    pub fn reinstate(&mut self, command: Command) -> Result<(), String> {
+        if matches!(command.kind, CommandKind::StartSegment { .. }) {
+            return Err("only edits and pokes can be given again".into());
+        }
+        let day = command.day;
+        if day > self.day {
+            return Err(format!("{} hasn't come yet", self.calendar.format(day)));
+        }
+        let at = self.commands.partition_point(|c| c.day <= day);
+        self.change_history(day, at, |cs| cs.insert(at, command))
+    }
+
+    /// Change the command log at `at` (a command of `day`), then run the world again from the last
+    /// checkpoint that hadn't seen that part of the log, back up to today.
+    fn change_history(&mut self, day: u64, at: usize, change: impl FnOnce(&mut Vec<Command>)) -> Result<(), String> {
+        let today = self.day;
+        let k = self
+            .checkpoints
+            .iter()
+            .rposition(|c| c.day < day || (c.day == day && c.edits_done <= at))
+            .ok_or_else(|| format!("nothing kept from before {}", self.calendar.format(day)))?;
+        change(&mut self.commands);
+        self.checkpoints.truncate(k + 1);
+        self.replay_to(today, true)
     }
 
     /// Events delivered on the last day run (grants excluded).
@@ -361,10 +475,18 @@ impl Sim {
         FieldId::all().filter(|&id| !self.plan.owner[id.0 as usize].is_some_and(|o| self.plan.generation.contains(&o)))
     }
 
+    /// Fields only world generation and edits write: the map.
+    pub fn map_fields(&self) -> impl Iterator<Item = FieldId> + '_ {
+        let running: Vec<FieldId> = self.running_fields().collect();
+        FieldId::all().filter(move |id| !running.contains(id))
+    }
+
     /// The world as it stands now, between days.
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
             day: self.day,
+            map_at: self.map_at,
+            edits_done: self.edits_done,
             fields: self.running_fields().map(|id| (id, self.world.field(id))).collect(),
             modules: self.modules.iter().map(|m| m.save_state()).collect(),
             pending: self.pending.clone(),
@@ -379,6 +501,14 @@ impl Sim {
     /// Put the world back as it was at `c`. The event log keeps only what was delivered before
     /// that day; commands and checkpoints are left as they are.
     pub fn restore(&mut self, c: &Checkpoint) {
+        while self.map_at > c.map_at {
+            self.map_at -= 1;
+            self.map_changes[self.map_at].undo(&mut self.world);
+        }
+        while self.map_at < c.map_at {
+            self.map_changes[self.map_at].redo(&mut self.world);
+            self.map_at += 1;
+        }
         for (id, data) in &c.fields {
             self.world.set_field(*id, data.clone()).expect("a checkpoint of this world");
         }
@@ -398,10 +528,13 @@ impl Sim {
         self.event_log.entries.retain(|p| p.day + 1 < day);
         self.log_today = self.event_log.entries.partition_point(|p| p.day + 2 < day);
         self.next_command = self.commands.partition_point(|c| c.day < day);
+        self.edits_done = c.edits_done;
+        self.skipped_edits.retain(|s| s.0 < day);
     }
 
-    /// Restore the latest checkpoint at or before the start of `day`, then run up to it.
-    fn replay_to(&mut self, day: u64) -> Result<(), String> {
+    /// Restore the latest checkpoint at or before the start of `day`, then run up to it; with
+    /// `edits`, apply that day's edits too.
+    fn replay_to(&mut self, day: u64, edits: bool) -> Result<(), String> {
         if day > self.day {
             return Err(format!("{} hasn't run yet", self.calendar.format(day)));
         }
@@ -411,7 +544,11 @@ impl Sim {
         };
         self.restore(&c);
         while self.day < day {
-            self.step_day();
+            self.arrive();
+            self.run_day();
+        }
+        if edits {
+            self.arrive();
         }
         Ok(())
     }
@@ -419,7 +556,7 @@ impl Sim {
     /// Go back to the start of an earlier `day` and forget the days after it, so a poke made now
     /// starts a new future. Commands already logged for later days stay and run again.
     pub fn rewind(&mut self, day: u64) -> Result<(), String> {
-        self.replay_to(day)?;
+        self.replay_to(day, true)?;
         self.checkpoints.retain(|c| c.day <= day);
         Ok(())
     }
@@ -436,15 +573,63 @@ impl Sim {
         }
         let now = self.checkpoint();
         let (log, log_today) = (self.event_log.entries.clone(), self.log_today);
-        let result = self.replay_to(day).map(|()| {
+        let result = self.replay_to(day, false).map(|()| {
             self.trace = Some(Trace { day, province, steps: Vec::new() });
-            self.step_day();
+            self.arrive();
+            self.run_day();
             self.trace.take().expect("set above")
         });
         self.restore(&now);
         self.event_log.entries = log;
         self.log_today = log_today;
         result
+    }
+
+    /// Apply one edit at the start of today, as its own stage: check it, change the map (or make
+    /// again the change the same edit made last time), then the running world. Then check that
+    /// people and food changed only by what the edit declared, clamp values into their contracts,
+    /// and note what changed.
+    fn apply_edit(&mut self, edit: &Edit) -> Result<(), String> {
+        edit.check(&self.world)?;
+        let before: Vec<u64> = QUANTITIES.iter().map(|&q| quantity_total(&self.world, q)).collect();
+        let running: Vec<FieldId> = self.running_fields().collect();
+        let watched: Vec<(FieldId, FieldData)> = running.iter().map(|&id| (id, self.world.field(id))).collect();
+        let map = edit.changes_map().then(|| {
+            match self.map_changes.get(self.map_at) {
+                Some(c) if c.edit == *edit => c.redo(&mut self.world),
+                _ => {
+                    self.map_changes.truncate(self.map_at);
+                    let old = self.map_fields().map(|id| (id, self.world.field(id))).collect();
+                    edit.change_map(&mut self.world);
+                    self.map_changes.push(MapChange::between(edit.clone(), old, &self.world));
+                }
+            }
+            self.map_at += 1;
+            self.map_at - 1
+        });
+        let flows = edit.change_running(&mut self.world, map.map(|i| &self.map_changes[i]));
+
+        for (k, &q) in QUANTITIES.iter().enumerate() {
+            let expected = before[k] as i128 + flows.net(q) as i128;
+            let actual = quantity_total(&self.world, q);
+            if expected != actual as i128 {
+                self.problems.conservation_breaks += 1;
+                self.post(None, Event::ConservationBroken { quantity: q, expected: expected.max(0) as u64, actual, by: Vec::new() });
+            }
+        }
+        for &id in &running {
+            self.enforce_contract(id, &[]);
+        }
+        if let Some(t) = &mut self.trace
+            && edit.provinces(&self.world).contains(&t.province)
+        {
+            t.steps.push(TraceStep { stage: Stage::Edit, module: None, what: Traced::Note(edit.describe()) });
+        }
+        for (id, old) in watched {
+            self.record_changes(Stage::Edit, id, &old);
+        }
+        self.year_flows.merge(&flows);
+        Ok(())
     }
 
     /// Place of a slot in the run order (generation modules first).
@@ -583,7 +768,8 @@ impl Sim {
             crate::fields::Tier::Pop => self.world.pops.province.get(e as usize) == Some(&t.province),
             crate::fields::Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
         };
-        let module = self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot);
+        // An edit is the player's doing, not the owner's.
+        let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };
         for e in changed.into_iter().filter(|&e| mine(e)) {
             let what = Traced::Changed { field: id, entity: e, before: old.value(e as usize), after: new.value(e as usize) };
             t.steps.push(TraceStep { stage: kind, module, what });
