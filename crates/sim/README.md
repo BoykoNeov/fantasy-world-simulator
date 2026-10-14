@@ -71,6 +71,15 @@ What exists:
   that touches no province becomes one. A province whose land all sinks sends its people and food to
   the nearest province with land. Only the downstream links of the rivers are stored now, not the
   order water is added up in (format 4).
+- **Painting climate and biomes** (`edit.rs`): an override stroke sets the temperature or the rain
+  (blended in at the brush's soft edge) or a land biome. They are stored as map layers the climate
+  and biome modules keep over what they work out, through later height edits too, until a stroke
+  clears them.
+- **Drawing rivers** (`edit.rs`): a river drawn along a path is a riverbed carved from source to
+  mouth, falling all the way and lying below its banks, so the water follows it. Starting one on a
+  river redirects that river. A spring at the source can add water, so a river can be drawn where
+  little rain falls. Lakes are painted with the height brush, below sea level: there are no lakes
+  above it yet.
 - **Going back** (`sim.rs`): at the start of every year the engine keeps a checkpoint of everything
   that can change once the world runs. `Sim::rewind` returns to the start of any earlier day by
   restoring the checkpoint before it and running forward; the days after are forgotten, so a poke

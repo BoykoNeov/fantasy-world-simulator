@@ -74,6 +74,28 @@ pub enum Edit {
     Paint { path: Vec<[f64; 2]>, radius_km: f64, brush: Brush },
     /// The sea rises by this many metres everywhere (falls, if negative).
     SeaLevel { rise_m: f32 },
+    /// A brush stroke that sets the climate or the biome where it passes. The climate and biome
+    /// modules keep what was set over what they work out, until a stroke clears it.
+    Override { path: Vec<[f64; 2]>, radius_km: f64, set: Override },
+    /// A riverbed carved along `path` (longitude and latitude, degrees), from its source to its
+    /// mouth: it falls all the way and lies below its banks, so water follows it. Starting it on a
+    /// river redirects that river. `spring` adds water at the source (thousand m³ a year), so a
+    /// river can be drawn where little rain falls; with 0 it carries only the water already there.
+    River { path: Vec<[f64; 2]>, spring: u64 },
+}
+
+/// What an override stroke sets.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Override {
+    /// Annual mean temperature, °C, blended into what was there at the brush's soft edge.
+    Temperature(f32),
+    /// Annual rainfall, mm, blended likewise.
+    Rainfall(f32),
+    /// A land biome (its number in [`crate::biome::ALL`]), on land wherever the brush reaches at
+    /// least half strength.
+    Biome(u8),
+    /// Clear every override the brush reaches.
+    Clear,
 }
 
 /// What a brush does to the land's height, at full strength: in the middle half of the brush. It
@@ -142,13 +164,30 @@ impl Edit {
                 }
                 Ok(())
             }
+            Edit::River { ref path, .. } => {
+                stroke(path, 1.0)?;
+                let cells = river_cells(&w.grid, path);
+                if cells.len() < 2 || w.elevation[cells[0]] < 0.0 {
+                    return Err("a river needs a source on land and somewhere to run".into());
+                }
+                Ok(())
+            }
+            Edit::Override { ref path, radius_km, set } => {
+                stroke(path, radius_km)?;
+                let within = |what: &str, x: f32| {
+                    let d = known(what).def();
+                    if (d.min..=d.max).contains(&(x as f64)) { Ok(()) } else { Err(format!("{x} is outside {what}'s {} to {}", d.min, d.max)) }
+                };
+                match set {
+                    Override::Temperature(t) => within("cell.temperature", t),
+                    Override::Rainfall(r) => within("cell.rainfall", r),
+                    Override::Biome(b) if b == crate::biome::Biome::Ocean as u8 => Err("paint sea by lowering the land".into()),
+                    Override::Biome(b) if b as usize >= crate::biome::ALL.len() => Err(format!("no biome {b}")),
+                    Override::Biome(_) | Override::Clear => Ok(()),
+                }
+            }
             Edit::Paint { ref path, radius_km, brush } => {
-                if path.is_empty() {
-                    return Err("a stroke needs at least one point".into());
-                }
-                if path.iter().flatten().any(|x| !x.is_finite()) || !(radius_km > 0.0 && radius_km.is_finite()) {
-                    return Err("the stroke's points and radius must be numbers, the radius above 0".into());
-                }
+                stroke(path, radius_km)?;
                 let x = match brush {
                     Brush::Raise(x) | Brush::Lower(x) | Brush::Roughen(x) | Brush::Flatten(x) => x,
                     Brush::Smooth(x) if !(0.0..=1.0).contains(&x) => return Err("smoothing goes from 0 to 1".into()),
@@ -164,7 +203,7 @@ impl Edit {
     pub fn changes_map(&self) -> bool {
         match self {
             Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } => false,
-            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } => true,
+            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => true,
         }
     }
 
@@ -182,6 +221,16 @@ impl Edit {
             }
             Edit::SeaLevel { rise_m } => {
                 w.elevation.iter_mut().for_each(|h| *h -= rise_m);
+                return reshape_after_height(w, regenerate);
+            }
+            Edit::Override { ref path, radius_km, set } => {
+                paint_override(w, path, radius_km, set);
+                return reshape_after_height(w, regenerate);
+            }
+            Edit::River { ref path, spring } => {
+                let cells = river_cells(&w.grid, path);
+                carve(w, &cells);
+                w.spring[cells[0]] += spring;
                 return reshape_after_height(w, regenerate);
             }
             Edit::MoveCells { ref cells, to } => {
@@ -238,7 +287,7 @@ impl Edit {
                 }
                 share_out(w, &moved);
             }
-            Edit::Paint { .. } | Edit::SeaLevel { .. } => {
+            Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => {
                 w.grow_province_fields();
                 let emptied = map.expect("a height edit changes the map").emptied_provinces();
                 flows = rehouse(w, &emptied);
@@ -262,7 +311,7 @@ impl Edit {
             Edit::MoveCells { ref cells, to } => of(cells, to),
             Edit::Split { ref cells } => of(cells, w.provinces.count as u32),
             Edit::Merge { from, into } => vec![from, into],
-            Edit::Paint { ref path, radius_km, .. } => {
+            Edit::Paint { ref path, radius_km, .. } | Edit::Override { ref path, radius_km, .. } => {
                 let reach = brush_reach(&w.grid, path, radius_km / w.params.radius_km);
                 let mut v: Vec<u32> = (0..reach.len()).filter(|&c| reach[c] > 0.0).map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -270,6 +319,12 @@ impl Edit {
                 v
             }
             Edit::SeaLevel { .. } => (0..w.provinces.count as u32).collect(),
+            Edit::River { ref path, .. } => {
+                let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            }
         }
     }
 
@@ -294,6 +349,83 @@ impl Edit {
             }
             Edit::SeaLevel { rise_m } if *rise_m >= 0.0 => format!("the sea rose {rise_m:.0} m"),
             Edit::SeaLevel { rise_m } => format!("the sea fell {:.0} m", -rise_m),
+            Edit::Override { path, radius_km, set } => {
+                let what = match set {
+                    Override::Temperature(t) => format!("temperature set to {t:.0} °C"),
+                    Override::Rainfall(r) => format!("rainfall set to {r:.0} mm a year"),
+                    Override::Biome(b) => format!("biome set to {}", crate::biome::ALL.get(*b as usize).map_or("?", |b| b.name())),
+                    Override::Clear => "painted climate and biomes cleared".into(),
+                };
+                format!("{what} along a {}-point stroke {radius_km:.0} km wide", path.len())
+            }
+            Edit::River { path, spring: 0 } => format!("a riverbed carved along {} points", path.len()),
+            Edit::River { path, spring } => format!("a river drawn along {} points, its spring adding {spring} thousand m³ a year", path.len()),
+        }
+    }
+}
+
+/// The cells a river drawn along `path` runs through, source first: each one of the eight
+/// neighbours of the one before, no cell twice, ending at the first sea cell it reaches.
+pub fn river_cells(grid: &Grid, path: &[[f64; 2]]) -> Vec<usize> {
+    let dirs: Vec<V3> = path.iter().map(|p| lonlat_to_dir(p[0].to_radians(), p[1].to_radians())).collect();
+    let step = grid.mean_area().sqrt() / 4.0;
+    let mut out: Vec<usize> = Vec::new();
+    let add = |c: usize, out: &mut Vec<usize>| match out.last() {
+        Some(&l) if l == c => {}
+        // A path that comes back on itself drops the loop.
+        _ if out.contains(&c) => {
+            let k = out.iter().position(|&x| x == c).expect("contained");
+            out.truncate(k + 1);
+        }
+        Some(&l) if !grid.neighbors8(l).any(|m| m == c) => {}
+        _ => out.push(c),
+    };
+    if let Some(&d) = dirs.first() {
+        add(grid.dir_to_cell(d), &mut out);
+    }
+    for pair in dirs.windows(2) {
+        let angle = dot(pair[0], pair[1]).clamp(-1.0, 1.0).acos();
+        let steps = (angle / step).ceil().max(1.0) as usize;
+        for k in 1..=steps {
+            let t = k as f64 / steps as f64;
+            // Along the great circle, near enough for short steps.
+            let p = crate::grid::normalize(std::array::from_fn(|i| pair[0][i] * (1.0 - t) + pair[1][i] * t));
+            add(grid.dir_to_cell(p), &mut out);
+        }
+    }
+    out
+}
+
+/// Carve a riverbed through `cells`, source first: each cell at least 1 cm lower than the one
+/// before and, where the land allows, 1 m below its banks (its neighbours off the river), while
+/// staying above the sea. The bed ends at the first sea cell.
+fn carve(w: &mut World, cells: &[usize]) {
+    let n = cells.len();
+    let end = cells.iter().position(|&c| w.elevation[c] < 0.0).unwrap_or(n);
+    let mut prev = f32::INFINITY;
+    for (i, &c) in cells[..end].iter().enumerate() {
+        let bank = w.grid.neighbors8(c).filter(|m| !cells.contains(m)).map(|m| w.elevation[m]).fold(f32::INFINITY, f32::min);
+        // Room left above the sea for the rest of the bed to keep falling.
+        let floor = 0.01 * (end - i) as f32;
+        w.elevation[c] = w.elevation[c].min(bank - 1.0).min(prev - 0.01).max(floor);
+        prev = w.elevation[c];
+    }
+}
+
+/// Set (or clear) painted climate or biomes along a stroke.
+fn paint_override(w: &mut World, path: &[[f64; 2]], radius_km: f64, set: Override) {
+    let reach = brush_reach(&w.grid, path, radius_km / w.params.radius_km);
+    for c in (0..reach.len()).filter(|&c| reach[c] > 0.0) {
+        let r = reach[c];
+        match set {
+            Override::Temperature(t) => w.temperature_set[c] = w.temperature[c] + r * (t - w.temperature[c]),
+            Override::Rainfall(x) => w.rainfall_set[c] = w.rainfall[c] + r * (x - w.rainfall[c]),
+            Override::Biome(b) if r >= 0.5 && w.elevation[c] >= 0.0 => w.biome_set[c] = b,
+            Override::Biome(_) => {}
+            Override::Clear => {
+                (w.temperature_set[c], w.rainfall_set[c]) = (f32::NAN, f32::NAN);
+                w.biome_set[c] = crate::biome::NOT_SET;
+            }
         }
     }
 }
@@ -459,6 +591,17 @@ fn join(pops: &mut Pops, pops_of: &mut HashMap<u32, Vec<usize>>, k: usize, to: u
             there.push(j);
         }
     }
+}
+
+/// Refuse a stroke with no points, or points or a radius that aren't numbers.
+fn stroke(path: &[[f64; 2]], radius_km: f64) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("a stroke needs at least one point".into());
+    }
+    if path.iter().flatten().any(|x| !x.is_finite()) || !(radius_km > 0.0 && radius_km.is_finite()) {
+        return Err("the stroke's points and radius must be numbers, the radius above 0".into());
+    }
+    Ok(())
 }
 
 /// Refuse cell lists that are empty, off the planet or at sea.

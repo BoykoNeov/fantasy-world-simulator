@@ -7,7 +7,11 @@ use rayon::prelude::*;
 /// Biomes v0: the lookup below.
 pub struct Biomes;
 
-static V0: Manifest = Manifest::generation(Slot::Biomes, "lookup", crate::fields::Tier::Cell, &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome"]);
+static V0: Manifest =
+    Manifest::generation(Slot::Biomes, "lookup", crate::fields::Tier::Cell, &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome", "cell.biome_set"]);
+
+/// `cell.biome_set` where the editor painted no biome.
+pub const NOT_SET: u8 = u8::MAX;
 
 impl Module for Biomes {
     fn manifest(&self) -> &'static Manifest {
@@ -15,6 +19,15 @@ impl Module for Biomes {
     }
     fn generate(&self, w: &mut World) {
         w.biome = generate(&w.elevation, &w.temperature, &w.rainfall);
+        // Biomes the editor painted win on land. A new world has none.
+        if w.biome_set.len() != w.biome.len() {
+            w.biome_set = vec![NOT_SET; w.biome.len()];
+        }
+        for (c, &b) in w.biome_set.iter().enumerate() {
+            if b != NOT_SET && w.elevation[c] >= 0.0 {
+                w.biome[c] = ALL[b as usize];
+            }
+        }
     }
 }
 

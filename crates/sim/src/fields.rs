@@ -87,6 +87,11 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { conserved: Some(Quantity::People), default: Default::Empty, ..def("pop.size", Tier::Pop, "people", 0.0, COUNT_MAX) },
     // Appended after the step-3 fields: saved events refer to fields by position.
     FieldDef { default: Default::Zero, ..def("province.rain_shortfall", Tier::Province, "‰ of normal rain missing", 0.0, 1000.0) },
+    // Overrides painted by the editor, which the climate and biome modules respect (step 5).
+    def("cell.temperature_set", Tier::Cell, "°C set by an edit, NaN where not set", -UNBOUNDED, UNBOUNDED),
+    def("cell.rainfall_set", Tier::Cell, "mm a year set by an edit, NaN where not set", -UNBOUNDED, UNBOUNDED),
+    def("cell.biome_set", Tier::Cell, "biome id set by an edit, 255 where not set", -UNBOUNDED, UNBOUNDED),
+    def("cell.spring", Tier::Cell, "thousand m³ a year a drawn river's spring adds", 0.0, UNBOUNDED),
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

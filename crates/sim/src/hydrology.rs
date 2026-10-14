@@ -17,7 +17,7 @@ pub struct Rivers;
 
 static V0: Manifest = Manifest::generation(Slot::Rivers, "drainage", crate::fields::Tier::Cell,
     &["cell.elevation", "cell.temperature", "cell.rainfall"],
-    &["cell.drainage_receiver", "cell.river_flow"],
+    &["cell.drainage_receiver", "cell.river_flow", "cell.spring"],
 );
 
 impl Module for Rivers {
@@ -26,7 +26,14 @@ impl Module for Rivers {
     }
     fn generate(&self, w: &mut World) {
         let drainage = drainage(&w.grid, &w.elevation);
-        let runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km);
+        let mut runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km);
+        // Springs of rivers the editor drew. A new world has none.
+        if w.spring.len() != runoff.len() {
+            w.spring = vec![0; runoff.len()];
+        }
+        for (r, &s) in runoff.iter_mut().zip(&w.spring) {
+            *r += s;
+        }
         w.river_flow = accumulate(&drainage, &runoff);
         w.downstream = drainage.receiver;
     }

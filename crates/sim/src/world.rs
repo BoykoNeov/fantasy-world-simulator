@@ -105,6 +105,14 @@ pub struct World {
     pub pops: Pops,
     /// Share of the province's normal rain that is missing, per mille (0 = a normal year).
     pub rain_shortfall: Vec<u64>,
+    /// Climate painted by the editor, which the climate module keeps over what it works out: °C
+    /// and mm a year, NaN where nothing is set.
+    pub temperature_set: Vec<f32>,
+    pub rainfall_set: Vec<f32>,
+    /// Biomes painted by the editor, on land; [`crate::biome::NOT_SET`] where nothing is set.
+    pub biome_set: Vec<u8>,
+    /// Water the spring of a river drawn by the editor adds to a cell, thousand m³ a year.
+    pub spring: Vec<u64>,
 }
 
 impl World {
@@ -125,6 +133,10 @@ impl World {
             starved_this_year: Vec::new(),
             pops: Pops::default(),
             rain_shortfall: Vec::new(),
+            temperature_set: Vec::new(),
+            rainfall_set: Vec::new(),
+            biome_set: Vec::new(),
+            spring: Vec::new(),
         }
     }
 
@@ -175,6 +187,10 @@ impl World {
             "pop.class" => U8(self.pops.class.clone()),
             "pop.size" => U64(self.pops.size.clone()),
             "province.rain_shortfall" => U64(self.rain_shortfall.clone()),
+            "cell.temperature_set" => F32(self.temperature_set.clone()),
+            "cell.rainfall_set" => F32(self.rainfall_set.clone()),
+            "cell.biome_set" => U8(self.biome_set.clone()),
+            "cell.spring" => U64(self.spring.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -221,6 +237,10 @@ impl World {
             ("pop.class", U8(v)) => self.pops.class = v,
             ("pop.size", U64(v)) => self.pops.size = v,
             ("province.rain_shortfall", U64(v)) => self.rain_shortfall = v,
+            ("cell.temperature_set", F32(v)) => self.temperature_set = v,
+            ("cell.rainfall_set", F32(v)) => self.rainfall_set = v,
+            ("cell.biome_set", U8(v)) => self.biome_set = v,
+            ("cell.spring", U64(v)) => self.spring = v,
             _ => return wrong(),
         }
         Ok(())

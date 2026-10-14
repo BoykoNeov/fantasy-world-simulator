@@ -30,7 +30,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 3 (step 5): edits in the command log, the edit cause, and edits in the year's ledger.
 /// Format 4 (step 5): the drainage order is no longer stored (it is rebuilt from the downstream
 /// links when rivers are worked out).
-pub const FORMAT_VERSION: u32 = 4;
+/// Format 5 (step 5): climate and biomes painted by the editor, and springs of drawn rivers.
+pub const FORMAT_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

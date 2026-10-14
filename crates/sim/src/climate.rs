@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 pub struct LatitudeClimate;
 pub struct NullClimate;
 
-const OWNS: &[&str] = &["cell.temperature", "cell.rainfall"];
+const OWNS: &[&str] = &["cell.temperature", "cell.rainfall", "cell.temperature_set", "cell.rainfall_set"];
 static LATITUDE: Manifest = Manifest::generation(Slot::Climate, "latitude", crate::fields::Tier::Cell, &["cell.elevation"], OWNS);
 static NULL: Manifest = Manifest::generation(Slot::Climate, "null", crate::fields::Tier::Cell, &[], OWNS);
 
@@ -31,6 +31,7 @@ impl SimModule for LatitudeClimate {
         let c = generate(&w.grid, &w.elevation, w.params.seed, w.params.radius_km);
         w.temperature = c.temperature;
         w.rainfall = c.rainfall;
+        keep_painted(w);
     }
 }
 
@@ -41,6 +42,26 @@ impl SimModule for NullClimate {
     fn generate(&self, w: &mut World) {
         w.temperature = vec![NULL_TEMPERATURE; w.grid.cells()];
         w.rainfall = vec![NULL_RAINFALL; w.grid.cells()];
+        keep_painted(w);
+    }
+}
+
+/// Every version keeps the climate the editor painted over what it works out. A new world has
+/// nothing painted.
+fn keep_painted(w: &mut World) {
+    let cells = w.grid.cells();
+    for v in [&mut w.temperature_set, &mut w.rainfall_set] {
+        if v.len() != cells {
+            *v = vec![f32::NAN; cells];
+        }
+    }
+    for c in 0..cells {
+        if !w.temperature_set[c].is_nan() {
+            w.temperature[c] = w.temperature_set[c];
+        }
+        if !w.rainfall_set[c].is_nan() {
+            w.rainfall[c] = w.rainfall_set[c];
+        }
     }
 }
 
