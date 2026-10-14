@@ -395,7 +395,7 @@ Accepted outcome: some combinations stay yellow or red forever. What the player 
 
 Start with a thin slice you can watch, and pull the framework out of real modules rather than designing it up front. Each step produces something you can look at. Resist magic until the mundane world works.
 
-1. **Thin slice, headless.**
+1. **Thin slice, headless.** Done Oct 14 (`crates/sim`, see its README for measured speed). The PNG export is equirectangular for convenience only; it does not settle the projection question.
    - Cube-sphere grid with seam and corner neighbour tables.
    - Noise terrain, simple latitude/elevation climate, biomes.
    - Province clustering; pops that grow and starve.

@@ -55,17 +55,17 @@ impl Biome {
     }
 
     /// Food a square kilometre of this biome yields per year, in rations (one ration feeds one
-    /// person for one month), with pre-modern farming and herding.
+    /// person for one day), with pre-modern farming and herding.
     pub fn food_per_km2(self) -> f64 {
         match self {
             Biome::Ocean | Biome::IceCap => 0.0,
-            Biome::Tundra | Biome::Alpine => 2.0,
-            Biome::Desert => 1.0,
-            Biome::BorealForest => 6.0,
-            Biome::TemperateForest => 26.0,
-            Biome::Grassland => 30.0,
-            Biome::Savanna => 16.0,
-            Biome::TropicalForest => 12.0,
+            Biome::Tundra | Biome::Alpine => 60.0,
+            Biome::Desert => 30.0,
+            Biome::BorealForest => 180.0,
+            Biome::TemperateForest => 780.0,
+            Biome::Grassland => 900.0,
+            Biome::Savanna => 480.0,
+            Biome::TropicalForest => 360.0,
         }
     }
 

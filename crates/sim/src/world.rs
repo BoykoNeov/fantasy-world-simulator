@@ -43,9 +43,10 @@ impl WorldParams {
     }
 }
 
-/// Rivers carrying at least this much water a year (thousand m³; about 60 m³/s) make the land
-/// around them more fertile and are drawn on the map.
-pub const RIVER_MIN_FLOW: u64 = 2_000_000;
+/// Rivers carrying at least this much water a year (thousand m³; about 630 m³/s, a major river)
+/// make the land around them more fertile and are drawn on the map. Much lower and, in rainy
+/// regions, nearly every path a few cells long counts as a river.
+pub const RIVER_MIN_FLOW: u64 = 20_000_000;
 
 /// How much more food a cell yields when a river runs through it.
 const RIVER_FOOD_BONUS: f64 = 1.6;

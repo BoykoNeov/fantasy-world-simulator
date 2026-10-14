@@ -130,7 +130,7 @@ impl Calendar {
     }
 
     pub fn is_week_start(&self, day: u64) -> bool {
-        day % self.days_per_week() as u64 == 0
+        day.is_multiple_of(self.days_per_week() as u64)
     }
 
     pub fn is_month_start(&self, day: u64) -> bool {
@@ -138,7 +138,7 @@ impl Calendar {
     }
 
     pub fn is_year_start(&self, day: u64) -> bool {
-        day % self.days_per_year as u64 == 0
+        day.is_multiple_of(self.days_per_year as u64)
     }
 
     /// Fraction of the year elapsed at the middle of a month, in [0, 1).
