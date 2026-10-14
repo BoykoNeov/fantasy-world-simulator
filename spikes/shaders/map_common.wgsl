@@ -185,8 +185,9 @@ fn line_vertex(p0: vec2<f32>, p1: vec2<f32>, corner: vec2<f32>, kind: f32, wrap_
     let p = a + dir * along + nrm * corner.y * ext;
 
     out.clip = vec4<f32>(p.x / params.screen.x * 2.0 - 1.0, 1.0 - p.y / params.screen.y * 2.0, 0.0, 1.0);
-    // Hide invisible lines and the long, degenerate segments around the poles.
-    if (color.a <= 0.001 || len > 0.25 * s) {
+    // Hide invisible lines, the long degenerate segments around the poles, and everything while
+    // the view is not set up yet (zero scale or size would give infinite positions).
+    if (color.a <= 0.001 || len > 0.25 * s || s <= 0.0 || params.screen.x < 1.0 || params.screen.y < 1.0) {
         out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     }
     out.color = color;

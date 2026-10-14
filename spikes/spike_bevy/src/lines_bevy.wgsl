@@ -26,7 +26,8 @@ struct LineOut {
 fn vertex(in: LineIn) -> LineOut {
     let v = line_vertex(in.p0, in.p1, in.corner, in.kind, wrap.x);
     var out: LineOut;
-    out.clip = v.clip;
+    // Bevy's 2D pass has a reverse-Z depth buffer (the opaque map writes it): put lines in front.
+    out.clip = vec4<f32>(v.clip.xy, 0.999 * v.clip.w, v.clip.w);
     out.color = vec4<f32>(pow(v.color.rgb, vec3<f32>(2.2)), v.color.a);
     out.side_px = v.side_px;
     out.half_width = v.half_width;

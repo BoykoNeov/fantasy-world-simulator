@@ -32,7 +32,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
 use spike_world::borders::{extract_borders, line_vertices};
-use spike_world::view::{bench_frame, BenchStats, Camera, Options, Phase, BRUSH_AMOUNT, BRUSH_RADIUS};
+use spike_world::view::{bench_frame, BenchStats, Camera as MapView, Options, Phase, BRUSH_AMOUNT, BRUSH_RADIUS};
 use spike_world::world::{apply_brush, generate, place_name, DirtyRect, GenParams, World as Planet, NO_PROVINCE};
 use std::time::Instant;
 
@@ -47,11 +47,18 @@ const ATTR_KIND: MeshVertexAttribute = MeshVertexAttribute::new("LineKind", 0x5E
 const PANEL_WIDTH: f32 = 240.0;
 
 /// Matches `MapParams` in map_common.wgsl.
-#[derive(ShaderType, Clone, Copy, Default, Debug)]
+#[derive(ShaderType, Clone, Copy, Debug)]
 struct MapParams {
     view: Vec4,
     screen: Vec4,
     layers: Vec4,
+}
+
+impl Default for MapParams {
+    /// Valid (if arbitrary) values for the frames drawn before the first camera update.
+    fn default() -> Self {
+        MapParams { view: Vec4::new(0.0, 0.0, 300.0, 1.0), screen: Vec4::new(1920.0, 1080.0, 0.0, 0.0), layers: Vec4::ZERO }
+    }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
@@ -124,7 +131,7 @@ struct MapState {
     opts: Options,
     planet: Planet,
     segment_count: usize,
-    cam: Option<Camera>,
+    cam: Option<MapView>,
     terrain: f32,
     political: f32,
     lines: bool,
@@ -150,6 +157,7 @@ struct MapState {
 
 /// Rectangles touched by the brush this frame, for the partial-upload path.
 #[derive(Resource, Clone, Default, ExtractResource)]
+#[extract_app(RenderApp)]
 struct PendingUploads {
     image: Option<AssetId<Image>>,
     rects: Vec<(DirtyRect, Vec<f32>)>,
@@ -173,9 +181,13 @@ const ARC_SIZE: f64 = 22.0;
 fn main() {
     let opts = Options::from_args();
     let partial = std::env::var("BEVY_PARTIAL").is_ok_and(|v| v == "1");
+    let bench = opts.bench;
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins.set(WindowPlugin {
+        DefaultPlugins
+            // Diagnostic: BEVY_SYNC_PIPELINES=1 compiles render pipelines up front instead of in the background.
+            .set(bevy::render::RenderPlugin { synchronous_pipeline_compilation: env_flag("BEVY_SYNC_PIPELINES"), ..default() })
+            .set(WindowPlugin {
             primary_window: Some(Window {
                 title: "spike_bevy".into(),
                 resolution: WindowResolution::new(1920, 1080),
@@ -193,6 +205,8 @@ fn main() {
         ExtractResourcePlugin::<PendingUploads>::default(),
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.1)))
+    // Bevy's default drops to 60 Hz when the window is unfocused (as a benchmark window usually is).
+    .insert_resource(if bench { bevy::winit::WinitSettings::continuous() } else { bevy::winit::WinitSettings::game() })
     .init_resource::<PendingUploads>()
     .insert_resource(StartupOptions { opts, partial })
     .add_systems(Startup, setup)
@@ -202,6 +216,10 @@ fn main() {
     .add_systems(Last, finish_bench);
     app.sub_app_mut(RenderApp).add_systems(Render, upload_partial.in_set(RenderSystems::PrepareResources));
     app.run();
+}
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|v| v == "1")
 }
 
 #[derive(Resource)]
@@ -279,14 +297,16 @@ fn setup(
     mesh.insert_attribute(ATTR_KIND, verts.iter().map(|v| v.kind).collect::<Vec<_>>());
     let line_mesh = meshes.add(mesh);
     let mut line_handles = Vec::new();
-    for k in [-1.0f32, 0.0, 1.0] {
+    let no_lines = env_flag("BEVY_NO_LINES");
+    let no_text = env_flag("BEVY_NO_TEXT");
+    for k in [-1.0f32, 0.0, 1.0].into_iter().filter(|_| !no_lines) {
         let h = line_materials.add(LineMaterial { params: MapParams::default(), wrap: Vec4::new(k, 0.0, 0.0, 0.0) });
         commands.spawn((Mesh2d(line_mesh.clone()), MeshMaterial2d(h.clone()), Transform::from_xyz(0.0, 0.0, 1.0), NoFrustumCulling));
         line_handles.push(h);
     }
 
     let ink = Color::srgb_u8(60, 40, 25);
-    for p in planet.label_provinces(14) {
+    for p in planet.label_provinces(if no_text { 0 } else { 14 }) {
         let (lon, lat) = spike_world::cube::dir_to_lonlat(planet.province_center[p]);
         commands.spawn((
             Text2d::new(place_name(p, 7)),
@@ -296,7 +316,7 @@ fn setup(
             PlaceLabel { lon, lat },
         ));
     }
-    for (k, ch) in ARC_TEXT.chars().enumerate() {
+    for (k, ch) in ARC_TEXT.chars().enumerate().filter(|_| !no_text) {
         commands.spawn((
             Text2d::new(ch.to_string()),
             TextFont { font_size: FontSize::Px(ARC_SIZE as f32), ..default() },
@@ -349,7 +369,12 @@ fn side_panel(
     let Some(mut state) = state else { return Ok(()) };
     let ctx = contexts.ctx_mut()?;
     let hover = state.hover;
-    egui::Panel::left("controls").exact_size(PANEL_WIDTH).show(ctx, |ui| {
+    let mut root = egui::Ui::new(
+        ctx.clone(),
+        "root".into(),
+        egui::UiBuilder::new().layer_id(egui::LayerId::background()).max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::left("controls").exact_size(PANEL_WIDTH).show(&mut root, |ui| {
         ui.heading("Fantasy map spike");
         ui.label("Bevy + bevy_egui");
         ui.separator();
@@ -407,7 +432,7 @@ fn drive_camera(
     state.last = Some(now);
     state.last_dt_ms = dt.as_secs_f64() * 1000.0;
     let (ox, oy, w, h) = state.map_rect;
-    let mut cam = state.cam.unwrap_or_else(|| Camera::fit(h));
+    let mut cam = state.cam.unwrap_or_else(|| MapView::fit(h));
     let sf = window.scale_factor() as f64;
 
     let mut strokes: Vec<((f64, f64), f32)> = Vec::new();
@@ -451,7 +476,7 @@ fn drive_camera(
         } else {
             // Idiomatic: write into the Image asset; Bevy then re-extracts and re-uploads all of it.
             let n = state.planet.grid.n;
-            let image = images.get_mut(&state.elevation).expect("elevation image");
+            let mut image = images.get_mut(&state.elevation).expect("elevation image");
             let data = image.data.as_mut().expect("cpu copy");
             for r in rects {
                 for j in r.j0..=r.j1 {
@@ -468,8 +493,18 @@ fn drive_camera(
     }
 }
 
-fn update_materials(state: Option<Res<MapState>>, mut maps: ResMut<Assets<MapMaterial>>, mut lines: ResMut<Assets<LineMaterial>>) {
+fn update_materials(
+    state: Option<Res<MapState>>,
+    mut maps: ResMut<Assets<MapMaterial>>,
+    mut lines: ResMut<Assets<LineMaterial>>,
+    mut updates: Local<u32>,
+) {
     let Some(state) = state else { return };
+    // Diagnostic: stop touching material assets after the first frames (the map then stops moving).
+    if env_flag("BEVY_FREEZE_MATERIALS") && *updates > 3 {
+        return;
+    }
+    *updates += 1;
     let Some(cam) = state.cam else { return };
     let (ox, oy, w, h) = state.map_rect;
     let u = cam.uniforms(

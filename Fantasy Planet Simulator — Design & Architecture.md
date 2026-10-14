@@ -99,7 +99,7 @@ The `sim`/`app` split matters for modularity too. The renderer only ever sees fi
 
 The planet is a **cube sphere**: six square grids folded onto a sphere. Each face is N × N cells. N = 408 gives 6 × 408² ≈ 1M cells, and **N is a setting**, so smaller worlds are cheap.
 
-- **Even cells.** The equi-angular mapping keeps cell sizes much more even than a plain cube or a rectangular map: the largest cell is roughly 1.3–1.4× the smallest (to be measured in build step 1), against ~5× for a plain cube mapping. Unlike a rectangular world map, cells near the poles don't shrink, so erosion, diffusion and climate use the same time step everywhere. Grid lines don't imprint on rivers or mountain ranges. Each cell still stores its true area, centre latitude/longitude, and a local east/north direction.
+- **Even cells.** The equi-angular mapping keeps cell sizes much more even than a plain cube or a rectangular map: the largest cell is 1.40× the smallest (measured in the renderer spike), against ~5× for a plain cube mapping. Unlike a rectangular world map, cells near the poles don't shrink, so erosion, diffusion and climate use the same time step everywhere. Grid lines don't imprint on rivers or mountain ranges. Each cell still stores its true area, centre latitude/longitude, and a local east/north direction.
 - **Still flat arrays.** Each face is a contiguous 2D array, and passes are cache-friendly parallel sweeps. Neighbours inside a face are index arithmetic. Neighbours across face edges come from a precomputed table. Every cell has 4 edge neighbours, including cells on face edges and corners. The only special spots are the 8 cube corners. There three cells meet instead of four, so each of those three corner cells is missing one diagonal neighbour (7 of 8).
 - **Vector fields use local directions.** Wind, ocean currents and plate motion are stored in each cell's local east/north frame, because "grid right" is not "east" on every face. Converting between neighbouring cells goes through the table.
 - **Seams are the bug magnet.** Rivers, flows and diffusion crossing a face edge are where errors will hide. A required test routes a river across a seam and checks water conservation, and another runs diffusion across a cube corner.
@@ -172,7 +172,7 @@ The simulation thread and the render thread are fully separate. The sim produces
 
 ## Rendering
 
-The map is composited on the GPU from **independent layer textures**. Each one is sampled straight from a field array and re-uploaded only when its owner marks it dirty. Because the planet is a cube sphere, each layer is a **cubemap** (six face textures). The map shader converts every screen pixel through the chosen projection to a direction on the sphere and samples the cubemaps there.
+The map is composited on the GPU from **independent layer textures**. Each one is sampled straight from a field array and re-uploaded only when its owner marks it dirty. Because the planet is a cube sphere, each layer is a **6-layer 2D array texture**, one layer per cube face. Hardware cubemap sampling is *not* used: it assumes the plain cube mapping, and our equi-angular cells would come out misplaced. The map shader instead converts every screen pixel through the chosen projection to a direction on the sphere, then does its own direction → (face, equi-angular u, v) maths. That maths mirrors the CPU picking code exactly, and the two are tested against each other.
 
 | Layer | Source fields | Dirty when |
 | --- | --- | --- |
@@ -443,7 +443,7 @@ After step 5 the game is already a watchable, editable living map; everything af
 
 ## Open questions
 
-- [ ] Renderer: Bevy or egui + wgpu? (Spike in progress; see `spikes/`.)
+- [ ] Renderer: Bevy or egui + wgpu? Trial done; it recommends **egui + wgpu** (see `spikes/REPORT.md`). Awaiting decision.
 - [ ] Map view projection: equirectangular (simple, stretched near the poles), a compromise projection that looks more like a classic world map, or several selectable?
 - [ ] Default rationing rule when requests exceed what exists: proportional within priority classes (current proposal), or strict priority only?
 - [ ] "Day by day": does it mean the clock ticks daily while each module keeps its own cadence (current proposal), or that every module runs every day?
