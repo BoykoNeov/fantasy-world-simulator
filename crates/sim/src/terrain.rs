@@ -14,8 +14,8 @@ use rayon::prelude::*;
 pub struct NoiseTerrain;
 pub struct NullTerrain;
 
-static NOISE: Manifest = Manifest::generation(Slot::Terrain, "noise", &[], &["cell.elevation"]);
-static NULL: Manifest = Manifest::generation(Slot::Terrain, "null", &[], &["cell.elevation"]);
+static NOISE: Manifest = Manifest::generation(Slot::Terrain, "noise", crate::fields::Tier::Cell, &[], &["cell.elevation"]);
+static NULL: Manifest = Manifest::generation(Slot::Terrain, "null", crate::fields::Tier::Cell, &[], &["cell.elevation"]);
 
 impl SimModule for NoiseTerrain {
     fn manifest(&self) -> &'static Manifest {

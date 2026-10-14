@@ -193,5 +193,8 @@ fn out_of_bounds_values_are_clamped_reported_and_still_balance() {
         _ => None,
     }).collect();
     assert_eq!(v, vec![("province.food_stock", 0, 1e15, Some(Slot::Economics))]);
-    assert!(sim.year_so_far().food_stock < 2_000_000_000_000_000);
+    let year = sim.year_so_far();
+    assert!(year.food_stock < 2_000_000_000_000_000);
+    // The clamp is in the year's totals, so the year still balances.
+    assert!(year.ledger.food_clamped < -3_000_000_000_000_000, "{}", year.ledger.food_clamped);
 }

@@ -7,7 +7,7 @@ use rayon::prelude::*;
 /// Biomes v0: the lookup below.
 pub struct Biomes;
 
-static V0: Manifest = Manifest::generation(Slot::Biomes, "lookup", &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome"]);
+static V0: Manifest = Manifest::generation(Slot::Biomes, "lookup", crate::fields::Tier::Cell, &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome"]);
 
 impl Module for Biomes {
     fn manifest(&self) -> &'static Manifest {

@@ -62,6 +62,7 @@ pub struct Population {
 static V0: Manifest = Manifest {
     slot: Slot::Population,
     version: "basic",
+    tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
     reads: &["province.food_capacity"],
     owns: &["pop.province", "pop.species", "pop.culture", "pop.religion", "pop.class", "pop.size", "province.starved_this_year"],
@@ -110,7 +111,7 @@ impl Module for Population {
         let Event::Granted { request: r, granted } = e else { return };
         let (p, cal, seed) = (&self.params, cx.calendar, cx.seed);
         let k = r.tag as usize;
-        // The pop may have changed since it asked; scale by what it asked for, not what it is.
+        // Rates apply to the pop as it is today; `fed` is the share of what it asked for that came.
         let Some(&size) = w.pops.size.get(k) else { return };
         let days = cal.def.months[cal.date(r.day).month].days as u64;
         let this_month = |rate_per_year: f64| rate_per_year * days as f64 / cal.days_per_year() as f64;

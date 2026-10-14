@@ -43,6 +43,7 @@ pub struct Food {
 static V0: Manifest = Manifest {
     slot: Slot::Economics,
     version: "food",
+    tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
     reads: &["province.food_capacity", "province.center", "province.lat"],
     owns: &["province.food_stock"],

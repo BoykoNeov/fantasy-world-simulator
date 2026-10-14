@@ -15,9 +15,7 @@ use std::collections::BinaryHeap;
 /// Provinces v0: organic growth from fertile seeds.
 pub struct ProvinceGrowth;
 
-static V0: Manifest = Manifest::generation(
-    Slot::Provinces,
-    "growth",
+static V0: Manifest = Manifest::generation(Slot::Provinces, "growth", crate::fields::Tier::Province,
     &["cell.elevation", "cell.food_yield"],
     &["cell.province", "province.cells", "province.area_km2", "province.center", "province.lat", "province.food_capacity"],
 );

@@ -11,7 +11,7 @@
 
 use crate::calendar::Calendar;
 use crate::events::{Event, EventKind};
-use crate::fields::{self, FieldId, Quantity};
+use crate::fields::{self, FieldId, Quantity, Tier};
 use crate::requests::{Cause, Priority, Request};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,8 @@ pub struct Manifest {
     pub slot: Slot,
     /// Name of this version within its slot, e.g. "null" or "noise".
     pub version: &'static str,
+    /// The level the module works on.
+    pub tier: Tier,
     pub cadence: Cadence,
     pub reads: &'static [&'static str],
     pub owns: &'static [&'static str],
@@ -75,8 +77,8 @@ pub struct Manifest {
 
 impl Manifest {
     /// A generation module: it reads some fields and writes the ones it owns, once.
-    pub const fn generation(slot: Slot, version: &'static str, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+    pub const fn generation(slot: Slot, version: &'static str, tier: Tier, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
+        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
     }
 }
 
@@ -302,7 +304,7 @@ mod tests {
     use super::*;
 
     fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version: "test", cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
     }
 
     #[test]

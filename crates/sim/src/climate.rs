@@ -16,8 +16,8 @@ pub struct LatitudeClimate;
 pub struct NullClimate;
 
 const OWNS: &[&str] = &["cell.temperature", "cell.rainfall"];
-static LATITUDE: Manifest = Manifest::generation(Slot::Climate, "latitude", &["cell.elevation"], OWNS);
-static NULL: Manifest = Manifest::generation(Slot::Climate, "null", &[], OWNS);
+static LATITUDE: Manifest = Manifest::generation(Slot::Climate, "latitude", crate::fields::Tier::Cell, &["cell.elevation"], OWNS);
+static NULL: Manifest = Manifest::generation(Slot::Climate, "null", crate::fields::Tier::Cell, &[], OWNS);
 
 /// The null climate: a temperate place with enough rain to farm.
 pub const NULL_TEMPERATURE: f32 = 15.0;

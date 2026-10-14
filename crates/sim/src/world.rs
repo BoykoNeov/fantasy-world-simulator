@@ -61,7 +61,7 @@ const RIVER_FOOD_BONUS: f64 = 1.6;
 pub struct Fertility;
 
 static FERTILITY: Manifest =
-    Manifest::generation(Slot::Fertility, "biome yield", &["cell.biome", "cell.river_flow", "cell.elevation"], &["cell.food_yield"]);
+    Manifest::generation(Slot::Fertility, "biome yield", crate::fields::Tier::Cell, &["cell.biome", "cell.river_flow", "cell.elevation"], &["cell.food_yield"]);
 
 impl Module for Fertility {
     fn manifest(&self) -> &'static Manifest {

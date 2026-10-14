@@ -15,9 +15,7 @@ use std::collections::BinaryHeap;
 /// Rivers v0: drainage tree and yearly flow.
 pub struct Rivers;
 
-static V0: Manifest = Manifest::generation(
-    Slot::Rivers,
-    "drainage",
+static V0: Manifest = Manifest::generation(Slot::Rivers, "drainage", crate::fields::Tier::Cell,
     &["cell.elevation", "cell.temperature", "cell.rainfall"],
     &["cell.drainage_receiver", "cell.drainage_order", "cell.river_flow"],
 );

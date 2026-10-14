@@ -37,14 +37,15 @@ The scheduler runs each module on its own cadence. Every module reads fields, su
 - Every owner takes part in that end-of-day pass **on every day it has pending requests**, even if its own main logic runs weekly or monthly. The pass is cheap: it works through a queue and is separate from the owner's main tick. This stops a daily army from eating food that a weekly economy thinks it still has.
 - Within one owner, requests are applied in a fixed order (see Determinism).
 - If requests ask for more than exists, the owner **rations**. Requests carry a priority class, and classes are served in order. Within the class that runs short, the available amount is split proportionally (largest-remainder rule); later classes get nothing. The amount actually granted is reported back to the requester the next day, as an event addressed to it.
-- Every applied request is kept with its cause. This is what the inspector's "why did this change" view reads.
+- Every applied request is kept with its cause for the day it was applied. Older history is rebuilt on demand by replay (build step 4) rather than stored. This is what the inspector's "why did this change" view reads.
 
 **Module contract.** Every module declares, in its manifest:
 
 - `reads`: fields it consumes
 - `owns`: fields it is the owner of (and therefore applies requests for)
 - `requests`: fields it submits change requests to
-- `cadence`: how often its main logic runs (daily, weekly, monthly, seasonal, yearly, every N years), in calendar units, and on which tier
+- `cadence`: how often its main logic runs (daily, weekly, monthly, seasonal, yearly, every N years), in calendar units
+- `tier`: the level it works on (cell, province, pop; factions later)
 - `requires`: other fields or capabilities that must exist
 - `emits` / `handles`: event types it publishes and subscribes to
 - `version` and `state_schema`: its version, and the layout of its private state (needed for saves and for future version changes, see below)

@@ -34,6 +34,11 @@ pub struct Ledger {
     /// All deaths, starvation included.
     pub deaths: u64,
     pub starved: u64,
+    /// Net change from field contracts clamping a value back into bounds (normally 0). With it,
+    /// each year balances exactly: food after = before + produced − spoiled − eaten + food_clamped,
+    /// people after = before + births − deaths + people_clamped.
+    pub food_clamped: i64,
+    pub people_clamped: i64,
 }
 
 impl Ledger {
@@ -48,6 +53,8 @@ impl Ledger {
             births: pos(Quantity::People, Cause::Births),
             deaths: neg(Quantity::People, Cause::Deaths) + starved,
             starved,
+            food_clamped: f.get(Quantity::Food, Cause::ContractClamp),
+            people_clamped: f.get(Quantity::People, Cause::ContractClamp),
         }
     }
 }
