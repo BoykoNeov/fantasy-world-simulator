@@ -430,6 +430,13 @@ fn paint_override(w: &mut World, path: &[[f64; 2]], radius_km: f64, set: Overrid
     }
 }
 
+/// The cells a brush stroke covers at least half strongly (out to three quarters of its radius):
+/// what a province stroke moves.
+pub fn brush_cells(w: &World, path: &[[f64; 2]], radius_km: f64) -> Vec<u32> {
+    let reach = brush_reach(&w.grid, path, radius_km / w.params.radius_km);
+    (0..reach.len() as u32).filter(|&c| reach[c as usize] >= 0.5).collect()
+}
+
 /// How strongly a brush laid along `path` reaches each cell, 0 to 1: fully in the middle half of
 /// the brush around each point, fading smoothly to nothing at `radius` (radians).
 fn brush_reach(grid: &Grid, path: &[[f64; 2]], radius: f64) -> Vec<f32> {

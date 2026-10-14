@@ -4,17 +4,21 @@
 //!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--days D] [--select best|P] [--explain]
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
-//!            [--screenshot FILE.png] [--bench --out DIR --tag NAME]
+//!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P]
+//!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
 //! coasts, rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
-//! playing.
+//! playing. `--paint` and `--split` edit the world through the window once it is open, as a
+//! player would (raise land along a short stroke; split half a province off), for scripted
+//! screenshots of an edited map.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
+use app::editor::Editor;
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
 use app::inspector::{self, group, LogEntry, Source};
 use app::layers::{self, ProvinceView};
@@ -25,6 +29,7 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use sim::calendar::Calendar;
 use sim::config::Config;
+use sim::edit::{Edit, PopValues};
 use sim::events::Event;
 use sim::fields::{FieldId, Tier};
 use sim::grid::NONE;
@@ -34,6 +39,14 @@ use sim::world::{Size, World, WorldParams, RIVER_MIN_FLOW};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
+
+/// An edit a scripted run makes through the window, as a player would.
+#[derive(Clone, Copy)]
+enum LiveEdit {
+    Raise { lon: f64, lat: f64, radius_km: f64, metres: f32 },
+    /// Half of a province (`None`: the one that grows the most food) becomes a new one.
+    Split(Option<u32>),
+}
 
 /// Where a drought poke from the command line goes.
 #[derive(Clone, Copy)]
@@ -58,6 +71,8 @@ struct Options {
     view: Option<(f64, f64, f64)>,
     layers: LayerSettings,
     screenshot: Option<String>,
+    /// Edits made through the window once it is open (scripted runs): see `--paint` and `--split`.
+    live_edits: Vec<LiveEdit>,
     bench: bool,
     out_dir: String,
     tag: String,
@@ -83,6 +98,7 @@ impl Options {
             view: None,
             layers: LayerSettings::default(),
             screenshot: None,
+            live_edits: Vec::new(),
             bench: false,
             out_dir: "W:/temp/claude/fantasymap-mapview/bench".into(),
             tag: "default".into(),
@@ -165,6 +181,14 @@ impl Options {
                     }
                 }
                 "--screenshot" => o.screenshot = Some(value(&mut i)),
+                "--paint" => {
+                    let x = numbers(&value(&mut i), 4, "--paint LON,LAT,RADIUS_KM,METRES");
+                    o.live_edits.push(LiveEdit::Raise { lon: x[0], lat: x[1], radius_km: x[2], metres: x[3] as f32 });
+                }
+                "--split" => {
+                    let v = value(&mut i);
+                    o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
+                }
                 "--bench" => o.bench = true,
                 "--out" => o.out_dir = value(&mut i),
                 "--tag" => o.tag = value(&mut i),
@@ -255,6 +279,12 @@ struct MapApp {
     waiting: Option<Instant>,
     /// The day on the history slider while it is dragged.
     scrub: Option<u64>,
+    editor: Editor,
+    /// A pop being edited in the inspector, and the size typed so far.
+    pop_edit: Option<(usize, u64)>,
+    /// The size of a pop to add, and a food store to set, as typed in the inspector.
+    new_pop: u64,
+    food_edit: Option<u64>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -371,6 +401,10 @@ impl MapApp {
             left_at: HashMap::new(),
             waiting: None,
             scrub: None,
+            editor: Editor::default(),
+            pop_edit: None,
+            new_pop: 1000,
+            food_edit: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start(sim, move || ctx.request_repaint()),
@@ -553,6 +587,30 @@ impl MapApp {
         self.worker.change(self.epoch, self.day(), change, branch);
     }
 
+    fn live_edit(&mut self, e: LiveEdit) {
+        let edit = match e {
+            LiveEdit::Raise { lon, lat, radius_km, metres } => {
+                Edit::Paint { path: vec![[lon, lat], [lon + 2.0, lat + 1.0]], radius_km, brush: sim::edit::Brush::Raise(metres) }
+            }
+            LiveEdit::Split(p) => {
+                let w = &self.geo;
+                let p = p.unwrap_or(breadbasket(w) as u32);
+                let cells: Vec<u32> = (0..w.grid.cells() as u32).filter(|&c| w.provinces.of_cell[c as usize] == p).collect();
+                self.selected = Some(p);
+                Edit::Split { cells: cells[..cells.len() / 2].to_vec() }
+            }
+        };
+        self.send_edit(Ok(edit));
+    }
+
+    /// Send an edit, or say why there is none.
+    fn send_edit(&mut self, edit: Result<Edit, String>) {
+        match edit {
+            Ok(e) => self.change(Change::Edit(e)),
+            Err(why) => self.notice = Some((why, Instant::now())),
+        }
+    }
+
     /// Whether the day shown is the furthest one watched. Undo and redo only apply there: before
     /// it, a change starts a new timeline.
     fn at_the_edge(&self) -> bool {
@@ -622,6 +680,15 @@ impl MapApp {
             ui.small(format!("showing {:.0} days a second · simulation {ahead} days ahead · {ms:.3} ms per simulated day", self.rate.days_per_second()));
         });
         self.history_bar(ui);
+        let (undo, redo) = ui.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::Z), i.modifiers.command && i.key_pressed(egui::Key::Y)));
+        if self.at_the_edge() && self.waiting.is_none() {
+            if undo && self.status.can_undo {
+                self.change(Change::Undo);
+            }
+            if redo && self.status.can_redo {
+                self.change(Change::Redo);
+            }
+        }
         // Space pauses and resumes at a day a second; the right arrow steps a day.
         let (space, right) = ui.input(|i| (i.key_pressed(egui::Key::Space), i.key_pressed(egui::Key::ArrowRight)));
         if space {
@@ -705,6 +772,27 @@ impl MapApp {
         ui.heading("Fantasy Planet");
         ui.label(format!("{:?} world, seed {}", self.opts.size, w.params.seed));
         ui.label(format!("{} people", group(self.view.people.iter().sum::<f64>().round() as u64)));
+        ui.separator();
+
+        ui.label("Edit");
+        let edge = self.at_the_edge();
+        ui.horizontal(|ui| {
+            let why_not = "only on the latest day you have watched; earlier, a change starts a new timeline";
+            let undo = ui
+                .add_enabled(self.status.can_undo && edge, egui::Button::new("⟲ undo"))
+                .on_hover_text("take back your last change: an edit or a drought (Ctrl+Z)")
+                .on_disabled_hover_text(why_not);
+            let redo = ui.add_enabled(self.status.can_redo && edge, egui::Button::new("⟳ redo")).on_hover_text("give it back (Ctrl+Y)").on_disabled_hover_text(why_not);
+            if undo.clicked() {
+                self.change(Change::Undo);
+            }
+            if redo.clicked() {
+                self.change(Change::Redo);
+            }
+        });
+        if let Some(edit) = self.editor.panel(ui, self.selected) {
+            self.send_edit(Ok(edit));
+        }
         ui.separator();
 
         ui.label("Timelines");
@@ -818,6 +906,9 @@ impl MapApp {
         });
         let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
         let size = sim::fields::known("pop.size");
+        // Editing a pop: its size, typed in, set when asked.
+        let mut editing = self.pop_edit;
+        let mut set_pop = None;
         for &k in &pops {
             let w = &self.geo.pops;
             ui.horizontal_wrapped(|ui| {
@@ -831,10 +922,51 @@ impl MapApp {
                     self.owners[size.0 as usize].0
                 ));
                 when(ui, size, k);
+                match &mut editing {
+                    Some((j, n)) if *j == k => {
+                        ui.add(egui::DragValue::new(n).range(0..=1_000_000_000_000u64).speed(100.0).suffix(" people"));
+                        if ui.small_button("set").clicked() {
+                            set_pop = Some((k, *n));
+                        }
+                        if ui.small_button("cancel").clicked() {
+                            editing = None;
+                        }
+                    }
+                    _ => {
+                        if ui.small_button("edit").on_hover_text("set how many people this pop has").clicked() {
+                            editing = Some((k, w.size[k]));
+                        }
+                    }
+                }
             });
         }
         if pops.is_empty() {
             ui.small("Nobody lives here.");
+        }
+        self.pop_edit = editing;
+        let w = &self.geo;
+        let to = |k: usize, size: u64| PopValues { size, species: w.pops.species[k], culture: w.pops.culture[k], religion: w.pops.religion[k], class: w.pops.class[k] };
+        let mut edit = set_pop.map(|(k, n)| Edit::SetPop { pop: k as u32, to: to(k, n) });
+        ui.horizontal_wrapped(|ui| {
+            ui.add(egui::DragValue::new(&mut self.new_pop).range(1..=1_000_000_000u64).speed(100.0).suffix(" people"));
+            if ui.small_button("add a pop").clicked() {
+                edit = Some(Edit::AddPop { province: p, values: PopValues::people(self.new_pop) });
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            // The store as it is, until a new amount is typed.
+            let mut food = self.food_edit.unwrap_or_else(|| self.geo.food_stock.get(pi).copied().unwrap_or(0));
+            if ui.add(egui::DragValue::new(&mut food).range(0..=1_000_000_000_000u64).speed(1000.0).suffix(" rations")).changed() {
+                self.food_edit = Some(food);
+            }
+            if ui.small_button("set the food store").clicked() {
+                edit = Some(Edit::SetFoodStock { province: p, rations: food });
+            }
+        });
+        if let Some(e) = edit {
+            self.pop_edit = None;
+            self.food_edit = None;
+            self.send_edit(Ok(e));
         }
 
         let front = &self.frames[0];
@@ -1054,18 +1186,53 @@ impl eframe::App for MapApp {
                     let grid = &self.geo.grid;
                     self.hover = cam.pick(grid, x, y, w, h).map(|c| (c, cam.pick_province(&self.provinces, x, y, w, h).unwrap_or(NONE)));
                 }
-                if response.clicked() {
-                    self.selected = self.hover.map(|(_, p)| p).filter(|&p| p != NONE);
+                let draws = self.editor.draws();
+                let planet_km = self.geo.params.radius_km;
+                let primary = egui::PointerButton::Primary;
+                // Brush tools draw with the left button; a click is a stroke of one point.
+                if draws
+                    && (response.dragged_by(primary) || response.clicked())
+                    && let Some(p) = response.interact_pointer_pos()
+                {
+                    let (x, y) = to_map(p);
+                    if let Some((lon, lat)) = cam.screen_to_lonlat(x, y, w, h) {
+                        self.editor.add_point(lon, lat, planet_km);
+                    }
                 }
-                if response.dragged()
+                if draws && (response.drag_stopped_by(primary) || response.clicked()) {
+                    if let Some(edit) = self.editor.finish(&self.geo, self.selected) {
+                        self.send_edit(edit);
+                    }
+                } else if response.clicked() {
+                    let clicked = self.hover.map(|(_, p)| p).filter(|&p| p != NONE);
+                    match self.editor.click(clicked, self.selected) {
+                        Some(edit) => self.send_edit(edit),
+                        None => {
+                            self.selected = clicked;
+                            (self.pop_edit, self.food_edit) = (None, None);
+                        }
+                    }
+                }
+                let pans = response.dragged_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Middle) || (!draws && response.dragged_by(primary));
+                if pans
                     && let Some(p) = response.interact_pointer_pos()
                 {
                     let d = response.drag_delta();
                     let (_, y) = to_map(p);
                     cam.pan(d.x as f64 * ppp, d.y as f64 * ppp, y - d.y as f64 * ppp, h);
                 }
-                // Wait for an explanation asked for on the command line, so it is in the picture.
-                if self.opts.screenshot.is_some() && self.frame >= 10 && self.trace_pending.is_none() && !self.screenshot_sent {
+                // Scripted edits, one a frame, once the window is up.
+                if self.frame >= 3
+                    && self.waiting.is_none()
+                    && !self.opts.live_edits.is_empty()
+                {
+                    let e = self.opts.live_edits.remove(0);
+                    self.live_edit(e);
+                }
+                // Wait for an explanation asked for on the command line, and for edits and the
+                // redrawn map, so they are in the picture.
+                let settled = self.trace_pending.is_none() && self.waiting.is_none() && self.rebuild.is_none() && self.pending_gpu.is_none() && self.opts.live_edits.is_empty();
+                if self.opts.screenshot.is_some() && self.frame >= 10 && settled && !self.screenshot_sent {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
                     self.screenshot_sent = true;
                 }
@@ -1079,6 +1246,26 @@ impl eframe::App for MapApp {
             let (tables, rebuild) = (self.pending_tables.take(), self.pending_gpu.take());
             let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, rebuild, target: self.target };
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+            // The brush around the pointer, and the stroke being drawn.
+            let to_screen = |lon: f64, lat: f64| {
+                let (x, y) = cam.lonlat_to_screen(lon, lat, w, h);
+                egui::pos2(rect.min.x + (x / ppp) as f32, rect.min.y + (y / ppp) as f32)
+            };
+            let ink = egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(60, 30, 10, 200));
+            if let Some(r_km) = self.editor.brush_radius_km()
+                && let Some(p) = response.hover_pos()
+                && let Some((lon, lat)) = cam.screen_to_lonlat((p.x - rect.min.x) as f64 * ppp, (p.y - rect.min.y) as f64 * ppp, w, h)
+            {
+                let r = r_km / self.geo.params.radius_km;
+                let edge = to_screen(lon, (lat + r).min(std::f64::consts::FRAC_PI_2));
+                let centre = to_screen(lon, lat);
+                ui.painter().circle_stroke(centre, centre.distance(edge), ink);
+                ui.painter().circle_stroke(centre, centre.distance(edge) * 0.5, egui::Stroke::new(1.0, ink.color.gamma_multiply(0.5)));
+            }
+            if self.editor.stroke.len() > 1 {
+                let points: Vec<egui::Pos2> = self.editor.stroke.iter().map(|q| to_screen(q[0].to_radians(), q[1].to_radians())).collect();
+                ui.painter().add(egui::Shape::line(points, ink));
+            }
         });
 
         let busy = self.waiting.is_some() || self.rebuild.is_some() || self.notice.is_some();

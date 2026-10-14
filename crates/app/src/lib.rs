@@ -2,6 +2,7 @@
 //! them with egui + wgpu.
 
 pub mod bench;
+pub mod editor;
 pub mod geometry;
 pub mod gpu;
 pub mod inspector;
