@@ -369,8 +369,15 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
     holds it then taxes it), or the nearest with land if it sank. The realms module keeps each
     realm's last capital as private state (schema `capitals-1`).
   - Paying the provinces that raise troops waits for the troops piece.
-  - Speed: on one core the large world's day costs about 0.3 ms more than markets alone (about 15%),
-    for the roughly 10,000 coin moves a month and their replies. `simrun --economics markets --realms
+  - Treasuries hold 7.6% of their land's coins after a year, 9.5% after two and 10.0% from the third
+    (large world, seed 7). Against the same world without realms over 50 years
+    (`examples/coin_spread.rs`), the middle and the top tenth of provinces are as rich either way. The
+    richest 1% settle near 10 times the world's coins a person, where without realms they keep
+    climbing (33 times by year 50, a drift markets already had).
+  - Speed: the large world's day costs about 0.3 ms more than markets alone, as CPU time on one
+    worker thread (about 15%), for the roughly 10,000 coin moves a month and their replies. Not
+    re-measured on all cores, since the machine was fully busy; the budget check is step 7's checks
+    piece. `simrun --economics markets --realms
     settled=1` prints the treasuries' share of all coins, the largest realm's treasury against its
     land's coins, and how rich capitals are against the world (the richest named).
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
