@@ -1,0 +1,377 @@
+# A Fantasy Planet scenario. Each [[timeline]] lists the edits and pokes given in it,
+# day by day; opening the scenario replays them on the world the [config] makes.
+
+format = 1
+active = 1
+
+[config.world]
+n = 32
+provinces = 80
+seed = 5
+land_fraction = 0.4
+radius_km = 1000.0
+
+[config.modules]
+terrain = "Noise"
+climate = "Latitude"
+weather = true
+
+[config.modules.population]
+births_per_year = 0.036
+deaths_per_year = 0.028
+starvation_deaths = 0.3
+initial_fill = 0.7
+
+[config.modules.markets]
+working_share = 0.5
+coins_per_person = 20.0
+job_change = 0.2
+idle_worth = 20.0
+price_response = 1.0
+price_change = 0.5
+price_range = 20.0
+initial_stock_months = 3.0
+money = "money"
+harvest_variability = 0.6
+seasonality = 0.9
+harvest_peak = 0.62
+tools_per_worker = 1.0
+tool_boost = 0.5
+tools = "tools"
+
+[config.modules.markets.groups.food]
+need_per_person = 365.0
+reserve_months = 4.0
+
+[config.modules.markets.goods.cloth]
+harvested = false
+season = "steady"
+weather = false
+per_worker = 40.0
+use_per_person = 1.0
+reserve_months = 6.0
+base_price = 5.0
+lost_per_year = 0.1
+lost_as = "wear"
+
+[config.modules.markets.goods.cloth.land]
+people = 3.0
+
+[config.modules.markets.goods.cloth.inputs]
+
+[config.modules.markets.goods.fish]
+group = "food"
+harvested = true
+season = "steady"
+weather = false
+per_worker = 1500.0
+use_per_person = 0.0
+reserve_months = 0.0
+base_price = 0.12
+lost_per_year = 0.6
+lost_as = "spoilage"
+
+[config.modules.markets.goods.fish.land]
+"province.coast_km" = 12000.0
+"province.river_km" = 8000.0
+
+[config.modules.markets.goods.fish.inputs]
+
+[config.modules.markets.goods.grain]
+group = "food"
+harvested = true
+season = "harvest"
+weather = true
+per_worker = 1800.0
+use_per_person = 0.0
+reserve_months = 0.0
+base_price = 0.1
+lost_per_year = 0.35
+lost_as = "spoilage"
+
+[config.modules.markets.goods.grain.land]
+"province.food_capacity" = 1.0
+"province.grazing_capacity" = -1.0
+
+[config.modules.markets.goods.grain.inputs]
+
+[config.modules.markets.goods.livestock]
+group = "food"
+harvested = true
+season = "steady"
+weather = true
+per_worker = 3000.0
+use_per_person = 0.0
+reserve_months = 0.0
+base_price = 0.15
+lost_per_year = 0.1
+lost_as = "spoilage"
+
+[config.modules.markets.goods.livestock.land]
+"province.grazing_capacity" = 0.8
+
+[config.modules.markets.goods.livestock.inputs]
+
+[config.modules.markets.goods.ore]
+harvested = false
+season = "steady"
+weather = false
+per_worker = 30.0
+use_per_person = 0.0
+reserve_months = 6.0
+base_price = 6.0
+lost_per_year = 0.0
+lost_as = "spoilage"
+
+[config.modules.markets.goods.ore.land]
+"province.ore_km2" = 2.0
+
+[config.modules.markets.goods.ore.inputs]
+
+[config.modules.markets.goods.stone]
+harvested = false
+season = "steady"
+weather = false
+per_worker = 60.0
+use_per_person = 0.3
+reserve_months = 6.0
+base_price = 3.0
+lost_per_year = 0.0
+lost_as = "spoilage"
+
+[config.modules.markets.goods.stone.land]
+"province.area_km2" = 0.5
+"province.upland_km2" = 5.0
+
+[config.modules.markets.goods.stone.inputs]
+
+[config.modules.markets.goods.timber]
+harvested = false
+season = "steady"
+weather = false
+per_worker = 100.0
+use_per_person = 3.0
+reserve_months = 6.0
+base_price = 2.0
+lost_per_year = 0.1
+lost_as = "spoilage"
+
+[config.modules.markets.goods.timber.land]
+"province.area_km2" = 0.5
+"province.forest_km2" = 20.0
+
+[config.modules.markets.goods.timber.inputs]
+
+[config.modules.markets.goods.tools]
+harvested = false
+season = "steady"
+weather = false
+per_worker = 20.0
+use_per_person = 0.0
+reserve_months = 6.0
+base_price = 20.0
+lost_per_year = 0.1
+lost_as = "wear"
+
+[config.modules.markets.goods.tools.land]
+people = 1.0
+
+[config.modules.markets.goods.tools.inputs]
+ore = 1.0
+timber = 1.0
+
+[config.calendar]
+name = "Reckoning of the Wheel"
+first_year = 1
+weekdays = ["Moonday", "Hearthday", "Marketday", "Stoneday", "Windday", "Restday"]
+
+[[config.calendar.months]]
+name = "Deepwinter"
+days = 30
+
+[[config.calendar.months]]
+name = "Thaw"
+days = 30
+
+[[config.calendar.months]]
+name = "Seedtide"
+days = 30
+
+[[config.calendar.months]]
+name = "Blossom"
+days = 30
+
+[[config.calendar.months]]
+name = "Greening"
+days = 30
+
+[[config.calendar.months]]
+name = "Highsun"
+days = 30
+
+[[config.calendar.months]]
+name = "Goldfield"
+days = 30
+
+[[config.calendar.months]]
+name = "Harvest"
+days = 30
+
+[[config.calendar.months]]
+name = "Emberfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Mistmoon"
+days = 30
+
+[[config.calendar.months]]
+name = "Frostfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Longnight"
+days = 30
+
+[[config.calendar.months]]
+name = "Yearsend"
+days = 4
+
+[[config.calendar.seasons]]
+name = "Spring"
+first_month = 2
+
+[[config.calendar.seasons]]
+name = "Summer"
+first_month = 5
+
+[[config.calendar.seasons]]
+name = "Autumn"
+first_month = 8
+
+[[config.calendar.seasons]]
+name = "Winter"
+first_month = 11
+
+[[config.calendar.moons]]
+name = "Silvra"
+period_days = 29
+offset_days = 0
+
+[[config.calendar.moons]]
+name = "Kesh"
+period_days = 11
+offset_days = 4
+
+[config.goods]
+root = "goods"
+
+[config.goods.children]
+food = ["grain", "fish", "livestock"]
+goods = ["food", "raw", "manufactured", "money"]
+manufactured = ["cloth", "tools"]
+money = ["coin"]
+raw = ["timber", "stone", "ore"]
+
+[config.goods.units]
+cloth = "bolts"
+food = "rations"
+money = "coins"
+raw = "cartloads"
+tools = "sets"
+
+[[timeline]]
+id = 0
+day = 1000
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.SetStock]
+province = 1
+good = "grain"
+amount = 0
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.SetStock]
+province = 2
+good = "coin"
+amount = 50000
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.Split]
+cells = [1006]
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.Merge]
+from = 4
+into = 5
+
+[[timeline.command]]
+day = 364
+
+[timeline.command.poke.Drought]
+lon = -19.74640676516849
+lat = 18.412392940173795
+radius_km = 2000.0
+shortfall = 700
+days = 728
+
+[[timeline]]
+id = 1
+parent = 0
+fork_day = 400
+day = 700
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.SetStock]
+province = 1
+good = "grain"
+amount = 0
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.SetStock]
+province = 2
+good = "coin"
+amount = 50000
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.Split]
+cells = [1006]
+
+[[timeline.command]]
+day = 100
+
+[timeline.command.edit.Merge]
+from = 4
+into = 5
+
+[[timeline.command]]
+day = 364
+
+[timeline.command.poke.Drought]
+lon = -19.74640676516849
+lat = 18.412392940173795
+radius_km = 2000.0
+shortfall = 700
+days = 728
+
+[[timeline.command]]
+day = 400
+
+[timeline.command.edit.SetStock]
+province = 6
+good = "tools"
+amount = 12345

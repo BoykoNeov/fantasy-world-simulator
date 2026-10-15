@@ -1,0 +1,318 @@
+# A Fantasy Planet scenario. Each [[timeline]] lists the edits and pokes given in it,
+# day by day; opening the scenario replays them on the world the [config] makes.
+
+format = 1
+active = 1
+
+[config.world]
+n = 24
+provinces = 40
+seed = 21
+land_fraction = 0.4
+radius_km = 6371.0
+
+[config.modules]
+terrain = "Noise"
+climate = "Latitude"
+weather = true
+
+[config.modules.economics]
+spoilage_per_year = 0.35
+initial_stock_days = 84.0
+harvest_variability = 0.6
+seasonality = 0.9
+harvest_peak = 0.62
+
+[config.modules.population]
+births_per_year = 0.036
+deaths_per_year = 0.028
+starvation_deaths = 0.3
+initial_fill = 0.7
+
+[config.calendar]
+name = "Reckoning of the Wheel"
+first_year = 1
+weekdays = ["Moonday", "Hearthday", "Marketday", "Stoneday", "Windday", "Restday"]
+
+[[config.calendar.months]]
+name = "Deepwinter"
+days = 30
+
+[[config.calendar.months]]
+name = "Thaw"
+days = 30
+
+[[config.calendar.months]]
+name = "Seedtide"
+days = 30
+
+[[config.calendar.months]]
+name = "Blossom"
+days = 30
+
+[[config.calendar.months]]
+name = "Greening"
+days = 30
+
+[[config.calendar.months]]
+name = "Highsun"
+days = 30
+
+[[config.calendar.months]]
+name = "Goldfield"
+days = 30
+
+[[config.calendar.months]]
+name = "Harvest"
+days = 30
+
+[[config.calendar.months]]
+name = "Emberfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Mistmoon"
+days = 30
+
+[[config.calendar.months]]
+name = "Frostfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Longnight"
+days = 30
+
+[[config.calendar.months]]
+name = "Yearsend"
+days = 4
+
+[[config.calendar.seasons]]
+name = "Spring"
+first_month = 2
+
+[[config.calendar.seasons]]
+name = "Summer"
+first_month = 5
+
+[[config.calendar.seasons]]
+name = "Autumn"
+first_month = 8
+
+[[config.calendar.seasons]]
+name = "Winter"
+first_month = 11
+
+[[config.calendar.moons]]
+name = "Silvra"
+period_days = 29
+offset_days = 0
+
+[[config.calendar.moons]]
+name = "Kesh"
+period_days = 11
+offset_days = 4
+
+[[timeline]]
+id = 0
+day = 690
+
+[[timeline.command]]
+day = 40
+
+[timeline.command.edit.SetFoodStock]
+province = 0
+rations = 7
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.SetPop]
+pop = 1
+
+[timeline.command.edit.SetPop.to]
+size = 4321
+species = 0
+culture = 0
+religion = 0
+class = 0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.AddPop]
+province = 2
+
+[timeline.command.edit.AddPop.values]
+size = 99
+species = 0
+culture = 0
+religion = 0
+class = 0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Split]
+cells = [2313, 2337]
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Merge]
+from = 4
+into = 5
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Paint]
+path = [[-173.4456795085654, 9.75872084712714], [-170.4456795085654, 9.75872084712714]]
+radius_km = 600.0
+
+[timeline.command.edit.Paint.brush]
+Roughen = 900.0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Override]
+path = [[-173.4456795085654, 9.75872084712714]]
+radius_km = 500.0
+
+[timeline.command.edit.Override.set]
+Rainfall = 2500.0
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.edit.SeaLevel]
+rise_m = -20.0
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.edit.River]
+path = [[-173.4456795085654, 9.75872084712714], [-163.4456795085654, 14.75872084712714]]
+spring = 30000000
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.poke.Drought]
+lon = -173.4456795085654
+lat = 9.75872084712714
+radius_km = 2000.0
+shortfall = 600
+days = 300
+
+[[timeline.command]]
+day = 700
+
+[timeline.command.poke.Drought]
+lon = -173.4456795085654
+lat = 9.75872084712714
+radius_km = 2000.0
+shortfall = 600
+days = 300
+
+[[timeline]]
+id = 1
+parent = 0
+fork_day = 200
+day = 600
+
+[[timeline.command]]
+day = 40
+
+[timeline.command.edit.SetFoodStock]
+province = 0
+rations = 7
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.SetPop]
+pop = 1
+
+[timeline.command.edit.SetPop.to]
+size = 4321
+species = 0
+culture = 0
+religion = 0
+class = 0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.AddPop]
+province = 2
+
+[timeline.command.edit.AddPop.values]
+size = 99
+species = 0
+culture = 0
+religion = 0
+class = 0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Split]
+cells = [2313, 2337]
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Merge]
+from = 4
+into = 5
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Paint]
+path = [[-173.4456795085654, 9.75872084712714], [-170.4456795085654, 9.75872084712714]]
+radius_km = 600.0
+
+[timeline.command.edit.Paint.brush]
+Roughen = 900.0
+
+[[timeline.command]]
+day = 140
+
+[timeline.command.edit.Override]
+path = [[-173.4456795085654, 9.75872084712714]]
+radius_km = 500.0
+
+[timeline.command.edit.Override.set]
+Rainfall = 2500.0
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.edit.SeaLevel]
+rise_m = -20.0
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.edit.River]
+path = [[-173.4456795085654, 9.75872084712714], [-163.4456795085654, 14.75872084712714]]
+spring = 30000000
+
+[[timeline.command]]
+day = 190
+
+[timeline.command.poke.Drought]
+lon = -173.4456795085654
+lat = 9.75872084712714
+radius_km = 2000.0
+shortfall = 600
+days = 300
+
+[[timeline.command]]
+day = 200
+
+[timeline.command.edit.SetFoodStock]
+province = 6
+rations = 12345

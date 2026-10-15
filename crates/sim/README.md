@@ -266,6 +266,18 @@ What exists:
   18% of normal, and 22% of its people starve in the worst year (hardly anyone without the drought).
   The famine ends once the rain returns. Every province outside the drought ends exactly as it would
   have without it.
+- **Story 1 on markets** (`tests/stories.rs`): the same world and drought with Economics "markets".
+  The famine still comes (a quarter of the region starves in the worst year) and ends with the rain.
+  The region buys food from provinces outside it every drought year: 274 million rations over the
+  three years, against 36 million without the drought. Its local food price is about six times
+  normal (1.09 coins a ration against 0.17). Trade helps only a little: food crosses one border a
+  month, and carrying it across this Earth-sized world's big provinces is dear, so it covers a few
+  percent of what the region eats, and 5% fewer people starve than with no trade.
+- **Old scenario files** (`tests/old_scenarios.rs`): files written by older builds, kept with what
+  each build printed (every province's people, starved, stores, prices and workers, per timeline).
+  Opened today they make the same worlds, value for value: one from the end of step 5 (Economics
+  "food", an edit of every kind, two droughts, two timelines), one from markets before trade, and
+  one from trade before prices followed the money.
 
 - **PNG export** (`export.rs`): terrain, provinces, population, famine, temperature and rainfall maps,
   in the equirectangular projection (for convenience only).
@@ -316,6 +328,13 @@ provinces, seeds 1 and 7, 10 years) an average day takes 0.34–0.42 ms against 
 settling work and prices. Trade (Oct 15, timed a month at a time against the same world without
 it, so both saw the same load on a busy machine) adds about 0.15 ms a day: 0.48–0.59 ms against
 0.34–0.44.
+
+**Re-checked** (Oct 15, end of step 6). Other projects' tests kept all 16 cores busy, so clock time
+was meaningless (markets 3–6 ms a day, v0 0.25–0.32 ms). Counted instead as work on one core
+(`RAYON_NUM_THREADS=1`, the process's processor time for 10 years less that for none, large world,
+seeds 1 and 7): a day costs 0.2–0.3 ms for Economics "food", about 1.6 ms for markets without trade
+and 2.3 ms with it. Markets keeps to the 1.5 ms budget only by working provinces on several cores;
+on one free core it would not. Clock time on a quiet machine still to be re-measured.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 
