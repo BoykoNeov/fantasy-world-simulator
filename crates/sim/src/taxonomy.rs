@@ -165,7 +165,8 @@ mod tests {
         assert_eq!((t.depth(fish), t.class_of(fish), t.unit(fish)), (2, Some(0), Some("rations")));
         assert_eq!((t.class_of(t.find("tools").unwrap()), t.class_of(0)), (Some(2), None));
         assert!(t.is_under(fish, 0) && !t.is_under(fish, t.find("raw").unwrap()));
-        assert_eq!(t.unit(t.find("ore").unwrap()), None);
+        assert_eq!((t.unit(t.find("ore").unwrap()), t.unit(t.find("tools").unwrap())), (Some("cartloads"), Some("sets")));
+        assert_eq!(t.unit(t.find("manufactured").unwrap()), None);
     }
 
     #[test]

@@ -19,4 +19,7 @@ money = ["coin"]
 # What a good is counted in. A node without one uses its parent's.
 [units]
 food = "rations"
+raw = "cartloads"
+cloth = "bolts"
+tools = "sets"
 money = "coins"

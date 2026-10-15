@@ -35,7 +35,9 @@ What exists:
 - **Saves** (`save.rs`): configuration, module versions and state schemas, the command log, and a
   snapshot with every field by name (a per-good field also names the goods it holds) and
   everything in flight. Format 6 (step 6) added the goods tree and the per-good store; format 7
-  the good a change request asks for. Loads refuse other format versions,
+  the good a change request asks for; format 8 the edit that sets any good; format 9 the land facts;
+  format 10 the markets economy (its parameters, prices, workers and four new causes: made, made
+  into other goods, used up, worn out). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -44,14 +46,15 @@ What exists:
   | Terrain | `noise` (default), `null`: smooth landmasses, same for every seed | at generation |
   | Climate | `latitude` (default), `null`: 15 °C and 800 mm everywhere | at generation |
   | Biomes, Rivers, Fertility, Provinces | one each | at generation |
-  | Economics | `food`: monthly harvest and spoilage, keeps one store per province of the "food" class; or off | monthly |
+  | Economics | `food` (default): monthly harvest and spoilage, keeps one store per province of the "food" class; `markets`: the eight goods and coins, made by workers from the land, used up and priced (see below); or off | monthly |
   | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
 
-  Harvests shrink in proportion to the missing rain, so a drought cuts the crop.
+  Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
+  people to do its work: with Population off it is refused when the world is made.
 - **Goods** (`taxonomy.rs`, `data/goods.toml`, `fields.rs`): the goods tree is data: food (grain,
   fish, livestock), raw (timber, stone, ore), manufactured (cloth, tools) and money (coin, counted
-  in coins). Coins are stored and counted like any good: a class of their own, so they are never
+  in coins; raw goods are counted in cartloads, cloth in bolts, tools in sets). Coins are stored and counted like any good: a class of their own, so they are never
   made or lost unannounced, and edits set and move them like goods. It is part of the
   configuration, so saves and scenarios carry it; a scenario without one gets the shipped tree.
   Stored goods are one field, `province.stock`, with a value per province *per good kept*. The
@@ -62,6 +65,39 @@ What exists:
   before goods had a tree (same fingerprints). Readers ask the tree, not a store: a class reads as
   the sum of its goods (`World::stock_under`), and a good kept only inside a bigger whole (grain,
   when food is kept whole) can't be read on its own.
+- **Land facts** (`provinces.rs`): each province caches what its land offers, worked out with its
+  other aggregates at generation and after province and height edits: food better from herds than
+  fields (`province.grazing_capacity`, by biome), woodland, shore, big rivers, hills and mountains
+  (500 m and up), and land with ore in reach (mostly uplands, more where the province lies on one
+  of the smooth veins of ore a few provinces across). The markets economy reads these, never cells.
+- **Economics v1, "markets"** (`markets.rs`, `data/markets.toml`): keeps grain, fish, livestock,
+  timber, stone, ore, cloth, tools and coins, and owns each province's price per good
+  (`province.price`, thousandths of a coin) and workers per good (`province.workers`). Once a
+  month, in each province:
+  1. *Prices* follow the stores: price = base × (stores wanted / stores held), within 1/20 and 20
+     times the base, moving half way each month. Food goods are priced by their stores together,
+     since people eat any of them; stores wanted reach to the next harvest far from the equator.
+  2. *Work* follows what pays: each good is worth its price, less its inputs' cost, for what one
+     more worker would make of it. Each worker on a piece of land adds less than the one before,
+     so work spreads until one more worker is worth the same everywhere; nobody takes work worth
+     less than resting (20 coins a year; a worker's year at base prices is worth about 200).
+     Workers move a fifth of the way each month. This is the damper on every good: one piling up
+     gets cheap and loses its workers.
+  3. *Making*: grain comes with the harvest, and grain and livestock with the rain and the year's
+     luck, as in v0. Tools (one per worker) make workers half as productive again, and wear out.
+     Tools take a cartload of ore and of timber each.
+  4. *Using*: people use up timber, stone and cloth (less when they are dear); food is eaten through
+     Population's requests, served from all three food goods. Stores rot or wear.
+
+  Coins (the goods under the money class, found through the tree) are never made, used or priced:
+  each person starts with 20, held by the province, until trade moves them. How each good is made,
+  used and priced is data, saved with the world; bad parameters are refused when the world is made.
+  Work and prices are settled before day one, so the first month starves nobody. Provinces work
+  side by side on all cores; each one's random draws are its own, so the result never depends on
+  how they are shared out. Shortage of anything but food and tools hurts nobody yet (planned:
+  "everything matters" later). Over a century a small world settles near the old economy's
+  population (136–146 million against 142–152 on seed 1), with famines of the same size: no food
+  moves between provinces until trade. `examples/market_stats.rs` prints a run year by year.
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
@@ -221,6 +257,11 @@ Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (ma
 `--terrain null|noise`, `--climate null|latitude`, `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
 and `--write-scenario FILE`.
+
+**Markets** (Oct 15, below-normal priority, machine partly busy): on the large world (5,092
+provinces, seeds 1 and 7, 10 years) an average day takes 0.34–0.42 ms against 0.24 ms for Economics
+"food" (one busy-machine run measured 2.2 ms). Making the world takes about 0.5 s more, for
+settling work and prices.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 

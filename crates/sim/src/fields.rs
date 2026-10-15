@@ -278,6 +278,9 @@ pub const FIELDS: &[FieldDef] = &[
     def("province.river_km", Tier::Province, "km of big river", 0.0, UNBOUNDED),
     def("province.upland_km2", Tier::Province, "km² of hills and mountains", 0.0, UNBOUNDED),
     def("province.ore_km2", Tier::Province, "km² of land with ore in reach", 0.0, UNBOUNDED),
+    // The markets economy's local prices, and who works on what (step 6).
+    FieldDef { default: Default::Zero, ..def("province.price", Tier::ProvinceGood, "thousandths of a coin per unit of the good", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Zero, ..def("province.workers", Tier::ProvinceGood, "people working on the good", 0.0, COUNT_MAX) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

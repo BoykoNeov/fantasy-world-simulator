@@ -203,6 +203,12 @@ pub trait Module: Send {
     /// Generation modules: write the fields this module owns, from the fields it reads.
     fn generate(&self, _w: &mut World) {}
 
+    /// Check the module's parameters against the goods the world keeps, when the world is made or
+    /// loaded. A refusal names what is wrong.
+    fn check(&self, _goods: &Goods) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Runtime modules: set up owned fields at world creation, after generation.
     fn init(&mut self, _w: &mut World, _cx: &mut Ctx) {}
 

@@ -744,7 +744,12 @@ mod tests {
         assert!(Mix::parse("magic=on").unwrap_err().contains("no slot magic"));
         // People need food to ask for.
         assert!(Mix::parse("economics=off").unwrap().check().unwrap_err().contains("province.stock"));
-        assert_eq!(all_mixes().len(), 32);
+        let markets = Mix::parse("economics=markets").unwrap();
+        assert!(markets.modules().markets.is_some() && markets.modules().economics.is_none());
+        assert_eq!(Mix::of(&markets.modules()), markets);
+        // Markets needs people to do the work.
+        assert!(Mix::parse("economics=markets,population=off").unwrap().check().unwrap_err().contains("requires pop.size"));
+        assert_eq!(all_mixes().len(), 48);
     }
 
     #[test]

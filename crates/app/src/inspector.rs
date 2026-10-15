@@ -137,6 +137,10 @@ fn cause(c: Cause) -> &'static str {
         Cause::Starvation => "starvation",
         Cause::ContractClamp => "a value pulled back into bounds",
         Cause::Edit => "your edit",
+        Cause::Made => "made",
+        Cause::MadeInto => "made into other goods",
+        Cause::Used => "used up",
+        Cause::WornOut => "worn out",
     }
 }
 

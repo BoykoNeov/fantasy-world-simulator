@@ -6,6 +6,7 @@ use crate::calendar::{Calendar, CalendarDef};
 use crate::climate::{LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::Rivers;
+use crate::markets::{MarketParams, Markets};
 use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
 use crate::provinces::ProvinceGrowth;
@@ -65,6 +66,10 @@ pub struct ModuleConfig {
     pub population: Option<PopParams>,
     /// Weather v0, "droughts" (no parameters yet). Off means rain is always normal.
     pub weather: bool,
+    /// Economics v1, "markets", in the economics slot instead of v0 (at most one of the two is
+    /// set). Scenario files written before it existed have neither key and get none.
+    #[serde(default)]
+    pub markets: Option<MarketParams>,
 }
 
 impl Default for ModuleConfig {
@@ -75,6 +80,7 @@ impl Default for ModuleConfig {
             economics: Some(FoodParams::default()),
             population: Some(PopParams::default()),
             weather: true,
+            markets: None,
         }
     }
 }
@@ -100,6 +106,10 @@ impl ModuleConfig {
         if let Some(params) = &self.economics {
             out.push(Box::new(Food { params: params.clone() }));
         }
+        // Both set fills the economics slot twice, which the engine refuses.
+        if let Some(params) = &self.markets {
+            out.push(Box::new(Markets::new(params.clone())));
+        }
         if let Some(params) = &self.population {
             out.push(Box::new(Population { params: params.clone() }));
         }
@@ -115,7 +125,7 @@ impl ModuleConfig {
 pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Terrain, &["noise", "null"]),
     (Slot::Climate, &["latitude", "null"]),
-    (Slot::Economics, &["food", "off"]),
+    (Slot::Economics, &["food", "markets", "off"]),
     (Slot::Population, &["basic", "off"]),
     (Slot::Weather, &["droughts", "off"]),
 ];
@@ -133,7 +143,11 @@ impl ModuleConfig {
                 ClimateVersion::Null => "null",
                 ClimateVersion::Latitude => "latitude",
             },
-            Slot::Economics => on(self.economics.is_some(), "food"),
+            Slot::Economics => match (&self.economics, &self.markets) {
+                (_, Some(_)) => "markets",
+                (Some(_), None) => "food",
+                (None, None) => "off",
+            },
             Slot::Population => on(self.population.is_some(), "basic"),
             Slot::Weather => on(self.weather, "droughts"),
             _ => return None,
@@ -151,7 +165,10 @@ impl ModuleConfig {
         match slot {
             Slot::Terrain => self.terrain = version.parse()?,
             Slot::Climate => self.climate = version.parse()?,
-            Slot::Economics => self.economics = if on { self.economics.take().or_else(|| Some(FoodParams::default())) } else { None },
+            Slot::Economics => {
+                self.economics = if version == "food" { self.economics.take().or_else(|| Some(FoodParams::default())) } else { None };
+                self.markets = if version == "markets" { self.markets.take().or_else(|| Some(MarketParams::default())) } else { None };
+            }
             Slot::Population => self.population = if on { self.population.take().or_else(|| Some(PopParams::default())) } else { None },
             Slot::Weather => self.weather = on,
             _ => unreachable!("checked against CHOICES"),

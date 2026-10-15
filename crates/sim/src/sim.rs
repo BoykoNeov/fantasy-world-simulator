@@ -288,6 +288,9 @@ impl Sim {
         let plan = plan(&manifests)?;
         let tree = crate::taxonomy::Taxonomy::new(&config.goods).map_err(ConfigError)?;
         let goods = goods_kept(&manifests, &plan, tree)?;
+        for m in &modules {
+            m.check(&goods).map_err(|e| ConfigError(format!("{:?} \"{}\": {e}", m.manifest().slot, m.manifest().version)))?;
+        }
         let records = manifests.iter().map(|m| ModuleRecord::of(m)).collect();
         let mut world = World::empty(&config.world);
         world.goods = Arc::new(goods);

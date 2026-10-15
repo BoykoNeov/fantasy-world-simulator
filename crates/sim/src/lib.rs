@@ -19,6 +19,7 @@ pub mod fields;
 mod goods_tests;
 pub mod grid;
 pub mod hydrology;
+pub mod markets;
 pub mod module;
 pub mod pops;
 pub mod provinces;

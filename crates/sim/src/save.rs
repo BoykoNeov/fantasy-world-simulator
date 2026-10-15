@@ -39,7 +39,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 8 (step 6): the edit that sets any good's store.
 /// Format 9 (step 6): what each province's land offers (grazing, forest, coast, rivers, uplands,
 /// ore), cached from its cells.
-pub const FORMAT_VERSION: u32 = 9;
+/// Format 10 (step 6): Economics "markets": its parameters in the configuration, prices and work
+/// per good, and the causes made, made into, used and worn out.
+pub const FORMAT_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

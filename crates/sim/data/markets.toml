@@ -1,0 +1,118 @@
+# Economics v1, "markets" (build step 6): how each good is made, used and priced. The defaults a
+# new world gets; a world's own copy is saved with it, so editing this file changes new worlds only.
+#
+# Each province's workers choose their work by what it pays: a good's price times what one more
+# worker would add. Land runs out (each worker adds less than the one before), and a good in plenty
+# gets cheap, so work spreads over the goods a province needs. Prices are in coins.
+
+# Share of the people who work.
+working_share = 0.5
+# Coins each person starts with (the province holds them).
+coins_per_person = 20.0
+# How far workers move toward the best-paying work each month (0 = never, 1 = at once).
+job_change = 0.2
+# Coins a year that work must be worth for a worker to do it rather than rest (a worker's year at
+# base prices is worth about 200).
+idle_worth = 20.0
+# How strongly a price answers its stores: price = base × (stores wanted / stores held) ^ this.
+price_response = 1.0
+# How far a price moves toward that each month.
+price_change = 0.5
+# Prices never go below base / this or above base × this.
+price_range = 20.0
+# Starting stores, in months of what the province makes.
+initial_stock_months = 3.0
+# The class of the goods tree whose goods are coins: never made, used, spoiled or priced.
+money = "money"
+# Harvests, as in Economics "food": how much a region's yearly luck swings, how strongly the harvest
+# gathers in late summer far from the equator, and when (as a fraction of the year) it peaks.
+harvest_variability = 0.6
+seasonality = 0.9
+harvest_peak = 0.62
+# Tools: a fully equipped worker holds this many, and makes this much more for having them.
+tools_per_worker = 1.0
+tool_boost = 0.5
+# The good tools are (it must be kept).
+tools = "tools"
+
+# Goods priced together, because people take any of them: food is eaten as food, whichever kind.
+[groups.food]
+# Wanted a year per person (one ration a day), and stores wanted, in months of that.
+need_per_person = 365.0
+reserve_months = 4.0
+
+# One table per good. `land` is what the province's land (or its people) can give in a year when
+# fully worked: a sum of province values times a rate. `per_worker` is what one worker makes in a
+# year while land is plentiful. `use_per_person` is what people use up a year (food is eaten
+# through Population instead), `reserve_months` the stores wanted in months of use. `lost_per_year`
+# is the share of the store lost to rot or wear. `inputs` is what one unit takes to make.
+[goods.grain]
+group = "food"
+harvested = true
+season = "harvest"
+weather = true
+land = { "province.food_capacity" = 1.0, "province.grazing_capacity" = -1.0 }
+per_worker = 1800.0
+base_price = 0.1
+lost_per_year = 0.35
+lost_as = "spoilage"
+
+[goods.livestock]
+group = "food"
+harvested = true
+weather = true
+land = { "province.grazing_capacity" = 0.8 }
+per_worker = 3000.0
+base_price = 0.15
+lost_per_year = 0.1
+lost_as = "spoilage"
+
+[goods.fish]
+group = "food"
+harvested = true
+land = { "province.coast_km" = 12000.0, "province.river_km" = 8000.0 }
+per_worker = 1500.0
+base_price = 0.12
+lost_per_year = 0.6
+lost_as = "spoilage"
+
+[goods.timber]
+land = { "province.forest_km2" = 20.0, "province.area_km2" = 0.5 }
+per_worker = 100.0
+use_per_person = 3.0
+reserve_months = 6.0
+base_price = 2.0
+lost_per_year = 0.1
+lost_as = "spoilage"
+
+[goods.stone]
+land = { "province.upland_km2" = 5.0, "province.area_km2" = 0.5 }
+per_worker = 60.0
+use_per_person = 0.3
+reserve_months = 6.0
+base_price = 3.0
+
+[goods.ore]
+land = { "province.ore_km2" = 2.0 }
+per_worker = 30.0
+reserve_months = 6.0
+base_price = 6.0
+
+[goods.cloth]
+# Spinning and weaving: as much as the province's people can turn out.
+land = { people = 3.0 }
+per_worker = 40.0
+use_per_person = 1.0
+reserve_months = 6.0
+base_price = 5.0
+lost_per_year = 0.1
+lost_as = "wear"
+
+[goods.tools]
+land = { people = 1.0 }
+per_worker = 20.0
+reserve_months = 6.0
+base_price = 20.0
+lost_per_year = 0.1
+lost_as = "wear"
+inputs = { ore = 1.0, timber = 1.0 }

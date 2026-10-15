@@ -84,6 +84,56 @@ verdict = "green"
 finding = []
 
 [[mix]]
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=off"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=markets population=off weather=droughts"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=markets population=off weather=off"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
 versions = "terrain=noise climate=latitude economics=off population=basic weather=droughts"
 verdict = "refused"
 refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
@@ -208,6 +258,56 @@ finding = []
 seed = 3
 verdict = "green"
 finding = []
+
+[[mix]]
+versions = "terrain=noise climate=null economics=markets population=basic weather=droughts"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=noise climate=null economics=markets population=basic weather=off"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=noise climate=null economics=markets population=off weather=droughts"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
+versions = "terrain=noise climate=null economics=markets population=off weather=off"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
 
 [[mix]]
 versions = "terrain=noise climate=null economics=off population=basic weather=droughts"
@@ -336,6 +436,56 @@ verdict = "green"
 finding = []
 
 [[mix]]
+versions = "terrain=null climate=latitude economics=markets population=basic weather=droughts"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=null climate=latitude economics=markets population=basic weather=off"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=null climate=latitude economics=markets population=off weather=droughts"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
+versions = "terrain=null climate=latitude economics=markets population=off weather=off"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
 versions = "terrain=null climate=latitude economics=off population=basic weather=droughts"
 verdict = "refused"
 refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
@@ -462,6 +612,56 @@ verdict = "green"
 finding = []
 
 [[mix]]
+versions = "terrain=null climate=null economics=markets population=basic weather=droughts"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=null climate=null economics=markets population=basic weather=off"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=null climate=null economics=markets population=off weather=droughts"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
+versions = "terrain=null climate=null economics=markets population=off weather=off"
+verdict = "refused"
+refused = 'Economics "markets" requires pop.size, but no active module owns it'
+run = []
+
+[[mix]]
 versions = "terrain=null climate=null economics=off population=basic weather=droughts"
 verdict = "refused"
 refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
@@ -538,12 +738,22 @@ verdict = "green"
 
 [[pair]]
 a = "terrain=noise"
+b = "economics=markets"
+verdict = "green"
+
+[[pair]]
+a = "terrain=noise"
 b = "economics=off"
 verdict = "green"
 
 [[pair]]
 a = "terrain=null"
 b = "economics=food"
+verdict = "green"
+
+[[pair]]
+a = "terrain=null"
+b = "economics=markets"
 verdict = "green"
 
 [[pair]]
@@ -594,6 +804,11 @@ verdict = "green"
 [[pair]]
 a = "climate=latitude"
 b = "economics=food"
+verdict = "green"
+
+[[pair]]
+a = "climate=latitude"
+b = "economics=markets"
 verdict = "green"
 
 [[pair]]
@@ -604,6 +819,11 @@ verdict = "green"
 [[pair]]
 a = "climate=null"
 b = "economics=food"
+verdict = "green"
+
+[[pair]]
+a = "climate=null"
+b = "economics=markets"
 verdict = "green"
 
 [[pair]]
@@ -660,6 +880,16 @@ verdict = "green"
 a = "economics=food"
 b = "population=off"
 verdict = "green"
+
+[[pair]]
+a = "economics=markets"
+b = "population=basic"
+verdict = "green"
+
+[[pair]]
+a = "economics=markets"
+b = "population=off"
+verdict = "refused"
 
 [[pair]]
 a = "economics=off"
@@ -678,6 +908,16 @@ verdict = "green"
 
 [[pair]]
 a = "economics=food"
+b = "weather=off"
+verdict = "green"
+
+[[pair]]
+a = "economics=markets"
+b = "weather=droughts"
+verdict = "green"
+
+[[pair]]
+a = "economics=markets"
 b = "weather=off"
 verdict = "green"
 

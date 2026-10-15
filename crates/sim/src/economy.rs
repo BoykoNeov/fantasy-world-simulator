@@ -91,7 +91,7 @@ impl Module for Food {
             let c = prov.center[id];
             let swing = 2.0 * p.harvest_variability * fbm([c[0] * 2.5, c[1] * 2.5, c[2] * 2.5], 3, harvest_key);
             let year_factor = (1.0 + swing).max(0.0);
-            let share = month_share(cal, p, date.month, prov.lat[id] as f64);
+            let share = month_share(cal, p.seasonality, p.harvest_peak, date.month, prov.lat[id] as f64);
             // Crops fail in proportion to the missing rain; exactly 1 in a normal year.
             let rain = 1.0 - w.rain_shortfall[id] as f64 / 1000.0;
             let expected = prov.food_capacity[id] as f64 * year_factor * share * rain;
@@ -123,9 +123,9 @@ impl Module for Food {
 
 /// Share of the year's harvest that arrives in `month`, at latitude `lat` (radians). Shares over a
 /// year sum to 1; the swing grows with distance from the equator.
-pub fn month_share(cal: &Calendar, params: &FoodParams, month: usize, lat: f64) -> f64 {
-    let strength = params.seasonality * (lat.abs().to_degrees() / 40.0).min(1.0);
-    let peak = if lat >= 0.0 { params.harvest_peak } else { (params.harvest_peak + 0.5).fract() };
+pub fn month_share(cal: &Calendar, seasonality: f64, harvest_peak: f64, month: usize, lat: f64) -> f64 {
+    let strength = seasonality * (lat.abs().to_degrees() / 40.0).min(1.0);
+    let peak = if lat >= 0.0 { harvest_peak } else { (harvest_peak + 0.5).fract() };
     let weight = |m: usize| {
         let days = cal.def.months[m].days as f64;
         let x = cal.month_mid_year_fraction(m) - peak;
@@ -144,11 +144,11 @@ mod tests {
         let cal = Calendar::standard();
         let p = FoodParams::default();
         for lat in [-1.2, -0.3, 0.0, 0.5, 1.4] {
-            let total: f64 = (0..cal.months_per_year()).map(|m| month_share(&cal, &p, m, lat)).sum();
+            let total: f64 = (0..cal.months_per_year()).map(|m| month_share(&cal, p.seasonality, p.harvest_peak, m, lat)).sum();
             assert!((total - 1.0).abs() < 1e-12, "{total}");
         }
         // Northern harvest month (index 7) beats northern midwinter (index 0); the south is reversed.
-        assert!(month_share(&cal, &p, 7, 0.9) > 3.0 * month_share(&cal, &p, 0, 0.9));
-        assert!(month_share(&cal, &p, 0, -0.9) > 3.0 * month_share(&cal, &p, 7, -0.9));
+        assert!(month_share(&cal, p.seasonality, p.harvest_peak, 7, 0.9) > 3.0 * month_share(&cal, p.seasonality, p.harvest_peak, 0, 0.9));
+        assert!(month_share(&cal, p.seasonality, p.harvest_peak, 0, -0.9) > 3.0 * month_share(&cal, p.seasonality, p.harvest_peak, 7, -0.9));
     }
 }

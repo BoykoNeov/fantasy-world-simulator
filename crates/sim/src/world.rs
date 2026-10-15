@@ -107,6 +107,10 @@ pub struct World {
     /// The goods tree, and which of its goods the per-good fields keep. Set from the configuration
     /// when the world is made; it never changes.
     pub goods: Arc<Goods>,
+    /// Local price of each good kept, in thousandths of a coin per unit (field `province.price`).
+    pub price: Vec<u64>,
+    /// People working on each good kept (field `province.workers`).
+    pub workers: Vec<u64>,
     /// People who starved in each province since the last year start.
     pub starved_this_year: Vec<u64>,
     pub pops: Pops,
@@ -139,6 +143,8 @@ impl World {
             routes: Arc::new(Routes::default()),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
+            price: Vec::new(),
+            workers: Vec::new(),
             starved_this_year: Vec::new(),
             pops: Pops::default(),
             rain_shortfall: Vec::new(),
@@ -212,6 +218,8 @@ impl World {
             "province.river_km" => F64(p.river_km.clone()),
             "province.upland_km2" => F64(p.upland_km2.clone()),
             "province.ore_km2" => F64(p.ore_km2.clone()),
+            "province.price" => U64(self.price.clone()),
+            "province.workers" => U64(self.workers.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -275,6 +283,8 @@ impl World {
             ("province.river_km", F64(v)) => p.river_km = v,
             ("province.upland_km2", F64(v)) => p.upland_km2 = v,
             ("province.ore_km2", F64(v)) => p.ore_km2 = v,
+            ("province.price", U64(v)) => self.price = v,
+            ("province.workers", U64(v)) => self.workers = v,
             _ => return wrong(),
         }
         Ok(())
@@ -328,6 +338,8 @@ impl World {
             ("province.river_km", F64(x)) => put(&mut p.river_km, at, x),
             ("province.upland_km2", F64(x)) => put(&mut p.upland_km2, at, x),
             ("province.ore_km2", F64(x)) => put(&mut p.ore_km2, at, x),
+            ("province.price", U64(x)) => put(&mut self.price, at, x),
+            ("province.workers", U64(x)) => put(&mut self.workers, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -343,8 +355,10 @@ impl World {
             }
         }
         let goods = n * self.goods.stride();
-        if self.stock.len() < goods {
-            self.stock.resize(goods, 0);
+        for v in [&mut self.stock, &mut self.price, &mut self.workers] {
+            if v.len() < goods {
+                v.resize(goods, 0);
+            }
         }
     }
 

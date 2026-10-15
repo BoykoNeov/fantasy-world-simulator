@@ -39,6 +39,14 @@ pub enum Cause {
     ContractClamp,
     /// The player set a value directly (an edit): a declared source or sink.
     Edit,
+    /// Goods made by work, other than harvests (step 6, markets).
+    Made,
+    /// Goods used up to make other goods.
+    MadeInto,
+    /// Goods people used up.
+    Used,
+    /// Tools and cloth worn out.
+    WornOut,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
