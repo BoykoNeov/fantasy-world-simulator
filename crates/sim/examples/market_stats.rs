@@ -54,7 +54,25 @@ fn main() {
         let h = sim.year_so_far();
         // What trade moved this year, per class of goods.
         let traded: Vec<String> = sim.world.quantities().into_iter().filter(|&q| q != Quantity::People).map(|q| format!("{}={}", q.name(&goods), sim.year_flows.get(q, Cause::TradeIn))).collect();
-        println!("year {}: people {} starved {} famine provinces {}{} traded {}", h.year, h.population, h.ledger.starved, h.famine_provinces, row(&sim), traded.join(" "));
+        // Where the coins are: provinces with people but under a coin a person, and the richest
+        // tenth's share of all coins.
+        let people = sim.world.province_population();
+        let mut coins: Vec<u64> = (0..people.len()).filter(|&p| people[p] > 0).map(|p| sim.world.stock_of(p, "coin").unwrap_or(0)).collect();
+        let poor = (0..people.len()).filter(|&p| people[p] > 0 && sim.world.stock_of(p, "coin").unwrap_or(0) < people[p]).count();
+        coins.sort_unstable_by(|a, b| b.cmp(a));
+        let all: u64 = coins.iter().sum();
+        let top: u64 = coins[..coins.len().div_ceil(10)].iter().sum();
+        let top_share = if all > 0 { top as f64 / all as f64 } else { 0.0 };
+        println!(
+            "year {}: people {} starved {} famine provinces {}{} traded {} coins: {poor} provinces under 1 a person, richest tenth hold {:.0}%",
+            h.year,
+            h.population,
+            h.ledger.starved,
+            h.famine_provinces,
+            row(&sim),
+            traded.join(" "),
+            top_share * 100.0
+        );
     }
     let days = sim.day as f64;
     println!("{:.3} ms a day; problems {:?}", started.elapsed().as_secs_f64() * 1000.0 / days, sim.problems);

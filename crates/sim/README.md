@@ -114,12 +114,20 @@ What exists:
   how they are shared out. Shortage of anything but food and tools hurts nobody yet (planned:
   "everything matters" later). Before trade, a small world settled near the old economy's
   population over a century (136–146 million against 142–152 on seed 1), with famines of the same
-  size. Trade cuts starvation: over 15 years about a third on the small world (18.5 million starved
-  against 28.2 million on seed 1) and a fifth on the large one (19.2 against 24.0 million on seed 7),
-  with fewer famine provinces every year. Bad harvests strike whole regions, and goods cross one
-  border a month, so famines remain. On the small world provinces are about 1,000 km across, weeks
-  apart by cart, so grain goes mostly by sea there. `examples/market_stats.rs` prints a run year by
-  year, with what was traded (`--no-trade` turns trade off).
+  size. Trade cuts starvation at first: over 15 years about a third on the small world (18.5 million
+  starved against 28.2 million on seed 1) and a fifth on the large one (19.2 against 24.0 million on
+  seed 7), with fewer famine provinces every year. Bad harvests strike whole regions, and goods
+  cross one border a month, so famines remain. On the small world provinces are about 1,000 km
+  across, weeks apart by cart, so grain goes mostly by sea there.
+
+  **Known limit: coins pool.** Coins flow to the provinces that sell food and nothing brings them
+  back, so provinces that buy run out and stop buying. On the large world the provinces holding
+  under a coin a person grow from 42 in the first year to 2,770 of about 5,000 by year 100, and the
+  richest tenth come to hold 65% of all coins (28% at first). Trade shrinks to a fifth, and over a
+  century trade no longer cuts starvation (122.5 million starved against 122.3 million without it;
+  on the small world 129.2 against 131.1). Something must send coins back; which is undecided (see
+  the design doc). `examples/market_stats.rs` prints a run year by year, with what was traded and
+  where the coins are (`--no-trade` turns trade off).
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.

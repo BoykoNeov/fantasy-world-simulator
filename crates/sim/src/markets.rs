@@ -825,7 +825,7 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
                 s.held
             } else {
                 let (mut lo, mut hi) = (0.0, s.held);
-                for _ in 0..20 {
+                for _ in 0..30 {
                     let mid = 0.5 * (lo + hi);
                     if gap(mid) > 0.0 { lo = mid } else { hi = mid }
                 }
