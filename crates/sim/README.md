@@ -158,7 +158,9 @@ cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p 
 The combination tester (about 25 s on all cores; run it at below-normal priority). `--write` saves
 the table, `--check` runs again what the table lists and fails if anything came out differently,
 `--only economics=off,population=off` runs one mix, and `--out DIR` writes, for each run that
-wasn't green, a scenario that replays it up to just after its first problem:
+wasn't green, a scenario that replays it up to just after its first problem. Replays are not
+strict, so a crash from a module writing a value it doesn't own does not happen again in them (the
+other problems do):
 
 ```
 cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim --bin combos -- --check

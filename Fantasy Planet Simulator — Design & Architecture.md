@@ -440,7 +440,7 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - **Money is real.** Coins are a conserved quantity like people and food: held per province, moved by buying and selling, never created or lost except by a declared cause.
    - **Economics v1, "markets".** Each province makes goods from its land and people, eats and uses them, and keeps a local price per good that rises with shortage and falls with plenty (the price response is the named damper).
    - **Trade.** Goods move between neighbouring provinces along roads when the price gap beats the travel cost, paid for in coins. Trade is inside the economics module, so it needs no change requests.
-   - **In the window:** a trade and price map layer, goods, prices and coins in the inspector, and choosing the economics version when making a world.
+   - **In the window:** a trade and price map layer, goods, prices and coins in the inspector, and choosing module versions when making a world, with the combination tester's verdict shown as they are chosen (piece 1 shows it only for the mix the window was started with).
    - **Kept guarantees.** Old scenario files still load. Story 1's famine half still passes on v0. On v1, a drought region buys food in and its food prices rise. Speed is re-measured against the 1.5 ms per day budget.
 7. **Factions and diplomacy.** Realms, rulers, borders, war/peace. Editor gains realm and character edits. Target stories 1 (full) and 2 pass.
 8. **Warfare and logistics.** Daily armies, supply, battles, sieges. Battle inspector. Editor gains army placement.
