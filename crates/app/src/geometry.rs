@@ -1,4 +1,5 @@
-//! Lines drawn over the map: coastlines, province borders, rivers and the graticule.
+//! Lines drawn over the map: coastlines, province borders, rivers, the graticule, the ways between
+//! provinces (roads and sea lanes), and last month's trade.
 //!
 //! Lines are built once on the sphere and projected in the shader, so changing projection or
 //! panning never rebuilds them. Borders are traced along cell edges, joined into chains between
@@ -6,7 +7,7 @@
 //! border therefore share one curve, with no gaps or double lines, and junctions stay put.
 //! Smoothing works on 3D unit vectors, so the ±180° meridian and the poles need no special cases.
 
-use sim::grid::{dir_to_lonlat, normalize, V3, NONE, STEPS};
+use sim::grid::{cross, dir_to_lonlat, normalize, V3, NONE, STEPS};
 use sim::world::{World, RIVER_MIN_FLOW};
 use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, PI};
@@ -18,9 +19,16 @@ pub enum Kind {
     Province = 1,
     River = 2,
     Graticule = 3,
+    /// A way over land between two provinces' seats.
+    Road = 4,
+    /// A way by sea between two provinces' seats.
+    SeaLane = 5,
+    /// Last month's trade along a way, with an arrowhead toward the buyer. Kept in a buffer of its
+    /// own, as it changes every month.
+    Trade = 6,
 }
 
-pub const KINDS: [Kind; 4] = [Kind::Coast, Kind::Province, Kind::River, Kind::Graticule];
+pub const KINDS: [Kind; 7] = [Kind::Coast, Kind::Province, Kind::River, Kind::Graticule, Kind::Road, Kind::SeaLane, Kind::Trade];
 
 /// A polyline on the unit sphere.
 #[derive(Clone, Debug)]
@@ -48,6 +56,9 @@ pub struct LineInstance {
 pub const COAST_WIDTH: f32 = 1.3;
 pub const PROVINCE_WIDTH: f32 = 1.0;
 pub const GRATICULE_WIDTH: f32 = 0.8;
+pub const ROAD_WIDTH: f32 = 0.9;
+/// Trade lines run from this wide (the least trade shown) to `TRADE_WIDTH.1` (the most).
+pub const TRADE_WIDTH: (f32, f32) = (0.8, 5.0);
 
 /// Graph of border edges: nodes are cell corners, edges are cell sides between two regions.
 pub struct BorderGraph {
@@ -295,11 +306,11 @@ pub fn chaikin(points: &[V3], closed: bool, passes: usize) -> Vec<V3> {
 const MAX_DLON: f64 = 0.02;
 
 /// Flatten chains into GPU segments, grouped by kind. Returns the segments and each kind's range.
-pub fn instances(chains: &[Chain]) -> (Vec<LineInstance>, [std::ops::Range<u32>; 4]) {
+pub fn instances(chains: &[Chain]) -> (Vec<LineInstance>, [std::ops::Range<u32>; KINDS.len()]) {
     let mut sorted: Vec<&Chain> = chains.iter().collect();
     sorted.sort_by_key(|c| c.kind);
     let mut out = Vec::new();
-    let mut ranges: [std::ops::Range<u32>; 4] = Default::default();
+    let mut ranges: [std::ops::Range<u32>; KINDS.len()] = Default::default();
     for kind in KINDS {
         let start = out.len() as u32;
         for c in sorted.iter().filter(|c| c.kind == kind) {
@@ -340,7 +351,79 @@ pub fn all_lines(world: &World) -> Vec<Chain> {
     let mut chains = border_chains(world);
     chains.extend(river_chains(world));
     chains.extend(graticule());
+    chains.extend(way_chains(world));
     chains
+}
+
+/// Each way between two provinces, seat to seat: a road where they share a way over land, a sea
+/// lane where ships go between them (a pair can have both).
+pub fn way_chains(world: &World) -> Vec<Chain> {
+    let r = &world.routes;
+    let seat = |p: u32| r.seat.get(p as usize).copied().filter(|&c| c != NONE).map(|c| world.grid.center[c as usize]);
+    let mut out = Vec::new();
+    for l in &r.links {
+        let (Some(a), Some(b)) = (seat(l.a), seat(l.b)) else { continue };
+        if l.land_days.is_some() {
+            out.push(Chain { points: arc(a, b), kind: Kind::Road, width: ROAD_WIDTH, closed: false });
+        }
+        if l.sea_days.is_some() {
+            out.push(Chain { points: arc(a, b), kind: Kind::SeaLane, width: ROAD_WIDTH, closed: false });
+        }
+    }
+    out
+}
+
+/// Last month's trade as lines: one per pair of provinces that traded, seat to seat, as wide as
+/// the trade's net worth (`coins`, from `from` to `to`, against the most any pair traded), with an
+/// arrowhead halfway pointing at the buyer. Pairs under 3% of the most are left out, so the whole world stays readable.
+pub fn trade_chains(world: &World, net: &[(u32, u32, f64)]) -> Vec<Chain> {
+    let r = &world.routes;
+    let seat = |p: u32| r.seat.get(p as usize).copied().filter(|&c| c != NONE).map(|c| world.grid.center[c as usize]);
+    let most = net.iter().map(|x| x.2).fold(0.0, f64::max);
+    let mut out = Vec::new();
+    if most <= 0.0 {
+        return out;
+    }
+    for &(from, to, coins) in net {
+        let share = coins / most;
+        let (Some(a), Some(b)) = (seat(from), seat(to)) else { continue };
+        if share < 0.03 {
+            continue;
+        }
+        let width = TRADE_WIDTH.0 + (TRADE_WIDTH.1 - TRADE_WIDTH.0) * share.sqrt() as f32;
+        out.push(Chain { points: arc(a, b), kind: Kind::Trade, width, closed: false });
+        // The arrowhead: two short strokes back from just past the middle, a fifth of the way long.
+        let (tip, back) = (lerp_dir(a, b, 0.6), lerp_dir(a, b, 0.42));
+        let side = normalize(cross(tip, sub(b, a)));
+        let reach = sim::grid::dot(tip, back).clamp(-1.0, 1.0).acos() * 0.6;
+        for sign in [1.0, -1.0] {
+            let wing = normalize([back[0] + side[0] * reach * sign, back[1] + side[1] * reach * sign, back[2] + side[2] * reach * sign]);
+            out.push(Chain { points: vec![wing, tip], kind: Kind::Trade, width, closed: false });
+        }
+    }
+    out
+}
+
+/// The great circle from `a` to `b`, as points evenly spaced along it at most half of
+/// `MAX_DLON` apart: [`instances`] splits a long segment evenly along its chord, which is uneven
+/// along the arc.
+fn arc(a: V3, b: V3) -> Vec<V3> {
+    let angle = sim::grid::dot(a, b).clamp(-1.0, 1.0).acos();
+    let n = ((angle / (MAX_DLON * 0.5)).ceil() as usize).max(1);
+    if n == 1 || angle.sin() < 1e-12 {
+        return vec![a, b];
+    }
+    (0..=n)
+        .map(|k| {
+            let t = k as f64 / n as f64;
+            let (wa, wb) = (((1.0 - t) * angle).sin() / angle.sin(), (t * angle).sin() / angle.sin());
+            normalize([a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb])
+        })
+        .collect()
+}
+
+fn sub(a: V3, b: V3) -> V3 {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
 #[cfg(test)]
@@ -416,7 +499,10 @@ mod tests {
     fn segments_stay_short_in_longitude() {
         let w = world();
         let (lines, ranges) = instances(&all_lines(&w));
-        assert_eq!(ranges[3].end as usize, lines.len());
+        // Every kind in turn, with nothing left over; the test world has ways between provinces.
+        assert_eq!(ranges[KINDS.len() - 1].end as usize, lines.len());
+        assert!(ranges.windows(2).all(|r| r[0].end == r[1].start));
+        assert!(!ranges[Kind::Road as usize].is_empty());
         for l in &lines {
             let near_pole = l.a[1].abs().max(l.b[1].abs()) > 1.5;
             let dl = sim::grid::wrap_lon((l.b[0] - l.a[0]) as f64).abs();

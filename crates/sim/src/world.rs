@@ -102,6 +102,8 @@ pub struct World {
     /// Province neighbours and the ways between them. Worked out from the map, not saved: whatever
     /// changes the map calls [`World::rebuild_routes`].
     pub routes: Arc<Routes>,
+    /// The last month's trade, for showing it ([`crate::markets::TradeRecord`]): not a field.
+    pub trade: Arc<crate::markets::TradeRecord>,
     /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
     pub stock: Vec<u64>,
     /// The goods tree, and which of its goods the per-good fields keep. Set from the configuration
@@ -141,6 +143,7 @@ impl World {
             food_per_cell: Vec::new(),
             provinces: Provinces::default(),
             routes: Arc::new(Routes::default()),
+            trade: Arc::default(),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
             price: Vec::new(),

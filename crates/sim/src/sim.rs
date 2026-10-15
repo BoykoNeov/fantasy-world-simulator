@@ -199,6 +199,8 @@ pub struct Checkpoint {
     problems: Problems,
     applied_today: Vec<(Request, u64)>,
     last_change: Vec<Vec<u64>>,
+    /// Last month's trade, for showing it (not saved: checkpoints live in memory).
+    trade: Arc<crate::markets::TradeRecord>,
 }
 
 pub struct Sim {
@@ -536,6 +538,7 @@ impl Sim {
             problems: self.problems,
             applied_today: self.applied_today.clone(),
             last_change: self.last_change.clone(),
+            trade: self.world.trade.clone(),
         }
     }
 
@@ -565,6 +568,7 @@ impl Sim {
         self.problems = c.problems;
         self.applied_today = c.applied_today.clone();
         self.last_change = c.last_change.clone();
+        self.world.trade = c.trade.clone();
         let day = c.day;
         self.event_log.entries.retain(|p| p.day + 1 < day);
         self.log_today = self.event_log.entries.partition_point(|p| p.day + 2 < day);

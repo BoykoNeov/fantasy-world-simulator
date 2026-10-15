@@ -287,6 +287,27 @@ fn saves_and_going_back_give_the_same_world() {
 }
 
 #[test]
+fn last_months_trade_is_kept_for_showing() {
+    let mut sim = small_planet(5, true);
+    sim.run_days(400);
+    let record = sim.world.trade.clone();
+    let coin = sim.world.goods.column("coin").unwrap() as u16;
+    assert!(!record.shipments.is_empty(), "provinces a few days apart trade");
+    assert!(record.day < sim.day && sim.day - record.day <= 31, "last month's");
+    assert!(record.shipments.iter().all(|s| s.from != s.to && s.units > 0 && s.coins > 0.0 && s.column != coin));
+    // Going back shows the trade of that time; coming back, today's again.
+    let day = sim.day;
+    sim.goto(200).unwrap();
+    assert!(sim.world.trade.day < 200 && !sim.world.trade.shipments.is_empty());
+    sim.goto(day).unwrap();
+    assert_eq!(*sim.world.trade, *record);
+    // Not saved and not in the fingerprint: a world just opened has none, and is the same world.
+    let loaded = Sim::load(&sim.save()).unwrap();
+    assert!(loaded.world.trade.shipments.is_empty());
+    assert_eq!(loaded.fingerprint(), sim.fingerprint());
+}
+
+#[test]
 fn a_province_made_by_an_edit_gets_prices_and_work() {
     let mut sim = world(11);
     sim.run_days(10);

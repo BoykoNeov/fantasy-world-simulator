@@ -8,6 +8,8 @@
 //! those tables change.
 
 use sim::biome::Biome;
+use sim::markets::Shipment;
+use std::collections::HashMap;
 use sim::grid::{normalize, Grid, DIAGONAL_PAIRS, NONE};
 use sim::sim::Sim;
 use sim::world::World;
@@ -23,7 +25,8 @@ pub const TABLE_POPULATION: usize = 1;
 pub const TABLE_FAMINE: usize = 2;
 pub const TABLE_DROUGHT: usize = 3;
 pub const TABLE_PRICE: usize = 4;
-pub const TABLE_LAYERS: usize = 5;
+pub const TABLE_BALANCE: usize = 5;
+pub const TABLE_LAYERS: usize = 6;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -58,6 +61,42 @@ pub struct MarketView {
     /// How dear the chosen good is to trade against the middle province, -1 (a quarter of its
     /// price or less) to 1 (four times or more); NaN where nobody trades.
     pub price: Vec<f32>,
+    /// Whether the province sold or bought more last month, -1 (bought) to 1 (sold); NaN where it
+    /// didn't trade. See [`trade_balance`].
+    pub balance: Vec<f32>,
+}
+
+/// Each of `provinces`' trade last month: the worth of what it sold less what it bought, against
+/// the coins it holds (`coins`), -1 (bought a tenth of its coins' worth more than it sold) to 1
+/// (sold a tenth more); NaN where it didn't trade.
+pub fn trade_balance(shipments: &[Shipment], coins: &[u64], provinces: usize) -> Vec<f32> {
+    let mut net = vec![f64::NAN; provinces];
+    let mut add = |p: u32, x: f64| {
+        if let Some(v) = net.get_mut(p as usize) {
+            *v = if v.is_nan() { x } else { *v + x };
+        }
+    };
+    for s in shipments {
+        add(s.from, s.coins);
+        add(s.to, -s.coins);
+    }
+    net.iter().enumerate().map(|(p, &x)| (x / coins.get(p).copied().unwrap_or(0).max(1) as f64 / 0.1).clamp(-1.0, 1.0) as f32).collect()
+}
+
+/// Last month's trade per pair of provinces, netted: `(seller, buyer, coins)`, the worth of what
+/// went from one to the other less what came back, in coins. In the order the pairs first traded.
+pub fn net_trade(shipments: &[Shipment]) -> Vec<(u32, u32, f64)> {
+    let mut at: HashMap<(u32, u32), usize> = HashMap::new();
+    let mut pairs: Vec<(u32, u32, f64)> = Vec::new();
+    for s in shipments {
+        let (a, b, x) = if s.from < s.to { (s.from, s.to, s.coins) } else { (s.to, s.from, -s.coins) };
+        let k = *at.entry((a, b)).or_insert_with(|| {
+            pairs.push((a, b, 0.0));
+            pairs.len() - 1
+        });
+        pairs[k].2 += x;
+    }
+    pairs.into_iter().filter(|p| p.2 != 0.0).map(|(a, b, x)| if x > 0.0 { (a, b, x) } else { (b, a, -x) }).collect()
 }
 
 /// Where good column `c` is cheap or dear to trade, for [`MarketView::price`]: each inhabited
@@ -241,6 +280,12 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> 
             let [r, g, b] = ramp(&[[90, 60, 140], [170, 150, 200], [240, 230, 200], [225, 140, 70], [150, 50, 20]], (x as f64 + 1.0) / 2.0);
             out[TABLE_PRICE * size + p] = [r, g, b, 255];
         }
+
+        // Sold more: gold; bought more: rose; stronger the bigger the gap.
+        if let Some(&x) = market.balance.get(p).filter(|x| !x.is_nan()) {
+            let [r, g, b] = if x >= 0.0 { [205, 160, 40] } else { [175, 60, 110] };
+            out[TABLE_BALANCE * size + p] = [r, g, b, (255.0 * (x.abs() as f64).sqrt()).round() as u8];
+        }
     }
     out
 }
@@ -304,6 +349,21 @@ fn ramp(stops: &[[u8; 3]], t: f64) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trade_is_netted_per_pair_and_per_province() {
+        let ship = |from, to, coins| Shipment { from, to, column: 0, units: 1, coins };
+        let s = [ship(1, 0, 30.0), ship(0, 1, 10.0), ship(2, 1, 5.0), ship(0, 2, 4.0), ship(2, 0, 4.0)];
+        // 1 sold 0 a net 20; 2 sold 1 5; 0 and 2 cancel out.
+        assert_eq!(net_trade(&s), vec![(1, 0, 20.0), (2, 1, 5.0)]);
+        let b = trade_balance(&s, &[1000, 50, 1000, 0], 4);
+        // 0: sold 14, bought 34 → -20 of 1,000 coins, a fifth of the full colour.
+        assert!((b[0] + 0.2).abs() < 1e-6);
+        // 1: sold 30, bought 15 → 15 of 50 coins: more than a tenth, full colour.
+        assert_eq!(b[1], 1.0);
+        assert!((b[2] - 0.05).abs() < 1e-6);
+        assert!(b[3].is_nan(), "didn't trade");
+    }
 
     #[test]
     fn prices_are_against_the_middle_province_with_the_money_level() {

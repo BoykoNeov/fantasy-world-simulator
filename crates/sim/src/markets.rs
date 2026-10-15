@@ -621,7 +621,9 @@ impl Module for Markets {
         if let Some(t) = &self.params.trade {
             let routes = w.routes.clone();
             let deals = deals(&r, &self.params, t, &w.stock, &wanted, &people, &routes.links);
-            settle(&r, &deals, &mut w.stock, &w.goods, &mut books, cx.trace).into_iter().for_each(|n| cx.note(n));
+            let (notes, shipments) = settle(&r, &deals, &mut w.stock, &w.goods, &mut books, cx.trace);
+            notes.into_iter().for_each(|n| cx.note(n));
+            w.trade = std::sync::Arc::new(TradeRecord { day: cx.day, shipments });
         }
         for ((class, cause), delta) in books.0 {
             cx.flow(Quantity::Goods(class), cause, delta);
@@ -778,6 +780,29 @@ impl Month<'_> {
         }
         (books, wanted, notes)
     }
+}
+
+/// The last month's trade, for showing it: goods that went from one province to another and what
+/// they were worth. Kept beside the world's fields: not saved, not in fingerprints, and read by no
+/// module. Checkpoints in memory keep it, so going back shows the trade of that time; a world just
+/// opened has none until a month's trade runs.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TradeRecord {
+    /// The day the trade was settled.
+    pub day: u64,
+    pub shipments: Vec<Shipment>,
+}
+
+/// Goods of one kind sent along one way in a month.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shipment {
+    pub from: u32,
+    pub to: u32,
+    /// The good, as a column of the per-good fields.
+    pub column: u16,
+    pub units: u64,
+    /// What the buyer paid for them, carrying included, in coins.
+    pub coins: f64,
 }
 
 /// One month's trade along one way: goods of one item go from `from` to `to`, which pays for them.
@@ -952,10 +977,11 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
 
 /// Carry out `deals` in order: the goods go, and the coins come back. A seller never sends more
 /// than it holds nor a buyer pays more than it has (the deals were scaled to leave room for that).
-/// Returns what the `traced` province did.
-fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books: &mut Books, traced: Option<u32>) -> Vec<String> {
+/// Returns what the `traced` province did, and what was sent.
+fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books: &mut Books, traced: Option<u32>) -> (Vec<String>, Vec<Shipment>) {
     let mut notes = Vec::new();
-    let Some(&coin) = r.coins.first() else { return notes };
+    let mut shipments = Vec::new();
+    let Some(&coin) = r.coins.first() else { return (notes, shipments) };
     let k = goods.stride();
     // What moved, per class: what came in somewhere went out somewhere else.
     let mut moved = vec![0i64; goods.tree.classes().len()];
@@ -970,6 +996,9 @@ fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books:
             moved[goods.class_of_column(c) as usize] += units as i64;
             owed += units as f64 * price;
             sent += units;
+            if units > 0 {
+                shipments.push(Shipment { from: d.from, to: d.to, column: c as u16, units, coins: units as f64 * price });
+            }
         }
         let paid = (owed.round() as u64).min(stock[to + coin]);
         stock[to + coin] -= paid;
@@ -992,7 +1021,7 @@ fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books:
         books.add(class as u8, Cause::TradeOut, -x);
         books.add(class as u8, Cause::TradeIn, x);
     }
-    notes
+    (notes, shipments)
 }
 
 /// Each good's worth per unit to the one who makes it, what one worker makes and the land, for
@@ -1151,7 +1180,7 @@ mod tests {
         assert!(grain + fish <= 500_000);
         let before = stock.clone();
         let mut books = Books::default();
-        let notes = settle(&r, &deals, &mut stock, &goods, &mut books, Some(1));
+        let (notes, shipments) = settle(&r, &deals, &mut stock, &goods, &mut books, Some(1));
         // Goods and coins only moved: every class balances.
         for c in 0..K {
             assert_eq!(stock[c] + stock[K + c], before[c] + before[K + c]);
@@ -1161,6 +1190,9 @@ mod tests {
         // The buyer paid the seller's price and the carrying, for each good.
         let owed: f64 = d.goods.iter().map(|&(_, u, price)| u as f64 * price).sum();
         assert_eq!(paid, owed.round() as u64);
+        // The record of what was sent: each good of the deal, worth what was paid for it.
+        assert_eq!(shipments.iter().map(|x| (x.from, x.to, x.column as usize, x.units)).collect::<Vec<_>>(), d.goods.iter().map(|&(c, u, _)| (d.from, d.to, c, u)).collect::<Vec<_>>());
+        assert!((shipments.iter().map(|x| x.coins).sum::<f64>() - owed).abs() < 1e-6);
         assert!(books.0.iter().all(|(&(_, cause), _)| matches!(cause, Cause::TradeIn | Cause::TradeOut)));
         for class in [0u8, 3] {
             assert_eq!(books.0[&(class, Cause::TradeIn)], -books.0[&(class, Cause::TradeOut)]);

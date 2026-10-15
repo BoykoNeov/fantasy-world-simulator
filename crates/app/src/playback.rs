@@ -58,6 +58,8 @@ pub struct DayState {
     /// How dear everything in each province is to trade, for the coins it holds
     /// ([`sim::markets::money_levels`]); `None` when prices don't follow the money.
     pub money_levels: Option<Vec<f64>>,
+    /// Last month's trade ([`sim::markets::TradeRecord`]).
+    pub trade: Arc<sim::markets::TradeRecord>,
     pub map: Arc<MapState>,
 }
 
@@ -68,6 +70,7 @@ impl DayState {
             last_change: sim.last_change.clone(),
             view: ProvinceView::now(sim),
             money_levels: sim.config.modules.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
+            trade: sim.world.trade.clone(),
             map,
         }
     }

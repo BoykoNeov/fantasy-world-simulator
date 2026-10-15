@@ -23,6 +23,20 @@ What exists:
   what it costs to trade there (its local price times the money level) against the middle
   province: purple cheap, orange dear, from a quarter to four times; clear where nobody lives.
   Worked out again only when the day's values or the good change (prices move once a month).
+- **Trade** (step 6, markets with trade): "trade, last month" draws a line between each pair of
+  provinces that traded, seat to seat, as thick as the trade was worth (what went one way less
+  what came back) with an arrowhead toward the buyer; pairs under 3% of the busiest are left out.
+  "sold or bought more" tints provinces gold where they sold more than they bought, rose where
+  they bought more (full colour at a tenth of the coins held). Both come from the record of last
+  month's trade the simulation keeps for showing (`sim::markets::TradeRecord`); a world just
+  opened has none until a month has run. The trade lines are a small GPU buffer of their own,
+  replaced only when a month's trade comes in. The inspector lists what the province sold and
+  bought last month, from and to whom, for how much.
+- **Roads and sea lanes** (a line toggle, off by default): every way between neighbouring
+  provinces, seat to seat, solid over land and dashed by sea.
+- **Nothing waiting for the GPU is lost** when egui throws a pass away to lay it out again (the
+  first time a table shows): province tables, trade lines and a new map's picture stay waiting
+  for the next pass that is drawn.
 - **Playback** (`playback.rs`): the simulation runs on its own thread, up to 120 days ahead of the day
   shown, and sends one frame per day. Days on which nothing ran share their data with the day before.
   The time bar plays at a day, a week, a month or a year a second, or as fast as the simulation goes;
@@ -108,7 +122,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces`, `prices` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
+  `drought`, `provinces`, `prices`, `trade`, `balance` (0..1), and `coasts`, `rivers`, `borders`,
+  `graticule`, `roads` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`, `--undo`: once the window is open, in the

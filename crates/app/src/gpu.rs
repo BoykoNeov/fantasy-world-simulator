@@ -1,7 +1,7 @@
 //! GPU side of the map: layer textures, the line buffer, and the two drawing steps (the map itself,
 //! then lines over it). Plain wgpu, so the picking test can build it without a window.
 
-use crate::geometry::{Kind, LineInstance};
+use crate::geometry::{Kind, LineInstance, KINDS};
 use crate::layers::{self, Rgba, TABLE_LAYERS, TABLE_WIDTH};
 use crate::projection::Camera;
 use eframe::egui_wgpu::wgpu;
@@ -22,6 +22,7 @@ pub struct MapUniforms {
     pub layers0: [f32; 4],
     pub layers1: [f32; 4],
     pub layers2: [f32; 4],
+    pub layers3: [f32; 4],
     pub ids: [u32; 4],
 }
 
@@ -37,10 +38,16 @@ pub struct LayerSettings {
     pub drought: f32,
     /// Where a good is cheap or dear to trade (the good is picked in the window).
     pub prices: f32,
+    /// Provinces tinted by whether they sold or bought more last month.
+    pub trade_balance: f32,
+    /// Last month's trade, as lines between provinces.
+    pub trade: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
     pub graticule: bool,
+    /// The ways between provinces: roads and sea lanes.
+    pub roads: bool,
 }
 
 impl Default for LayerSettings {
@@ -54,10 +61,13 @@ impl Default for LayerSettings {
             provinces: 0.0,
             drought: 0.0,
             prices: 0.0,
+            trade_balance: 0.0,
+            trade: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
             graticule: true,
+            roads: false,
         }
     }
 }
@@ -74,6 +84,7 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers0: [l.terrain, l.temperature, l.rainfall, l.population],
         layers1: [l.famine, l.provinces, on(l.coasts), on(l.rivers)],
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
+        layers3: [on(l.roads), l.trade, l.trade_balance, 0.0],
         ids: [hover_province, selected_province, 0, 0],
     }
 }
@@ -89,7 +100,7 @@ pub struct MapData {
     pub warp: Vec<[f32; 2]>,
     pub tables: Vec<Rgba>,
     pub lines: Vec<LineInstance>,
-    pub line_ranges: [Range<u32>; 4],
+    pub line_ranges: [Range<u32>; KINDS.len()],
 }
 
 impl MapData {
@@ -127,7 +138,10 @@ pub struct MapGpu {
     pub bind_group: wgpu::BindGroup,
     pub uniforms: wgpu::Buffer,
     pub lines: wgpu::Buffer,
-    pub line_ranges: [Range<u32>; 4],
+    pub line_ranges: [Range<u32>; KINDS.len()],
+    /// Last month's trade lines, replaced when the trade changes; `trade_len` of them are in use.
+    pub trade: wgpu::Buffer,
+    pub trade_len: u32,
     pub tables: wgpu::Texture,
     table_rows: u32,
 }
@@ -148,6 +162,15 @@ fn array_texture(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, size: 
         wgpu::util::TextureDataOrder::LayerMajor,
         data,
     )
+}
+
+fn trade_buffer(device: &wgpu::Device, lines: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("trade lines"),
+        size: (lines.max(1) * std::mem::size_of::<LineInstance>()) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 impl MapGpu {
@@ -256,7 +279,20 @@ impl MapGpu {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        MapGpu { map_pipeline, layout, line_pipeline, bind_group, uniforms, lines, line_ranges: data.line_ranges.clone(), tables, table_rows }
+        let trade = trade_buffer(device, 1);
+        MapGpu { map_pipeline, layout, line_pipeline, bind_group, uniforms, lines, line_ranges: data.line_ranges.clone(), trade, trade_len: 0, tables, table_rows }
+    }
+
+    /// Put last month's trade lines on the GPU, growing their buffer when they don't fit.
+    pub fn upload_trade(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lines: &[LineInstance]) {
+        let size = std::mem::size_of_val(lines) as u64;
+        if size > self.trade.size() {
+            self.trade = trade_buffer(device, lines.len().next_power_of_two());
+        }
+        if !lines.is_empty() {
+            queue.write_buffer(&self.trade, 0, bytemuck::cast_slice(lines));
+        }
+        self.trade_len = lines.len() as u32;
     }
 
     /// Re-upload the per-province tables (after the simulation advanced). The per-cell layers are
@@ -278,12 +314,17 @@ impl MapGpu {
         pass.draw(0..3, 0..1);
         pass.set_pipeline(&self.line_pipeline);
         pass.set_vertex_buffer(0, self.lines.slice(..));
-        let visible = [u.layers1[2] > 0.0, u.layers2[0] > 0.0, u.layers1[3] > 0.0, u.layers2[1] > 0.0];
-        for kind in [Kind::Graticule, Kind::Province, Kind::River, Kind::Coast] {
+        let roads = u.layers3[0] > 0.0;
+        let visible = [u.layers1[2] > 0.0, u.layers2[0] > 0.0, u.layers1[3] > 0.0, u.layers2[1] > 0.0, roads, roads, false];
+        for kind in [Kind::Graticule, Kind::Road, Kind::SeaLane, Kind::Province, Kind::River, Kind::Coast] {
             let range = &self.line_ranges[kind as usize];
             if visible[kind as usize] && !range.is_empty() {
                 pass.draw(0..6 * copies, range.clone());
             }
+        }
+        if u.layers3[1] > 0.0 && self.trade_len > 0 {
+            pass.set_vertex_buffer(0, self.trade.slice(..));
+            pass.draw(0..6 * copies, 0..self.trade_len);
         }
     }
 }

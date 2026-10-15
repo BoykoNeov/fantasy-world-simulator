@@ -9,6 +9,7 @@ struct MapParams {
     layers0: vec4<f32>,  // opacity: terrain, temperature, rainfall, population
     layers1: vec4<f32>,  // opacity: famine, provinces; lines: coasts, rivers
     layers2: vec4<f32>,  // lines: province borders, graticule; opacity: drought, prices
+    layers3: vec4<f32>,  // lines: roads and sea lanes, trade; opacity: trade balance; unused
     ids: vec4<u32>,      // hovered province, selected province (or NO_PROVINCE), unused x2
 };
 
@@ -256,7 +257,7 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     col = mix(col, rainfall_color(fld.b), params.layers0.z);
 
     // Only look the province up when something on screen uses it.
-    let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0 || params.layers2.w > 0.0
+    let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0 || params.layers2.w > 0.0 || params.layers3.z > 0.0
         || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
     if (!wanted) {
         return col;
@@ -271,6 +272,8 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     col = mix(col, dry.rgb, params.layers2.z * dry.a);
     let price = table(prov, 4);
     col = mix(col, price.rgb, params.layers2.w * price.a);
+    let balance = table(prov, 5);
+    col = mix(col, balance.rgb, params.layers3.z * balance.a);
     let fam = table(prov, 2);
     col = mix(col, fam.rgb, params.layers1.x * fam.a);
     col = mix(col, table(prov, 0).rgb, params.layers1.y * 0.55);
@@ -400,6 +403,9 @@ fn vs_line(
         case 0u: { color = vec4<f32>(INK, 0.95 * params.layers1.z); }
         case 1u: { color = vec4<f32>(0.42, 0.24, 0.18, 0.75 * params.layers2.x); }
         case 2u: { color = vec4<f32>(0.22, 0.40, 0.62, 0.9 * params.layers1.w); }
+        case 4u: { color = vec4<f32>(0.48, 0.32, 0.18, 0.7 * params.layers3.x); }
+        case 5u: { color = vec4<f32>(0.18, 0.30, 0.50, 0.6 * params.layers3.x); }
+        case 6u: { color = vec4<f32>(0.55, 0.10, 0.12, 0.9 * params.layers3.y); }
         default: { color = vec4<f32>(0.40, 0.30, 0.20, 0.35 * params.layers2.y); }
     }
     // Rivers thin out when zoomed far out.
@@ -440,6 +446,12 @@ fn fs_line(in: LineOut) -> @location(0) vec4<f32> {
     if (in.kind == 1u || in.kind == 3u) {
         let period = 7.0 * params.proj.z;
         let on = 1.0 - smoothstep(0.55, 0.7, fract(in.along_px / period));
+        a = a * on;
+    }
+    // Sea lanes are dashed.
+    if (in.kind == 5u) {
+        let period = 12.0 * params.proj.z;
+        let on = 1.0 - smoothstep(0.55, 0.65, fract(in.along_px / period));
         a = a * on;
     }
     return vec4<f32>(in.color.rgb, a);

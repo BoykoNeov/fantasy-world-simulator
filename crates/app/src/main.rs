@@ -7,8 +7,8 @@
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--modules SLOT=VERSION,...] [--bench --out DIR --tag NAME]
 //!
-//! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices (0..1), and
-//! coasts, rivers, borders, graticule (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
+//! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
+//! trade, balance (0..1), and coasts, rivers, borders, graticule, roads (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
@@ -189,6 +189,9 @@ impl Options {
                         "famine" => l.famine = x,
                         "drought" => l.drought = x,
                         "prices" => l.prices = x,
+                        "trade" => l.trade = x,
+                        "balance" => l.trade_balance = x,
+                        "roads" => l.roads = x > 0.5,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
                         "rivers" => l.rivers = x > 0.5,
@@ -328,6 +331,12 @@ struct MapApp {
     /// What the economy layers show, and the day state and good they were worked out for.
     market: layers::MarketView,
     market_for: Option<(usize, usize)>,
+    /// Whether the world trades (markets with trade on): the trade layers are offered.
+    trades: bool,
+    /// The trade record and map the trade lines on the GPU were built for, and lines waiting for
+    /// the next paint callback to upload them.
+    trade_lines_for: Option<(usize, usize)>,
+    pending_trade: Option<Vec<app::geometry::LineInstance>>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -485,6 +494,9 @@ impl MapApp {
             price_good,
             market: layers::MarketView::default(),
             market_for: None,
+            trades: mc.markets.as_ref().is_some_and(|m| m.trade.is_some()),
+            trade_lines_for: None,
+            pending_trade: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
@@ -610,14 +622,27 @@ impl MapApp {
         if self.market_for != Some(market_key) {
             let price = sim::fields::known("province.price");
             let state = &self.shown_state;
+            let k = self.geo.goods.stride();
+            let coins: Vec<u64> = match self.coin_columns.first() {
+                Some(&c) => (0..self.geo.provinces.count).map(|q| self.geo.stock.get(q * k + c).copied().unwrap_or(0)).collect(),
+                None => Vec::new(),
+            };
             self.market = layers::MarketView {
                 price: match state.fields.iter().any(|f| f.0 == price) {
-                    true => layers::relative_prices(&self.geo.price, self.geo.goods.stride(), self.price_good, &self.geo.province_population(), state.money_levels.as_deref()),
+                    true => layers::relative_prices(&self.geo.price, k, self.price_good, &self.geo.province_population(), state.money_levels.as_deref()),
                     false => Vec::new(),
                 },
+                balance: layers::trade_balance(&state.trade.shipments, &coins, self.geo.provinces.count),
             };
             self.market_for = Some(market_key);
             self.tables_for = None;
+        }
+        // Trade lines: for each month's trade, on the map drawn, when they are shown.
+        let lines_key = (Arc::as_ptr(&self.shown_state.trade) as usize, Arc::as_ptr(&self.drawn_map) as usize);
+        if self.layers.trade > 0.0 && self.trade_lines_for != Some(lines_key) && self.geo.provinces.count == self.gpu_provinces {
+            let net = layers::net_trade(&self.shown_state.trade.shipments);
+            self.pending_trade = Some(app::geometry::instances(&app::geometry::trade_chains(&self.geo, &net)).0);
+            self.trade_lines_for = Some(lines_key);
         }
         if self.tables_for != Some(key) {
             self.view = match next {
@@ -647,7 +672,8 @@ impl MapApp {
                         self.gpu_provinces = data.provinces;
                         self.pending_gpu = Some(Arc::new(data));
                         self.drawn_map = map;
-                        self.tables_for = None;
+                        // The new picture starts with no trade lines.
+                        (self.tables_for, self.trade_lines_for) = (None, None);
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => return,
@@ -960,10 +986,20 @@ impl MapApp {
                 self.price_good = c;
             });
         }
+        if self.trades {
+            ui.add(egui::Slider::new(&mut l.trade, 0.0..=1.0).text("trade, last month"))
+                .on_hover_text("a line between each pair of provinces that traded, as thick as the trade was worth (what was sold one way less what came back), with an arrowhead toward the buyer");
+            ui.add(egui::Slider::new(&mut l.trade_balance, 0.0..=1.0).text("sold or bought more"))
+                .on_hover_text("last month: gold where a province sold more than it bought, rose where it bought more; full colour at a tenth of the coins it holds");
+            if self.shown_state.trade.shipments.is_empty() {
+                ui.small("No trade recorded yet: it shows once a month's trade has run (a world just opened keeps none).");
+            }
+        }
         ui.checkbox(&mut l.coasts, "coastlines");
         ui.checkbox(&mut l.rivers, "rivers");
         ui.checkbox(&mut l.borders, "province borders (zoom in)");
         ui.checkbox(&mut l.graticule, "latitude and longitude lines");
+        ui.checkbox(&mut l.roads, "roads and sea lanes").on_hover_text("the ways between neighbouring provinces, seat to seat: roads over land, dashed lanes by sea");
         ui.separator();
 
         if let Some((c, p)) = self.hover {
@@ -1034,6 +1070,19 @@ impl MapApp {
                 let times = 4f64.powf(x as f64);
                 let name = inspector::good_name(&w.goods, self.price_good);
                 ui.label(if times >= 1.0 { format!("{name}: {times:.2}× the middle province's price to trade") } else { format!("{name}: {:.2}× the middle province's price to trade (cheaper)", times) });
+            }
+            if self.layers.trade_balance > 0.0 || self.layers.trade > 0.0 {
+                let (mut sold, mut bought) = (0.0, 0.0);
+                for s in &self.shown_state.trade.shipments {
+                    if s.from as usize == p {
+                        sold += s.coins;
+                    } else if s.to as usize == p {
+                        bought += s.coins;
+                    }
+                }
+                if sold + bought > 0.0 {
+                    ui.label(format!("last month: sold {} coins' worth, bought {}", group(sold.round() as u64), group(bought.round() as u64)));
+                }
             }
             if self.view.drought[p] > 0.0 {
                 ui.label(format!("drought: {:.0}% of the rain missing", 100.0 * self.view.drought[p]));
@@ -1279,6 +1328,32 @@ impl MapApp {
             });
         });
 
+        // Last month's trade: what went to and came from each neighbour, by good.
+        let record = self.shown_state.trade.clone();
+        let mut trades: std::collections::BTreeMap<(bool, u32, u16), (u64, f64)> = std::collections::BTreeMap::new();
+        for s in record.shipments.iter().filter(|s| s.from == p || s.to == p) {
+            let (sold, other) = if s.from == p { (true, s.to) } else { (false, s.from) };
+            let t = trades.entry((sold, other, s.column)).or_default();
+            (t.0, t.1) = (t.0 + s.units, t.1 + s.coins);
+        }
+        if !trades.is_empty() {
+            ui.separator();
+            let title = format!("Trade, settled {} ({})", self.calendar.format(record.day), trades.len());
+            egui::CollapsingHeader::new(egui::RichText::new(title).strong()).default_open(false).show(ui, |ui| {
+                let goods = &self.geo.goods;
+                egui::Grid::new("trade").striped(true).num_columns(5).show(ui, |ui| {
+                    for (&(sold, other, column), &(units, coins)) in &trades {
+                        ui.label(if sold { "sold" } else { "bought" });
+                        ui.label(inspector::good_name(goods, column as usize));
+                        ui.label(inspector::good_value(goods, column as usize, units));
+                        ui.label(format!("{} {other}", if sold { "to" } else { "from" }));
+                        ui.label(format!("for {} coins", group(coins.round() as u64)));
+                        ui.end_row();
+                    }
+                });
+            });
+        }
+
         let front = &self.frames[0];
         let goods = &self.geo.goods;
         let settled: Vec<String> =
@@ -1408,6 +1483,7 @@ struct MapCallback {
     uniforms: MapUniforms,
     copies: u32,
     tables: Option<Vec<layers::Rgba>>,
+    trade: Option<Vec<app::geometry::LineInstance>>,
     /// A changed map's picture, to replace the one on the GPU.
     rebuild: Option<Arc<MapData>>,
     target: wgpu::TextureFormat,
@@ -1425,10 +1501,13 @@ impl egui_wgpu::CallbackTrait for MapCallback {
         if let Some(data) = &self.rebuild {
             resources.insert(MapGpu::new(device, queue, self.target, data));
         }
-        let gpu: &MapGpu = resources.get().expect("map resources");
+        let gpu: &mut MapGpu = resources.get_mut().expect("map resources");
         queue.write_buffer(&gpu.uniforms, 0, bytemuck::bytes_of(&self.uniforms));
         if let Some(t) = &self.tables {
             gpu.upload_tables(queue, t);
+        }
+        if let Some(t) = &self.trade {
+            gpu.upload_trade(device, queue, t);
         }
         Vec::new()
     }
@@ -1558,8 +1637,13 @@ impl eframe::App for MapApp {
             let hover_province = self.hover.map_or(NONE, |(_, p)| p);
             let uniforms = gpu::uniforms(&cam, self.geo.grid.n, w, h, origin, ppp, &self.layers, hover_province, self.selected.unwrap_or(NONE));
             let (first, last) = cam.visible_copies(w);
-            let (tables, rebuild) = (self.pending_tables.take(), self.pending_gpu.take());
-            let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, rebuild, target: self.target };
+            // egui throws a pass away when a layout needs another go (a table shown for the first
+            // time): what waits for the GPU stays waiting until a pass that is drawn.
+            let (tables, trade, rebuild) = match ctx.will_discard() {
+                true => (None, None, None),
+                false => (self.pending_tables.take(), self.pending_trade.take(), self.pending_gpu.take()),
+            };
+            let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, trade, rebuild, target: self.target };
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
             // The brush around the pointer, and the stroke being drawn.
             let to_screen = |lon: f64, lat: f64| {

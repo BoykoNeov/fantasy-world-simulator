@@ -102,7 +102,11 @@ What exists:
      left them, then scaled to what sellers can spare and buyers can pay, so the order of the ways
      doesn't matter. Goods arrive the same month (nothing is on the road). Each year's flows count
      what came in and went out by trade (the two cancel). Asked why a province changed, the month's
-     first day says what it bought and sold, from and to whom, at what prices.
+     first day says what it bought and sold, from and to whom, at what prices. The month's trade
+     is kept for showing it (`markets::TradeRecord`, `World::trade`): each good sent along each
+     way and what was paid for it. It sits beside the fields, so it is not saved, not in the
+     fingerprint, and read by no module; checkpoints in memory carry it, so going back shows the
+     trade of that time, and a world just opened has none until a month's trade runs.
 
   Coins (the goods under the money class, found through the tree) are never made, used or priced:
   each person starts with 20, held by the province, and trade moves them. How each good is made,
@@ -130,8 +134,8 @@ What exists:
   money. The level is set at the start of the month's trade and holds through it, since it
   follows wealth over months, not one month's buying (a starving province paying for food doesn't
   want food less). Stored prices leave it out (inside a province everything scales with it, so
-  nothing there changes); the window piece is to show it beside them, worked out the way trade
-  works it out (`markets::money_level`, against the average over inhabited provinces).
+  nothing there changes); the window shows it beside them, from the function trade uses
+  (`markets::money_levels`, against the average over inhabited provinces).
 
   Over a century on the large world (seed 7): starved per 1,000 people a year 9.44 without trade,
   9.18 with trade alone, 8.86 with prices following money; on average 129.5, 133.4 and 135.9
