@@ -92,7 +92,24 @@ What exists:
   (each a day with an `edit` or a `poke`, including pokes scheduled for days still to come with
   `Sim::schedule`) and the day it reached. Opening one makes the world from its settings and
   replays the commands, giving exactly the world that was written; that takes as long as running
-  those days did. Assertions (expected ranges at chosen years) wait for the combination tester.
+  those days did. A timeline can carry expectations: a range for one of a year's totals (people,
+  food stored, harvested, births, deaths, starved, provinces with famine). Checking them runs the
+  timeline on to the last year they name. `scenarios/drought_famine.toml` is story 1's first half
+  this way: the same world with and without the drought, and what each should show.
+- **The combination tester** (`combos.rs`, `src/bin/combos.rs`): runs mixes of module versions on
+  small worlds (face 48, 200 provinces) for 20 years on three seeds, strictly (a module writing a
+  value it doesn't own stops its run), each with one drought so the weather has work to do. It also
+  checks every scenario in `scenarios/`. The scorer looks at world totals, not single values (a
+  province's store or a quiet year's missing rain sits at zero as a matter of course): a crash, a
+  value clamped back into bounds, a total its causes don't explain, a value held at a finite upper
+  bound for 180 days, or a counted total at zero for 90 days while its owner runs are red; no
+  counted total changing for five years is yellow. `data/known_quirks.toml` lists problems a mix
+  is known to have, which then show yellow. A mix the engine refuses (people with no food economy)
+  is marked refused. Only 32 mixes exist, so all of them run; `--pairs` picks a smaller set that
+  still has every pair of versions together, for when the slots grow. The table goes to
+  `data/compatibility.toml`, which the window reads. Verdicts depend only on the mix and the seed,
+  so the table is the same on every run; speed is printed, not kept in it. Today every mix that
+  runs is green.
 - **Undo cost**: taking back the latest edit replays at most a year. Taking back an older map edit
   also works out every later map edit again (about 0.2 s per brush stroke on a large world), and
   taking back an old poke replays every year since.
@@ -136,6 +153,15 @@ Tests (a few seconds; the story test runs a world twice for four years):
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim
+```
+
+The combination tester (about 25 s on all cores; run it at below-normal priority). `--write` saves
+the table, `--check` runs again what the table lists and fails if anything came out differently,
+`--only economics=off,population=off` runs one mix, and `--out DIR` writes, for each run that
+wasn't green, a scenario that replays it up to just after its first problem:
+
+```
+cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim --bin combos -- --check
 ```
 
 Headless run with timing and maps (sizes: small, medium, large, huge):

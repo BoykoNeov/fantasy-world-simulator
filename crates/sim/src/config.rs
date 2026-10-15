@@ -6,7 +6,7 @@ use crate::calendar::{Calendar, CalendarDef};
 use crate::climate::{LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::Rivers;
-use crate::module::Module;
+use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
 use crate::provinces::ProvinceGrowth;
 use crate::terrain::{NoiseTerrain, NullTerrain};
@@ -106,6 +106,56 @@ impl ModuleConfig {
             out.push(Box::new(Droughts::default()));
         }
         out
+    }
+}
+
+/// Every slot that has a choice, with its versions by name; "off" is a runtime slot switched off.
+/// The first version of each is the default. This is what the combination tester tries.
+pub const CHOICES: &[(Slot, &[&str])] = &[
+    (Slot::Terrain, &["noise", "null"]),
+    (Slot::Climate, &["latitude", "null"]),
+    (Slot::Economics, &["food", "off"]),
+    (Slot::Population, &["basic", "off"]),
+    (Slot::Weather, &["droughts", "off"]),
+];
+
+impl ModuleConfig {
+    /// The version chosen for `slot`, by name (see [`CHOICES`]); `None` for a slot with no choice.
+    pub fn choice(&self, slot: Slot) -> Option<&'static str> {
+        let on = |b: bool, name: &'static str| if b { name } else { "off" };
+        Some(match slot {
+            Slot::Terrain => match self.terrain {
+                TerrainVersion::Null => "null",
+                TerrainVersion::Noise => "noise",
+            },
+            Slot::Climate => match self.climate {
+                ClimateVersion::Null => "null",
+                ClimateVersion::Latitude => "latitude",
+            },
+            Slot::Economics => on(self.economics.is_some(), "food"),
+            Slot::Population => on(self.population.is_some(), "basic"),
+            Slot::Weather => on(self.weather, "droughts"),
+            _ => return None,
+        })
+    }
+
+    /// Choose a version by name. A runtime slot switched on gets its default parameters, unless it
+    /// was on already.
+    pub fn set_choice(&mut self, slot: Slot, version: &str) -> Result<(), String> {
+        let known = CHOICES.iter().find(|c| c.0 == slot).is_some_and(|c| c.1.contains(&version));
+        if !known {
+            return Err(format!("{slot:?} has no version {version}"));
+        }
+        let on = version != "off";
+        match slot {
+            Slot::Terrain => self.terrain = version.parse()?,
+            Slot::Climate => self.climate = version.parse()?,
+            Slot::Economics => self.economics = if on { self.economics.take().or_else(|| Some(FoodParams::default())) } else { None },
+            Slot::Population => self.population = if on { self.population.take().or_else(|| Some(PopParams::default())) } else { None },
+            Slot::Weather => self.weather = on,
+            _ => unreachable!("checked against CHOICES"),
+        }
+        Ok(())
     }
 }
 

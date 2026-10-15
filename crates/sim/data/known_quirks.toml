@@ -1,0 +1,8 @@
+# Known quirks: problems a mix of module versions is known to have. The combination tester shows a
+# matching finding as yellow (known) instead of red. Each entry:
+#
+# [[quirk]]
+# when = ["economics=food", "weather=off"]   # versions the mix must have
+# problem = "all_gone"                         # crash, contract_violated, conservation_broken,
+#                                              # stuck_at_top, all_gone, stagnant or expectation
+# note = "why, or where it is tracked"

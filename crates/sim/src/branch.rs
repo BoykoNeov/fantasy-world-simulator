@@ -66,6 +66,9 @@ pub struct Timeline {
     /// The timeline it left, and the day it left it.
     pub parent: Option<(u32, u64)>,
     pub sim: Sim,
+    /// What a scenario expects of this timeline (see [`crate::scenario::Expect`]). Kept when it is
+    /// written as a scenario again; binary saves don't keep it.
+    pub expect: Vec<crate::scenario::Expect>,
 }
 
 /// Every timeline of a world, and which one is played.
@@ -80,7 +83,7 @@ pub const MAGIC: &[u8; 8] = b"FMAPTIME";
 
 impl Timelines {
     pub fn new(sim: Sim) -> Timelines {
-        Timelines { list: vec![Timeline { id: 0, parent: None, sim }], active: 0 }
+        Timelines { list: vec![Timeline { id: 0, parent: None, sim, expect: Vec::new() }], active: 0 }
     }
 
     pub fn sim(&self) -> &Sim {
@@ -100,7 +103,7 @@ impl Timelines {
     pub fn branch(&mut self, day: u64) -> Result<u32, String> {
         let sim = self.sim().branch(day)?;
         let id = self.list.iter().map(|t| t.id).max().unwrap_or(0) + 1;
-        self.list.push(Timeline { id, parent: Some((self.active_id(), day)), sim });
+        self.list.push(Timeline { id, parent: Some((self.active_id(), day)), sim, expect: Vec::new() });
         self.active = self.list.len() - 1;
         Ok(id)
     }
@@ -139,7 +142,7 @@ impl Timelines {
         for _ in 0..count {
             let (id, parent, day, len) = (r.u64()? as u32, r.u64()?, r.u64()?, r.u64()? as usize);
             let sim = Sim::load(r.take(len)?)?;
-            list.push(Timeline { id, parent: (parent != u64::MAX).then_some((parent as u32, day)), sim });
+            list.push(Timeline { id, parent: (parent != u64::MAX).then_some((parent as u32, day)), sim, expect: Vec::new() });
         }
         if active >= list.len() {
             return Err(LoadError("damaged timelines file: no such timeline to play".into()));

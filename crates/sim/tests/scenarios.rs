@@ -84,3 +84,25 @@ fn hand_edits_to_a_scenario_take_effect_and_mistakes_are_refused() {
     lost.active = 7;
     assert!(Timelines::from_scenario(&lost).err().unwrap().contains("no timeline 7"));
 }
+
+#[test]
+fn expectations_hold_fail_with_the_value_and_are_written_again() {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/scenarios/drought_famine.toml")).unwrap();
+    let mut t = Timelines::from_scenario_text(&text).unwrap();
+    assert_eq!(t.list[1].expect.len(), 4);
+    // Written again, the expectations are kept.
+    let again = Timelines::from_scenario_text(&t.scenario_text()).unwrap();
+    assert_eq!(again.list.iter().map(|t| t.expect.clone()).collect::<Vec<_>>(), t.list.iter().map(|t| t.expect.clone()).collect::<Vec<_>>());
+    assert_eq!(t.check_expectations(), Vec::new());
+
+    // The drought timeline's year-4 famine, asked to be far bigger than it was.
+    let wrong = text.replace("min = 2_500_000", "min = 25_000_000");
+    let failed = Timelines::from_scenario_text(&wrong).unwrap().check_expectations();
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0].0, 1);
+    assert!(failed[0].1.starts_with("year 4: Starved was ") && failed[0].1.ends_with("expected at least 25000000"), "{}", failed[0].1);
+    // A year that is never closed can't be checked.
+    let mut never = Timelines::from_scenario_text(&text).unwrap();
+    never.list[0].expect[0].year = 0;
+    assert!(never.check_expectations()[0].1.contains("year 0 was never reached"));
+}

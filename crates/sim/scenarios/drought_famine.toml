@@ -1,0 +1,171 @@
+# Target story 1, first half: a drought in the breadbasket brings famine, and the famine ends when
+# the rain returns. Timeline 0 is the same world left alone; timeline 1 leaves it at the start of
+# year 3 with the drought. The combination tester checks the expectations (crates/sim/src/combos.rs).
+
+format = 1
+active = 0
+
+[config.world]
+n = 48
+provinces = 200
+seed = 21
+land_fraction = 0.36
+radius_km = 6371.0
+
+[config.modules]
+terrain = "Noise"
+climate = "Latitude"
+weather = true
+
+[config.modules.economics]
+spoilage_per_year = 0.35
+initial_stock_days = 84.0
+harvest_variability = 0.6
+seasonality = 0.9
+harvest_peak = 0.62
+
+[config.modules.population]
+births_per_year = 0.036
+deaths_per_year = 0.028
+starvation_deaths = 0.3
+initial_fill = 0.7
+
+[config.calendar]
+name = "Reckoning of the Wheel"
+first_year = 1
+weekdays = ["Moonday", "Hearthday", "Marketday", "Stoneday", "Windday", "Restday"]
+
+[[config.calendar.months]]
+name = "Deepwinter"
+days = 30
+
+[[config.calendar.months]]
+name = "Thaw"
+days = 30
+
+[[config.calendar.months]]
+name = "Seedtide"
+days = 30
+
+[[config.calendar.months]]
+name = "Blossom"
+days = 30
+
+[[config.calendar.months]]
+name = "Greening"
+days = 30
+
+[[config.calendar.months]]
+name = "Highsun"
+days = 30
+
+[[config.calendar.months]]
+name = "Goldfield"
+days = 30
+
+[[config.calendar.months]]
+name = "Harvest"
+days = 30
+
+[[config.calendar.months]]
+name = "Emberfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Mistmoon"
+days = 30
+
+[[config.calendar.months]]
+name = "Frostfall"
+days = 30
+
+[[config.calendar.months]]
+name = "Longnight"
+days = 30
+
+[[config.calendar.months]]
+name = "Yearsend"
+days = 4
+
+[[config.calendar.seasons]]
+name = "Spring"
+first_month = 2
+
+[[config.calendar.seasons]]
+name = "Summer"
+first_month = 5
+
+[[config.calendar.seasons]]
+name = "Autumn"
+first_month = 8
+
+[[config.calendar.seasons]]
+name = "Winter"
+first_month = 11
+
+[[config.calendar.moons]]
+name = "Silvra"
+period_days = 29
+offset_days = 0
+
+[[config.calendar.moons]]
+name = "Kesh"
+period_days = 11
+offset_days = 4
+
+[[timeline]]
+id = 0
+day = 0
+command = []
+
+# Without the drought: famine stays local and the world grows a little.
+[[timeline.expect]]
+year = 3
+measure = "starved"
+max = 1_000_000
+
+[[timeline.expect]]
+year = 8
+measure = "population"
+min = 117_000_000
+max = 130_000_000
+
+[[timeline]]
+id = 1
+parent = 0
+fork_day = 728
+day = 728
+
+# A three-year drought over the province that grows the most food, from the start of year 3.
+[[timeline.command]]
+day = 728
+
+[timeline.command.poke.Drought]
+lon = 64.2
+lat = -42.7
+radius_km = 2000.0
+shortfall = 700
+days = 1092
+
+# Harvests fail, stores run down and people starve...
+[[timeline.expect]]
+year = 3
+measure = "starved"
+min = 1_000_000
+
+[[timeline.expect]]
+year = 4
+measure = "starved"
+min = 2_500_000
+
+# ...and once the rain is back the famine ends, leaving fewer people than the world without it.
+[[timeline.expect]]
+year = 8
+measure = "starved"
+max = 500_000
+
+[[timeline.expect]]
+year = 8
+measure = "population"
+min = 100_000_000
+max = 116_000_000

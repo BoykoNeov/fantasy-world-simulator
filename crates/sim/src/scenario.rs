@@ -11,7 +11,7 @@ use crate::branch::{Timeline, Timelines};
 use crate::config::Config;
 use crate::edit::Edit;
 use crate::events::Event;
-use crate::sim::{Command, CommandKind, Sim};
+use crate::sim::{Command, CommandKind, Sim, YearSummary};
 use serde::{Deserialize, Serialize};
 
 /// Bump on any change to the layout below or to the types it holds.
@@ -37,6 +37,70 @@ pub struct ScenarioTimeline {
     pub day: u64,
     /// The commands given in it, in day order, after the configuration's own first one.
     pub command: Vec<ScenarioCommand>,
+    /// What should have happened by chosen years: a scenario with these is a test case.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expect: Vec<Expect>,
+}
+
+/// A year total an expectation can check, from that year's summary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Measure {
+    /// People at the end of the year.
+    Population,
+    /// Stored food at the end of the year.
+    FoodStock,
+    /// Food harvested during the year.
+    Produced,
+    Births,
+    /// All deaths, starvation included.
+    Deaths,
+    Starved,
+    /// Provinces where anyone starved during the year.
+    FamineProvinces,
+}
+
+impl Measure {
+    pub fn of(self, y: &YearSummary) -> u64 {
+        match self {
+            Measure::Population => y.population,
+            Measure::FoodStock => y.food_stock,
+            Measure::Produced => y.ledger.produced,
+            Measure::Births => y.ledger.births,
+            Measure::Deaths => y.ledger.deaths,
+            Measure::Starved => y.ledger.starved,
+            Measure::FamineProvinces => y.famine_provinces as u64,
+        }
+    }
+}
+
+/// An expected range for one year's total, either end optional.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Expect {
+    pub year: i64,
+    pub measure: Measure,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<u64>,
+}
+
+impl Expect {
+    /// `Err` with what was found when the value is out of range.
+    pub fn check(&self, value: u64) -> Result<(), String> {
+        let low = self.min.is_some_and(|m| value < m);
+        let high = self.max.is_some_and(|m| value > m);
+        if low || high {
+            let range = match (self.min, self.max) {
+                (Some(a), Some(b)) => format!("{a} to {b}"),
+                (Some(a), None) => format!("at least {a}"),
+                (None, Some(b)) => format!("at most {b}"),
+                (None, None) => unreachable!("an empty range can't fail"),
+            };
+            return Err(format!("year {}: {:?} was {value}, expected {range}", self.year, self.measure));
+        }
+        Ok(())
+    }
 }
 
 /// A command as a scenario writes it: its day, and an edit or a poke.
@@ -80,6 +144,7 @@ impl Timelines {
                 fork_day: t.parent.map(|p| p.1),
                 day: t.sim.day,
                 command: t.sim.commands.iter().filter_map(ScenarioCommand::of).collect(),
+                expect: t.expect.clone(),
             })
             .collect();
         Scenario { format: SCENARIO_FORMAT, active: self.active_id(), config: self.sim().config.clone(), timeline }
@@ -106,7 +171,7 @@ impl Timelines {
             let commands = t.command.iter().map(ScenarioCommand::command).collect::<Result<Vec<_>, _>>().map_err(|e| format!("timeline {}: {e}", t.id))?;
             let mut sim = Sim::new(&s.config).map_err(|e| e.to_string())?;
             sim.replay_commands(commands, t.day);
-            list.push(Timeline { id: t.id, parent: t.parent.zip(t.fork_day), sim });
+            list.push(Timeline { id: t.id, parent: t.parent.zip(t.fork_day), sim, expect: t.expect.clone() });
         }
         let active = list.iter().position(|t| t.id == s.active).ok_or_else(|| format!("no timeline {} to play", s.active))?;
         Ok(Timelines { list, active })
@@ -120,6 +185,32 @@ impl Timelines {
 }
 
 impl Timelines {
+    /// Check every timeline's expectations, running each on to the end of the last year they name.
+    /// Returns what failed, as `(timeline, why)`; empty when everything held.
+    pub fn check_expectations(&mut self) -> Vec<(u32, String)> {
+        let mut failed = Vec::new();
+        for t in &mut self.list {
+            let Some(last) = t.expect.iter().map(|e| e.year).max() else { continue };
+            let s = &mut t.sim;
+            s.run_to_year(last + 1);
+            // The year just ended is closed only when the next one runs.
+            let mut years = s.history.clone();
+            if s.day > 0 {
+                years.push(s.year_so_far());
+            }
+            for e in &t.expect {
+                let result = match years.iter().find(|y| y.year == e.year) {
+                    Some(y) => e.check(e.measure.of(y)),
+                    None => Err(format!("year {} was never reached", e.year)),
+                };
+                if let Err(why) = result {
+                    failed.push((t.id, why));
+                }
+            }
+        }
+        failed
+    }
+
     /// Open a world from a file: a scenario (`.toml`), every timeline ([`Timelines::save`]), or
     /// one simulation ([`Sim::save`]).
     pub fn open(path: &std::path::Path) -> Result<Timelines, String> {
