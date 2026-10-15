@@ -61,7 +61,7 @@ pub enum Edit {
     SetPop { pop: u32, to: PopValues },
     /// A new pop in a province.
     AddPop { province: u32, values: PopValues },
-    /// Set a province's food store.
+    /// Set a province's food store: [`Edit::SetStock`] of "food", as older scenarios write it.
     SetFoodStock { province: u32, rations: u64 },
     /// Land cells join province `to` (redrawing a border).
     MoveCells { cells: Vec<u32>, to: u32 },
@@ -83,6 +83,9 @@ pub enum Edit {
     /// river redirects that river. `spring` adds water at the source (thousand m³ a year), so a
     /// river can be drawn where little rain falls; with 0 it carries only the water already there.
     River { path: Vec<[f64; 2]>, spring: u64 },
+    /// Set how much of one good a province has stored. The good is named as the goods tree names
+    /// it, and must be one the world keeps on its own. (Last, so saved edits keep their numbers.)
+    SetStock { province: u32, good: String, amount: u64 },
 }
 
 /// What an override stroke sets.
@@ -140,10 +143,13 @@ impl Edit {
             }
             Edit::SetFoodStock { province: p, rations } => {
                 province(p)?;
-                if w.stock_of(p as usize, "food").is_none() {
-                    return Err("nobody keeps a food store in this world".into());
-                }
+                stock_column(w, "food")?;
                 count("province.stock", rations)
+            }
+            Edit::SetStock { province: p, ref good, amount } => {
+                province(p)?;
+                stock_column(w, good)?;
+                count("province.stock", amount)
             }
             Edit::MoveCells { ref cells, to } => {
                 province(to)?;
@@ -203,7 +209,7 @@ impl Edit {
     /// Whether the edit changes the map (cell and province-shape fields).
     pub fn changes_map(&self) -> bool {
         match self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } => false,
+            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } => false,
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => true,
         }
     }
@@ -215,7 +221,7 @@ impl Edit {
         let count = w.provinces.count;
         let of_cell = &mut w.provinces.of_cell;
         let count = match *self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } => return,
+            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -269,13 +275,8 @@ impl Edit {
                 let k = p.size.len() - 1;
                 (p.species[k], p.culture[k], p.religion[k], p.class[k]) = (v.species, v.culture, v.religion, v.class);
             }
-            Edit::SetFoodStock { province, rations } => {
-                let c = w.goods.column("food").expect("checked: a food store is kept");
-                let (at, food) = (w.goods.index(province as usize, c), Quantity::Goods(w.goods.class_of_column(c)));
-                let s = &mut w.stock[at];
-                flows.add(food, Cause::Edit, delta(*s, rations));
-                *s = rations;
-            }
+            Edit::SetFoodStock { province, rations: amount } => set_stock(w, province, "food", amount, &mut flows),
+            Edit::SetStock { province, ref good, amount } => set_stock(w, province, good, amount, &mut flows),
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } => {
                 w.grow_province_fields();
                 let moved = map.expect("a province edit changes the map").moved_cells();
@@ -310,7 +311,7 @@ impl Edit {
         };
         match *self {
             Edit::SetPop { pop, .. } => w.pops.province.get(pop as usize).copied().into_iter().collect(),
-            Edit::AddPop { province, .. } | Edit::SetFoodStock { province, .. } => vec![province],
+            Edit::AddPop { province, .. } | Edit::SetFoodStock { province, .. } | Edit::SetStock { province, .. } => vec![province],
             Edit::MoveCells { ref cells, to } => of(cells, to),
             Edit::Split { ref cells } => of(cells, w.provinces.count as u32),
             Edit::Merge { from, into } => vec![from, into],
@@ -337,6 +338,7 @@ impl Edit {
             Edit::SetPop { pop, to } => format!("pop {pop} set to {} people", to.size),
             Edit::AddPop { province, values } => format!("a pop of {} people added to province {province}", values.size),
             Edit::SetFoodStock { province, rations } => format!("province {province}'s food store set to {rations} rations"),
+            Edit::SetStock { province, good, amount } => format!("province {province}'s store of {good} set to {amount}"),
             Edit::MoveCells { cells, to } => format!("{} cells of land moved into province {to}", cells.len()),
             Edit::Split { cells } => format!("{} cells of land made a new province", cells.len()),
             Edit::Merge { from, into } => format!("province {from} merged into province {into}"),
@@ -365,6 +367,55 @@ impl Edit {
             Edit::River { path, spring } => format!("a river drawn along {} points, its spring adding {spring} thousand m³ a year", path.len()),
         }
     }
+
+    /// The fields it sets directly, which a module must own for it to mean anything: an edit that
+    /// sets the food store in a world where nobody keeps goods would set a number nothing reads or
+    /// runs. Map edits list none: they move whatever there is, which is nothing when nobody keeps it.
+    pub fn sets(&self) -> &'static [&'static str] {
+        match self {
+            Edit::SetPop { .. } | Edit::AddPop { .. } => &["pop.size"],
+            Edit::SetFoodStock { .. } | Edit::SetStock { .. } => &["province.stock"],
+            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => &[],
+        }
+    }
+}
+
+/// The column of the stores that keeps the good named `good` on its own, or why there is none.
+fn stock_column(w: &World, good: &str) -> Result<usize, String> {
+    let g = &w.goods;
+    if let Some(c) = g.column(good) {
+        return Ok(c);
+    }
+    let node = g.tree.find(good).ok_or_else(|| format!("there is no good called {good}"))?;
+    match g.columns_under(node) {
+        None => {
+            let whole = g.columns.iter().find(|&&c| g.tree.is_under(node, c)).map_or("?", |&c| g.tree.name(c));
+            Err(format!("{good} is kept only as part of {whole}; set the {whole} store instead"))
+        }
+        Some(cols) if cols.is_empty() => Err(format!("this world keeps no {good}")),
+        Some(cols) => {
+            let names: Vec<&str> = cols.iter().map(|&c| g.tree.name(g.columns[c])).collect();
+            Err(format!("{good} is kept as {}; set each of those", list(&names)))
+        }
+    }
+}
+
+/// "a", "a and b", "a, b and c".
+fn list(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// Set province `p`'s store of `good` (checked: kept on its own) and report the change.
+fn set_stock(w: &mut World, p: u32, good: &str, amount: u64, flows: &mut Flows) {
+    let c = stock_column(w, good).expect("checked: the good is kept");
+    let at = w.goods.index(p as usize, c);
+    let class = Quantity::Goods(w.goods.class_of_column(c));
+    flows.add(class, Cause::Edit, amount as i64 - w.stock[at] as i64);
+    w.stock[at] = amount;
 }
 
 /// The cells a river drawn along `path` runs through, source first: each one of the eight

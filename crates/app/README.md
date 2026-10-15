@@ -52,7 +52,8 @@ What exists:
   redirects it; a spring adds water); and provinces (move land into the selected province, make
   it a new province, merge a clicked province into the selected one). Brush tools draw with the left
   button, and right-drag still moves the map; the brush and the stroke are drawn over the map. The
-  inspector sets a pop's size, adds a pop and sets the food store. An edit shows at once on the day
+  inspector sets a pop's size, adds a pop and sets the store of any good kept (picked from a list,
+  in the good's own unit); it offers only what some module keeps. An edit shows at once on the day
   shown. Undo and redo (Ctrl+Z, Ctrl+Y) take back edits and droughts, on the latest day watched.
 - **A changed map is drawn again**: every day the simulation sends says which map it belongs to.
   When the day shown has a new map, its picture is built on another thread (0.5–0.8 s on a large

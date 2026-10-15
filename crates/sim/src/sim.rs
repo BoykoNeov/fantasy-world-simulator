@@ -17,7 +17,7 @@
 use crate::calendar::Calendar;
 use crate::config::Config;
 use crate::events::{delivery_order, Event, EventKind, EventLog, Posted};
-use crate::fields::{quantity_total, FieldData, FieldId, Tier};
+use crate::fields::{known, quantity_total, FieldData, FieldId, Tier};
 use crate::edit::{Edit, MapChange};
 use crate::module::{goods_kept, plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
 use crate::requests::{Cause, Request};
@@ -658,6 +658,16 @@ impl Sim {
     /// people and food changed only by what the edit declared, clamp values into their contracts,
     /// and note what changed.
     fn apply_edit(&mut self, edit: &Edit) -> Result<(), String> {
+        for &f in edit.sets() {
+            if self.plan.owner[known(f).0 as usize].is_none() {
+                let what = match f {
+                    "pop.size" => "people",
+                    "province.stock" => "stored goods",
+                    other => other,
+                };
+                return Err(format!("no module keeps {what} in this world, so there are none to set"));
+            }
+        }
         edit.check(&self.world)?;
         let quantities = self.world.quantities();
         let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();

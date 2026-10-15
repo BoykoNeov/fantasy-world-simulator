@@ -64,8 +64,12 @@ What exists:
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world
-  react (so far: a pop's size and what it is, a new pop, a province's food store, and reshaping
-  provinces: moving land between them, splitting one, merging two). Edits go into the
+  react (so far: a pop's size and what it is, a new pop, a province's store of any good the world
+  keeps on its own, and reshaping provinces: moving land between them, splitting one, merging two).
+  An edit that sets something no active module keeps (people with Population off, stored goods
+  with Economics off) is refused, as is setting a class kept as several goods ("food is kept as
+  grain and fish; set each of those"). `SetFoodStock`, the older food-only edit, still loads from
+  scenario files and means setting the "food" store. Edits go into the
   command log like pokes and take effect at the start of their day, so the world shown for that day
   already has them. People and food an edit creates or removes are counted as the edit's own cause,
   so every year still balances. `Sim::withdraw` takes a command (an edit or a poke) back:

@@ -36,7 +36,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// (`province.stock`), and the goods each per-good field holds.
 /// Format 7 (step 6): change requests name the good asked for, and a request on a per-good field
 /// names the province rather than one stored good.
-pub const FORMAT_VERSION: u32 = 7;
+/// Format 8 (step 6): the edit that sets any good's store.
+pub const FORMAT_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

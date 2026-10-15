@@ -20,6 +20,7 @@ fn busy() -> Timelines {
     let (lon, lat) = dir_to_lonlat(s.world.provinces.center[0]);
     let here = [lon.to_degrees(), lat.to_degrees()];
     s.edit(Edit::SetFoodStock { province: 0, rations: 7 }).unwrap();
+    s.edit(Edit::SetStock { province: 1, good: "food".into(), amount: 300 }).unwrap();
     s.run_days(100);
     s.edit(Edit::SetPop { pop: 1, to: PopValues::people(4321) }).unwrap();
     s.edit(Edit::AddPop { province: 2, values: PopValues::people(99) }).unwrap();

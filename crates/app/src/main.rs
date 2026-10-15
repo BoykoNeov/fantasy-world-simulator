@@ -311,9 +311,11 @@ struct MapApp {
     opened: u32,
     /// A pop being edited in the inspector, and the size typed so far.
     pop_edit: Option<(usize, u64)>,
-    /// The size of a pop to add, and a food store to set, as typed in the inspector.
+    /// The size of a pop to add, as typed in the inspector.
     new_pop: u64,
-    food_edit: Option<u64>,
+    /// The good whose store the inspector sets (its column), and the amount typed so far.
+    stock_good: usize,
+    stock_edit: Option<u64>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -459,7 +461,8 @@ impl MapApp {
             opened: 0,
             pop_edit: None,
             new_pop: 1000,
-            food_edit: None,
+            stock_good: 0,
+            stock_edit: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
@@ -570,7 +573,7 @@ impl MapApp {
             // Fewer provinces now (an undone split, going back past one, another timeline): a
             // selected province past the end is gone.
             if self.selected.is_some_and(|p| p as usize >= self.geo.provinces.count) {
-                (self.selected, self.pop_edit, self.food_edit) = (None, None, None);
+                (self.selected, self.pop_edit, self.stock_edit) = (None, None, None);
             }
         }
         self.rebuild_map();
@@ -1090,25 +1093,43 @@ impl MapApp {
         let w = &self.geo;
         let to = |k: usize, size: u64| PopValues { size, species: w.pops.species[k], culture: w.pops.culture[k], religion: w.pops.religion[k], class: w.pops.class[k] };
         let mut edit = set_pop.map(|(k, n)| Edit::SetPop { pop: k as u32, to: to(k, n) });
-        ui.horizontal_wrapped(|ui| {
-            ui.add(egui::DragValue::new(&mut self.new_pop).range(1..=1_000_000_000u64).speed(100.0).suffix(" people"));
-            if ui.small_button("add a pop").clicked() {
-                edit = Some(Edit::AddPop { province: p, values: PopValues::people(self.new_pop) });
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            // The store as it is, until a new amount is typed.
-            let mut food = self.food_edit.unwrap_or_else(|| self.geo.stock_of(pi, "food").unwrap_or(0));
-            if ui.add(egui::DragValue::new(&mut food).range(0..=1_000_000_000_000u64).speed(1000.0).suffix(" rations")).changed() {
-                self.food_edit = Some(food);
-            }
-            if ui.small_button("set the food store").clicked() {
-                edit = Some(Edit::SetFoodStock { province: p, rations: food });
-            }
-        });
+        // Only what some module keeps can be set: with nobody keeping it, it would be a number
+        // nothing reads (the world refuses such an edit too).
+        let kept = |name: &str| self.owners[sim::fields::known(name).0 as usize].1.is_some();
+        if kept("pop.size") {
+            ui.horizontal_wrapped(|ui| {
+                ui.add(egui::DragValue::new(&mut self.new_pop).range(1..=1_000_000_000u64).speed(100.0).suffix(" people"));
+                if ui.small_button("add a pop").clicked() {
+                    edit = Some(Edit::AddPop { province: p, values: PopValues::people(self.new_pop) });
+                }
+            });
+        }
+        if kept("province.stock") {
+            ui.horizontal_wrapped(|ui| {
+                let goods = &self.geo.goods;
+                let mut c = self.stock_good.min(goods.stride() - 1);
+                egui::ComboBox::from_id_salt("good to set").selected_text(inspector::good_name(goods, c)).show_ui(ui, |ui| {
+                    for k in 0..goods.stride() {
+                        ui.selectable_value(&mut c, k, inspector::good_name(goods, k));
+                    }
+                });
+                if c != self.stock_good {
+                    (self.stock_good, self.stock_edit) = (c, None);
+                }
+                // The store as it is, until a new amount is typed.
+                let mut amount = self.stock_edit.unwrap_or_else(|| self.geo.stock.get(goods.index(pi, c)).copied().unwrap_or(0));
+                let unit = goods.tree.unit(goods.columns[c]).map(|u| format!(" {u}")).unwrap_or_default();
+                if ui.add(egui::DragValue::new(&mut amount).range(0..=1_000_000_000_000u64).speed(1000.0).suffix(unit)).changed() {
+                    self.stock_edit = Some(amount);
+                }
+                if ui.small_button("set the store").clicked() {
+                    edit = Some(Edit::SetStock { province: p, good: inspector::good_name(goods, c).to_string(), amount });
+                }
+            });
+        }
         if let Some(e) = edit {
             self.pop_edit = None;
-            self.food_edit = None;
+            self.stock_edit = None;
             self.send_edit(Ok(e));
         }
 
@@ -1357,7 +1378,7 @@ impl eframe::App for MapApp {
                         Some(edit) => self.send_edit(edit),
                         None => {
                             self.selected = clicked;
-                            (self.pop_edit, self.food_edit) = (None, None);
+                            (self.pop_edit, self.stock_edit) = (None, None);
                         }
                     }
                 }

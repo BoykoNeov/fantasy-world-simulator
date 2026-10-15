@@ -181,14 +181,33 @@ fn edits_move_every_good() {
     assert_eq!((0..3).map(|c| sim.world.stock[g.index(p, c)]).collect::<Vec<_>>(), before);
     assert_eq!(sim.problems, Problems::default());
 
-    // No food store is kept, so there is none to set.
-    assert!(sim.edit(Edit::SetFoodStock { province: 0, rations: 5 }).unwrap_err().contains("nobody keeps a food store"));
+    // Any good kept on its own can be set; the change is the edit's doing.
+    let set = |good: &str, amount| Edit::SetStock { province: 2, good: good.into(), amount };
+    let (grain, ore) = (g.index(2, g.column("grain").unwrap()), g.index(2, g.column("ore").unwrap()));
+    let (had_grain, had_ore) = (sim.world.stock[grain], sim.world.stock[ore]);
+    sim.edit(set("grain", 7)).unwrap();
+    sim.edit(set("ore", had_ore + 40)).unwrap();
+    assert_eq!((sim.world.stock[grain], sim.world.stock[ore]), (7, had_ore + 40));
+    assert_eq!((sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit)), (7 - had_grain as i64, 40));
+    assert_eq!(sim.problems, Problems::default());
+    // Food is kept as grain and fish here, so it can't be set as one store; nor can what isn't kept.
+    let food_whole = "food is kept as grain and fish; set each of those";
+    assert_eq!(sim.edit(Edit::SetFoodStock { province: 0, rations: 5 }).unwrap_err(), food_whole);
+    assert_eq!(sim.edit(set("food", 5)).unwrap_err(), food_whole);
+    assert_eq!(sim.edit(set("cloth", 5)).unwrap_err(), "this world keeps no cloth");
+    assert_eq!(sim.edit(set("spice", 5)).unwrap_err(), "there is no good called spice");
+    assert!(sim.edit(set("grain", 2_000_000_000_000_000)).unwrap_err().contains("more than province.stock can hold"));
+    // Refused edits leave nothing in the log.
+    let logged = sim.commands.iter().filter(|c| matches!(&c.kind, crate::sim::CommandKind::Edit { edit: Edit::SetStock { .. } })).count();
+    assert_eq!(logged, 2);
 
     // The sea covers everything: every good is lost, and the year's flows say so.
     let (food, raw) = (quantity_total(&sim.world, FOOD), quantity_total(&sim.world, RAW));
+    let set_before = (sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit));
     sim.edit(Edit::SeaLevel { rise_m: 20_000.0 }).unwrap();
     assert!(sim.world.stock.iter().all(|&s| s == 0));
-    assert_eq!((sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit)), (-(food as i64), -(raw as i64)));
+    let lost = (sim.year_flows.get(FOOD, Cause::Edit) - set_before.0, sim.year_flows.get(RAW, Cause::Edit) - set_before.1);
+    assert_eq!(lost, (-(food as i64), -(raw as i64)));
     assert_eq!(sim.problems, Problems::default());
 }
 
@@ -364,6 +383,37 @@ fn food_is_found_however_deep_the_tree_and_whichever_level_is_kept() {
         sim.run_days(40);
         assert_eq!(sim.problems, Problems::default(), "{names:?}");
     }
+}
+
+#[test]
+fn a_good_kept_only_inside_a_bigger_whole_cannot_be_set_alone() {
+    let mut sim = eating_world(&CEREALS_WHOLE, Some(DEEP), |_| 1_000);
+    let wheat = Edit::SetStock { province: 0, good: "wheat".into(), amount: 5 };
+    assert_eq!(sim.edit(wheat).unwrap_err(), "wheat is kept only as part of cereals; set the cereals store instead");
+    sim.edit(Edit::SetStock { province: 0, good: "cereals".into(), amount: 5 }).unwrap();
+    assert_eq!(sim.world.stock_under(0, "cereals"), Some(5));
+}
+
+#[test]
+fn edits_to_what_no_module_keeps_are_refused() {
+    let mut config = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    (config.modules.economics, config.modules.population) = (None, None);
+    let mut sim = Sim::new(&config).unwrap();
+    sim.strict = true;
+    let nothing = |what: &str| format!("no module keeps {what} in this world, so there are none to set");
+    assert_eq!(sim.edit(Edit::SetFoodStock { province: 0, rations: 5 }).unwrap_err(), nothing("stored goods"));
+    assert_eq!(sim.edit(Edit::SetStock { province: 0, good: "food".into(), amount: 5 }).unwrap_err(), nothing("stored goods"));
+    let people = crate::edit::PopValues::people(10);
+    assert_eq!(sim.edit(Edit::AddPop { province: 0, values: people }).unwrap_err(), nothing("people"));
+    assert!(sim.world.pops.size.is_empty() && sim.world.stock.iter().all(|&s| s == 0));
+
+    // The map can still be edited: there is just nothing to move.
+    let w = &sim.world;
+    let p = (0..w.provinces.count as u32).max_by_key(|&p| w.provinces.cells[p as usize]).unwrap();
+    let cells: Vec<u32> = (0..w.grid.cells() as u32).filter(|&c| w.provinces.of_cell[c as usize] == p).collect();
+    sim.edit(Edit::Split { cells: cells[..cells.len() / 2].to_vec() }).unwrap();
+    sim.run_days(40);
+    assert_eq!(sim.problems, Problems::default());
 }
 
 #[test]
