@@ -126,6 +126,28 @@ pub fn money_level(t: &TradeParams, coins: f64, people: f64, average: f64) -> f6
     level.clamp(1.0 / t.money_range, t.money_range)
 }
 
+/// Every province's [`money_level`], from its `coins` and `people`, against the coins a person of
+/// the provinces where people live. Trade works its prices out with these; the window shows them.
+pub fn money_levels(t: &TradeParams, coins: &[u64], people: &[u64]) -> Vec<f64> {
+    let n = people.len();
+    let (all_coins, all_people) = (0..n).filter(|&q| people[q] > 0).fold((0.0, 0.0), |(c, h), q| (c + coins[q] as f64, h + people[q] as f64));
+    let average = if all_people > 0.0 { all_coins / all_people } else { 0.0 };
+    (0..n).map(|q| money_level(t, coins[q] as f64, people[q] as f64, average)).collect()
+}
+
+impl MarketParams {
+    /// Every province's money level in `w` as it stands (trade works it out at the start of each
+    /// month's trade, so it can differ a little from what last month's trade used). `None` when
+    /// the world doesn't trade, or its prices don't follow the money.
+    pub fn money_levels_now(&self, w: &World) -> Option<Vec<f64>> {
+        let t = self.trade.as_ref().filter(|t| t.money_response != 0.0)?;
+        let coin = *w.goods.columns_under(w.goods.tree.find(&self.money)?)?.first()?;
+        let k = w.goods.stride();
+        let coins: Vec<u64> = (0..w.provinces.count).map(|q| w.stock.get(q * k + coin).copied().unwrap_or(0)).collect();
+        Some(money_levels(t, &coins, &w.province_population()))
+    }
+}
+
 impl Default for MarketParams {
     fn default() -> Self {
         toml::from_str(STANDARD).expect("bundled markets parameters are valid")
@@ -811,10 +833,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             Side { held, wanted: wanted[at], factor: target_price(p, 1.0, wanted[at], held), base: mix(&base), carry: mix(&|c| r.carriage[c]) }
         })
         .collect();
-    let coins = |prov: usize| stock[prov * k + coin] as f64;
-    let (all_coins, all_people) = (0..n).filter(|&q| people[q] > 0).fold((0.0, 0.0), |(c, h), q| (c + coins(q), h + people[q] as f64));
-    let average = if all_people > 0.0 { all_coins / all_people } else { 0.0 };
-    let levels: Vec<f64> = (0..n).map(|q| money_level(t, coins(q), people[q] as f64, average)).collect();
+    let coins: Vec<u64> = (0..n).map(|q| stock[q * k + coin]).collect();
+    let levels = money_levels(t, &coins, people);
 
     struct Offer {
         from: usize,

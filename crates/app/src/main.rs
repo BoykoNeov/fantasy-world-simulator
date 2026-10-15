@@ -316,6 +316,8 @@ struct MapApp {
     /// The good whose store the inspector sets (its column), and the amount typed so far.
     stock_good: usize,
     stock_edit: Option<u64>,
+    /// The columns of the per-good fields that hold coins.
+    coin_columns: Vec<usize>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -425,6 +427,8 @@ impl MapApp {
             )
         });
         let modules = ModulesInfo { versions, verdict: table.map(|t| t.verdict_for(mc)), tested_on };
+        let goods = &sim.world.goods;
+        let coin_columns = mc.markets.as_ref().and_then(|m| goods.columns_under(goods.tree.find(&m.money)?)).unwrap_or_default();
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -463,6 +467,7 @@ impl MapApp {
             new_pop: 1000,
             stock_good: 0,
             stock_edit: None,
+            coin_columns,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
@@ -987,6 +992,74 @@ impl MapApp {
         }
     }
 
+    /// The goods kept in province `p`: a row each with its store, price and workers, as far as
+    /// the world keeps them, and what they cost to trade where prices follow the money. Coins are
+    /// held, not made or priced, so only their store shows. `when` shows when a value last
+    /// changed, with its "why?".
+    fn goods_table(&self, ui: &mut egui::Ui, p: usize, when: &mut dyn FnMut(&mut egui::Ui, FieldId, usize)) {
+        let state = &self.shown_state;
+        let stock = sim::fields::known("province.stock");
+        let price = sim::fields::known("province.price");
+        let kept: Vec<FieldId> = FieldId::all().filter(|&id| id.def().tier == Tier::ProvinceGood && state.fields.iter().any(|f| f.0 == id)).collect();
+        if kept.is_empty() {
+            return;
+        }
+        let (goods, w) = (&self.geo.goods, &self.geo);
+        let level = state.money_levels.as_ref().and_then(|l| l.get(p)).copied();
+        ui.label(egui::RichText::new("Goods").strong()).on_hover_text(format!("set by {}", self.owners[stock.0 as usize].0));
+        let data: Vec<_> = kept.iter().map(|&id| w.field(id)).collect();
+        let to_trade = "the local price times the money level: what trade reckons with. Where people hold more coins than across the world, everything is dearer to trade, so the province buys more and sells less, and the coins flow back out.";
+        egui::Grid::new("goods").striped(true).show(ui, |ui| {
+            ui.small("good");
+            for &id in &kept {
+                ui.small(inspector::field_name(id));
+                if id == price && level.is_some() {
+                    ui.small("to trade").on_hover_text(to_trade);
+                }
+            }
+            ui.small("last changed");
+            ui.end_row();
+            for c in 0..goods.stride() {
+                let i = goods.index(p, c);
+                let coin = self.coin_columns.contains(&c);
+                ui.label(inspector::good_name(goods, c));
+                for (&id, d) in kept.iter().zip(&data) {
+                    let shown = id == stock || !coin;
+                    ui.label(if shown && !d.is_empty() { inspector::per_good_value(id, goods, c, d.value(i) as u64) } else { String::new() });
+                    if let (true, Some(level)) = (id == price, level) {
+                        ui.label(if shown && !d.is_empty() { format!("{:.3} coins", d.value(i) / sim::markets::PRICE_SCALE * level) } else { String::new() });
+                    }
+                }
+                // The latest of the good's values to change.
+                let last = |id: FieldId| state.last_change.get(id.0 as usize).and_then(|v| v.get(i)).copied().filter(|&d| d != NEVER);
+                let id = kept.iter().copied().filter(|&id| id == stock || !coin).max_by_key(|&id| last(id)).unwrap_or(stock);
+                when(ui, id, i);
+                ui.end_row();
+            }
+        });
+        // How rich the province is in coins against the world, and what that does to its prices.
+        if let (Some(level), Some(&coin)) = (level, self.coin_columns.first()) {
+            let people = w.province_population();
+            let k = goods.stride();
+            let coins = |q: usize| w.stock.get(q * k + coin).copied().unwrap_or(0) as f64;
+            let (all_coins, all_people) = (0..people.len()).filter(|&q| people[q] > 0).fold((0.0, 0.0), |(c, h), q| (c + coins(q), h + people[q] as f64));
+            if people[p] > 0 && all_people > 0.0 {
+                let pct = (level - 1.0) * 100.0;
+                let effect = if pct.abs() < 0.5 {
+                    "the same as its local price".to_string()
+                } else {
+                    format!("{:.0}% {} than its local price", pct.abs(), if pct > 0.0 { "more" } else { "less" })
+                };
+                ui.small(format!(
+                    "{:.1} coins a person here, {:.1} across the world. Money level ×{level:.2}: to trade, everything here costs {effect}.",
+                    coins(p) / people[p] as f64,
+                    all_coins / all_people
+                ))
+                .on_hover_text(to_trade);
+            }
+        }
+    }
+
     /// Everything about the selected province: its values and where they come from, what happened
     /// to it, why, and the drought tool.
     fn inspector(&mut self, ui: &mut egui::Ui, p: u32) {
@@ -1035,22 +1108,12 @@ impl MapApp {
                         when(ui, id, pi);
                         ui.end_row();
                     }
-                    // One row per good kept.
-                    Tier::ProvinceGood => {
-                        let goods = &self.geo.goods;
-                        for c in 0..goods.stride() {
-                            let i = goods.index(pi, c);
-                            ui.label(inspector::value_name(id, i as u32, goods));
-                            ui.label(data.is_empty().then(String::new).unwrap_or_else(|| inspector::per_good_value(id, goods, c, data.value(i) as u64)));
-                            ui.label(&self.owners[id.0 as usize].0);
-                            when(ui, id, i);
-                            ui.end_row();
-                        }
-                    }
-                    Tier::Cell | Tier::Pop => {}
+                    // In the goods table below.
+                    Tier::ProvinceGood | Tier::Cell | Tier::Pop => {}
                 }
             }
         });
+        self.goods_table(ui, pi, &mut when);
         let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
         let size = sim::fields::known("pop.size");
         // Editing a pop: its size, typed in, set when asked.

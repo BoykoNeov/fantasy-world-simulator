@@ -30,6 +30,11 @@ What exists:
   "why?", which has the simulation run that day again with tracing on, then lists in order what each
   module did and why (the drought reaching the province, the harvest worked out from capacity, luck,
   month and rain, spoilage, the food each pop got, births and deaths) and every value that changed.
+  Goods have a table of their own: a row per good with its store, local price and workers, and
+  when they last changed (with "why?"). Where prices follow the money, a "to trade" column shows
+  each price times the province's money level (`sim::markets::money_levels`, the same function
+  trade uses), with a line saying how many coins a person it holds against the world. Coins show
+  only their store: they are held, not made or priced.
   Below the values, its neighbours: each province it borders or faces across the water, the days
   it takes to get there by land and by sea, and how long their shared border is. Click one to go
   to it.

@@ -55,12 +55,21 @@ pub struct DayState {
     pub fields: Vec<(FieldId, FieldData)>,
     pub last_change: Vec<Vec<u64>>,
     pub view: ProvinceView,
+    /// How dear everything in each province is to trade, for the coins it holds
+    /// ([`sim::markets::money_levels`]); `None` when prices don't follow the money.
+    pub money_levels: Option<Vec<f64>>,
     pub map: Arc<MapState>,
 }
 
 impl DayState {
     pub fn of(sim: &Sim, map: Arc<MapState>) -> Self {
-        DayState { fields: sim.running_fields().map(|id| (id, sim.world.field(id))).collect(), last_change: sim.last_change.clone(), view: ProvinceView::now(sim), map }
+        DayState {
+            fields: sim.running_fields().map(|id| (id, sim.world.field(id))).collect(),
+            last_change: sim.last_change.clone(),
+            view: ProvinceView::now(sim),
+            money_levels: sim.config.modules.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
+            map,
+        }
     }
 }
 
