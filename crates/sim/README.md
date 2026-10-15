@@ -38,7 +38,7 @@ What exists:
   the good a change request asks for; format 8 the edit that sets any good; format 9 the land facts;
   format 10 the markets economy (its parameters, prices, workers and four new causes: made, made
   into other goods, used up, worn out); format 11 trade (its parameters, and the causes trade in and
-  trade out). Loads refuse other format versions,
+  trade out); format 12 trade's prices following the money. Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -120,14 +120,28 @@ What exists:
   cross one border a month, so famines remain. On the small world provinces are about 1,000 km
   across, weeks apart by cart, so grain goes mostly by sea there.
 
-  **Known limit: coins pool.** Coins flow to the provinces that sell food and nothing brings them
-  back, so provinces that buy run out and stop buying. On the large world the provinces holding
-  under a coin a person grow from 42 in the first year to 2,770 of about 5,000 by year 100, and the
-  richest tenth come to hold 65% of all coins (28% at first). Trade shrinks to a fifth, and over a
-  century trade no longer cuts starvation (122.5 million starved against 122.3 million without it;
-  on the small world 129.2 against 131.1). Something must send coins back; which is undecided (see
-  the design doc). `examples/market_stats.rs` prints a run year by year, with what was traded and
-  where the coins are (`--no-trade` turns trade off).
+  **Prices follow the money.** Without it, coins pool: they flow to the provinces that sell food
+  and nothing brings them back, so buying provinces run dry and stop buying. On the large world
+  2,770 of about 5,000 provinces fell under a coin a person within a century, trade shrank to a
+  fifth, and trade stopped cutting starvation. So, to trade, everything in a province is dearer by
+  its coins a person against the world's (`money_response` 1: twice the coins, twice the price),
+  within a third and three times (`money_range`). Where coins pile up goods are dear, so the
+  province buys more and sells less, and coins flow back: the price–specie flow of real metal
+  money. The level is set at the start of the month's trade and holds through it, since it
+  follows wealth over months, not one month's buying (a starving province paying for food doesn't
+  want food less). Stored prices leave it out (inside a province everything scales with it, so
+  nothing there changes); `markets::money_level` gives it, for the window to show.
+
+  Over a century on the large world (seed 7): starved per 1,000 people a year 9.44 without trade,
+  9.18 with trade alone, 8.86 with prices following money; on average 129.5, 133.4 and 135.9
+  million people. At year 100, 209 provinces are under a coin a person (2,770 without the money
+  effect) and the richest tenth hold 37% of the coins (65%); trade keeps its volume. The first 15
+  years starve 24.0, 19.2 and 19.9 million. On the small world (seed 1): 9.05, 8.45 and 8.15 per
+  1,000 a year; 28.2, 18.5 and 18.4 million in the first 15 years. Stronger responses (2) did
+  worse; 1 with a wider range (5) about the same. Two provinces alike but for coins even them out
+  month by month, never overshooting, with each good going one way only (a unit test).
+  `examples/market_stats.rs` prints a run year by year, with what was traded and where the coins
+  are (`--no-trade` turns trade off, `--money 1,3` sets the response and range).
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.

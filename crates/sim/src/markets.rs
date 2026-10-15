@@ -98,8 +98,32 @@ pub struct TradeParams {
     pub most_spent: f64,
     /// A day at sea costs this share of a day overland.
     pub sea_share: f64,
+    /// How strongly prices follow the money around: to trade, everything in a province is dearer
+    /// by its coins a person against the world's, to this power. 0: not at all.
+    #[serde(default)]
+    pub money_response: f64,
+    /// That stays within 1/this and this times.
+    #[serde(default = "no_range")]
+    pub money_range: f64,
     /// Coins to carry one unit of each good one day overland.
     pub carriage: BTreeMap<String, f64>,
+}
+
+fn no_range() -> f64 {
+    1.0
+}
+
+/// How dear everything in a province is, to trade, for the money around: its coins a person
+/// (`coins`, `people`) against `average`, the world's, to the power `money_response`, within
+/// `money_range`. Where coins pile up, goods are dear, so the province buys more and sells less,
+/// and the coins flow back out. 1 where nobody lives.
+pub fn money_level(t: &TradeParams, coins: f64, people: f64, average: f64) -> f64 {
+    if t.money_response == 0.0 || people <= 0.0 || average <= 0.0 {
+        return 1.0;
+    }
+    let x = (coins / people / average).max(1e-9);
+    let level = if t.money_response == 1.0 { x } else { x.powf(t.money_response) };
+    level.clamp(1.0 / t.money_range, t.money_range)
 }
 
 impl Default for MarketParams {
@@ -347,8 +371,8 @@ impl Resolved {
         let mut carriage = vec![0.0; kept.stride()];
         if let Some(t) = &p.trade {
             let share = |x: f64| (0.0..=1.0).contains(&x);
-            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && t.sea_share >= 0.0) {
-                return Err("trade: change, most_sold and most_spent must be between 0 and 1, sea_share at least 0".into());
+            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && t.sea_share >= 0.0 && t.money_response >= 0.0 && t.money_range >= 1.0) {
+                return Err("trade: change, most_sold and most_spent must be between 0 and 1, sea_share and money_response at least 0, money_range at least 1".into());
             }
             for (name, &x) in &t.carriage {
                 let c = column(name)?;
@@ -742,7 +766,7 @@ pub struct Deal {
     /// What is traded, as `(column, units, coins a unit)`: the seller's price and the carrying.
     pub goods: Vec<(usize, u64, f64)>,
     /// What is priced as one (its place among the items), its price at both ends for the seller's
-    /// mix of goods, and the carrying, in coins a unit: for explaining a day.
+    /// mix of goods (money level included), and the carrying, in coins a unit: for explaining a day.
     item: usize,
     pub prices: (f64, f64),
     pub carrying: f64,
@@ -765,9 +789,11 @@ struct Side {
 ///
 /// Along each way and for each item, the cheaper end sells to the dearer when the gap in price
 /// beats the carrying, moving a share (`change`) of what would close the gap down to the carrying.
-/// Where several ways serve one store, each closes only its part. Then each province's sales of an
-/// item are scaled down to `most_sold` of its store, and its spending to `most_spent` of its coins.
-/// Everything is worked out from the same stores, so the order of the ways doesn't matter.
+/// Where several ways serve one store, each closes only its part. Prices include each end's money
+/// level ([`money_level`]), as the month's coins set it. Then each province's
+/// sales of an item are scaled down to `most_sold` of its store, and its spending to `most_spent`
+/// of its coins. Everything is worked out from the same stores, so the order of the ways doesn't
+/// matter.
 fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted: &[f64], people: &[u64], links: &[Link]) -> Vec<Deal> {
     let Some(&coin) = r.coins.first() else { return Vec::new() };
     let (n, m, k) = (people.len(), r.items.len(), r.index.len());
@@ -785,6 +811,10 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             Side { held, wanted: wanted[at], factor: target_price(p, 1.0, wanted[at], held), base: mix(&base), carry: mix(&|c| r.carriage[c]) }
         })
         .collect();
+    let coins = |prov: usize| stock[prov * k + coin] as f64;
+    let (all_coins, all_people) = (0..n).filter(|&q| people[q] > 0).fold((0.0, 0.0), |(c, h), q| (c + coins(q), h + people[q] as f64));
+    let average = if all_people > 0.0 { all_coins / all_people } else { 0.0 };
+    let levels: Vec<f64> = (0..n).map(|q| money_level(t, coins(q), people[q] as f64, average)).collect();
 
     struct Offer {
         from: usize,
@@ -809,13 +839,16 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
         }
         for item in 0..m {
             let (sa, sb) = (sides[a * m + item], sides[b * m + item]);
-            let (from, to, s, d) = match sa.factor.partial_cmp(&sb.factor) {
+            let (from, to, s, d) = match (levels[a] * sa.factor).partial_cmp(&(levels[b] * sb.factor)) {
                 Some(std::cmp::Ordering::Less) => (a, b, sa, sb),
                 Some(std::cmp::Ordering::Greater) => (b, a, sb, sa),
                 _ => continue,
             };
-            // The gap left after selling q: it shrinks as q grows.
-            let gap = |q: f64| s.base * (target_price(p, 1.0, d.wanted, d.held + q) - target_price(p, 1.0, s.wanted, s.held - q)) - s.carry * days;
+            // The gap left after selling q: it shrinks as q grows. Each end's money level stays as
+            // the month found it: it follows a province's wealth over months, not one month's
+            // buying (a starving province paying for food doesn't want food less).
+            let (ls, ld) = (levels[from], levels[to]);
+            let gap = |q: f64| s.base * (ld * target_price(p, 1.0, d.wanted, d.held + q) - ls * target_price(p, 1.0, s.wanted, s.held - q)) - s.carry * ls * days;
             if s.held < 1.0 || gap(0.0) <= 0.0 {
                 continue;
             }
@@ -862,7 +895,7 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
     scale(&mut offers, &|o| o.from * m + o.item, &|o| o.units, &|at| t.most_sold * sides[at].held, n * m);
     let unit_cost = |o: &Offer| {
         let s = sides[o.from * m + o.item];
-        s.base * s.factor + s.carry * o.days
+        levels[o.from] * (s.base * s.factor + s.carry * o.days)
     };
     scale(&mut offers, &|o| o.to, &|o| o.units * unit_cost(o), &|prov| t.most_spent * stock[prov * k + coin] as f64, n);
 
@@ -875,7 +908,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
         }
         let (s, d) = (sides[o.from * m + o.item], sides[o.to * m + o.item]);
         let cols = &r.items[o.item].cols;
-        let unit = |c: usize| base(c) * s.factor + r.carriage[c] * o.days;
+        let (ls, ld) = (levels[o.from], levels[o.to]);
+        let unit = |c: usize| base(c) * ls * s.factor + r.carriage[c] * ls * o.days;
         let goods = if let [c] = cols[..] {
             vec![(c, units, unit(c))]
         } else {
@@ -889,8 +923,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             to: o.to as u32,
             goods,
             item: o.item,
-            prices: (s.base * s.factor, s.base * d.factor),
-            carrying: s.carry * o.days,
+            prices: (s.base * ls * s.factor, s.base * ld * d.factor),
+            carrying: s.carry * ls * o.days,
         });
     }
     out
@@ -1179,7 +1213,8 @@ mod tests {
     #[test]
     fn trade_settles_without_goods_going_back_and_forth() {
         let (p, r, goods) = shipped();
-        let t = p.trade.clone().unwrap();
+        // Stores alone: the coins the food end earns would make it dearer too.
+        let t = TradeParams { money_response: 0.0, ..p.trade.clone().unwrap() };
         // A row of five provinces a day apart, all food at one end.
         let n = 5;
         let (mut stock, mut wanted) = provinces(n);
@@ -1205,6 +1240,49 @@ mod tests {
             assert!(gap < 0.03, "between {q} and {}: {gap}", q + 1);
         }
         assert!(stock[(n - 1) * K] > 500_000, "{stock:?}");
+    }
+
+    #[test]
+    fn coins_flow_back_from_where_they_pile_up_without_goods_going_back_and_forth() {
+        let (p, r, goods) = shipped();
+        let t = p.trade.clone().unwrap();
+        assert!(t.money_response > 0.0);
+        // Two provinces alike in everything but coins: one has three times the other's.
+        let (mut stock, mut wanted) = provinces(2);
+        for q in 0..2 {
+            for (c, held) in [(0, 400_000), (3, 3_000), (4, 1_000), (5, 300), (6, 2_000), (7, 500)] {
+                stock[q * K + c] = held;
+            }
+            for (item, want) in [(0, 400_000.0), (1, 3_000.0), (2, 1_000.0), (3, 300.0), (4, 2_000.0), (5, 500.0)] {
+                wanted[q * ITEMS + item] = want;
+            }
+        }
+        stock[COIN] = 3_000_000;
+        let usual = stock.clone();
+        let ways = [way(0, 1, Some(1.0), None)];
+        let mut seen: BTreeMap<usize, (u32, u32)> = BTreeMap::new();
+        let mut gaps = Vec::new();
+        for _ in 0..120 {
+            // Each month a province makes and uses goods, so its stores drift back toward the usual:
+            // what the rich one bought gets used up, and it buys again.
+            for q in 0..2 {
+                for c in 0..COIN {
+                    let at = q * K + c;
+                    stock[at] = (0.8 * stock[at] as f64 + 0.2 * usual[at] as f64).round() as u64;
+                }
+            }
+            let deals = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways);
+            for d in &deals {
+                // Each good goes only one way: to the province with the coins.
+                assert_eq!(*seen.entry(d.item).or_insert((d.from, d.to)), (d.from, d.to), "{} turned back", r.items[d.item].name);
+            }
+            settle(&r, &deals, &mut stock, &goods, &mut Books::default(), None);
+            gaps.push(stock[COIN] as i64 - stock[K + COIN] as i64);
+        }
+        // The coins even out, never overshooting.
+        assert!(gaps.iter().all(|&g| g >= 0) && gaps.windows(2).all(|w| w[1] <= w[0]));
+        assert!(*gaps.last().unwrap() < 1_300_000, "{gaps:?}");
+        assert!(seen.values().all(|&(from, to)| (from, to) == (1, 0)));
     }
 
     #[test]

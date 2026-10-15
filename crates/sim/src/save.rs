@@ -42,7 +42,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 10 (step 6): Economics "markets": its parameters in the configuration, prices and work
 /// per good, and the causes made, made into, used and worn out.
 /// Format 11 (step 6): trade in the markets parameters, and the causes trade in and trade out.
-pub const FORMAT_VERSION: u32 = 11;
+/// Format 12 (step 6): trade's prices follow the money (two more trade parameters).
+pub const FORMAT_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

@@ -1,9 +1,10 @@
 //! How the markets economy settles: each year, people, starved, and per good the world's stores,
 //! workers and median price; then the speed.
 //!
-//! cargo run --release -p sim --example market_stats -- [--n FACE] [--provinces N] [--seed S] [--years Y] [--food] [--no-trade]
+//! cargo run --release -p sim --example market_stats -- [--n FACE] [--provinces N] [--seed S] [--years Y] [--food] [--no-trade] [--money R,X]
 //!
-//! `--food` runs Economics v0 instead, for comparison; `--no-trade` runs markets without trade.
+//! `--food` runs Economics v0 instead, for comparison; `--no-trade` runs markets without trade;
+//! `--money 1,3` sets how strongly prices follow the money (response, range).
 
 use sim::config::Config;
 use sim::fields::quantity_total;
@@ -24,6 +25,12 @@ fn main() {
         config.modules.set_choice(Slot::Economics, "markets").unwrap();
         if args.iter().any(|a| a == "--no-trade") {
             config.modules.markets.as_mut().unwrap().trade = None;
+        }
+        // Try how strongly prices follow the money: --money RESPONSE,RANGE.
+        if let Some(v) = args.iter().position(|a| a == "--money").and_then(|i| args.get(i + 1)) {
+            let (response, range) = v.split_once(',').expect("--money RESPONSE,RANGE");
+            let t = config.modules.markets.as_mut().unwrap().trade.as_mut().unwrap();
+            (t.money_response, t.money_range) = (response.parse().unwrap(), range.parse().unwrap());
         }
     }
     let started = Instant::now();
