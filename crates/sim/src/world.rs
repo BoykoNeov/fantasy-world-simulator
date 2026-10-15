@@ -12,7 +12,9 @@ use crate::grid::Grid;
 use crate::module::{plan, Manifest, Module, Slot};
 use crate::pops::Pops;
 use crate::provinces::Provinces;
+use crate::realms::Realms;
 use crate::routes::Routes;
+use crate::warfare::Armies;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -126,6 +128,13 @@ pub struct World {
     pub biome_set: Vec<u8>,
     /// Water the spring of a river drawn by the editor adds to a cell, thousand m³ a year.
     pub spring: Vec<u64>,
+    /// The realm that owns each province (field `province.owner`), [`crate::grid::NONE`] where none
+    /// does.
+    pub owner: Vec<u32>,
+    pub realms: Realms,
+    /// Each realm's stores, per good kept (field `realm.stock`; its coins are the treasury).
+    pub realm_stock: Vec<u64>,
+    pub armies: Armies,
 }
 
 impl World {
@@ -155,6 +164,10 @@ impl World {
             rainfall_set: Vec::new(),
             biome_set: Vec::new(),
             spring: Vec::new(),
+            owner: Vec::new(),
+            realms: Realms::default(),
+            realm_stock: Vec::new(),
+            armies: Armies::default(),
         }
     }
 
@@ -223,6 +236,12 @@ impl World {
             "province.ore_km2" => F64(p.ore_km2.clone()),
             "province.price" => U64(self.price.clone()),
             "province.workers" => U64(self.workers.clone()),
+            "province.owner" => U32(self.owner.clone()),
+            "realm.capital" => U32(self.realms.capital.clone()),
+            "realm.stock" => U64(self.realm_stock.clone()),
+            "army.realm" => U32(self.armies.realm.clone()),
+            "army.province" => U32(self.armies.province.clone()),
+            "army.size" => U64(self.armies.size.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -233,12 +252,13 @@ impl World {
         let def = id.def();
         let expect = match def.tier {
             Tier::Cell => Some(self.grid.cells()),
-            // The province count is set by the province fields themselves; pops vary.
-            Tier::Province | Tier::Pop => None,
-            Tier::ProvinceGood => {
+            // The province count is set by the province fields themselves; pops, realms and armies
+            // vary.
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army => None,
+            Tier::ProvinceGood | Tier::RealmGood => {
                 let k = self.goods.stride();
                 if !data.len().is_multiple_of(k) {
-                    return Err(format!("{}: {} values, not a whole number of provinces of {k} goods", def.name, data.len()));
+                    return Err(format!("{}: {} values, not a whole number of rows of {k} goods", def.name, data.len()));
                 }
                 None
             }
@@ -288,6 +308,12 @@ impl World {
             ("province.ore_km2", F64(v)) => p.ore_km2 = v,
             ("province.price", U64(v)) => self.price = v,
             ("province.workers", U64(v)) => self.workers = v,
+            ("province.owner", U32(v)) => self.owner = v,
+            ("realm.capital", U32(v)) => self.realms.capital = v,
+            ("realm.stock", U64(v)) => self.realm_stock = v,
+            ("army.realm", U32(v)) => self.armies.realm = v,
+            ("army.province", U32(v)) => self.armies.province = v,
+            ("army.size", U64(v)) => self.armies.size = v,
             _ => return wrong(),
         }
         Ok(())
@@ -305,6 +331,7 @@ impl World {
         }
         let p = &mut self.provinces;
         let pops = &mut self.pops;
+        let armies = &mut self.armies;
         match (id.def().name, values) {
             ("cell.elevation", F32(x)) => put(&mut self.elevation, at, x),
             ("cell.temperature", F32(x)) => put(&mut self.temperature, at, x),
@@ -343,6 +370,12 @@ impl World {
             ("province.ore_km2", F64(x)) => put(&mut p.ore_km2, at, x),
             ("province.price", U64(x)) => put(&mut self.price, at, x),
             ("province.workers", U64(x)) => put(&mut self.workers, at, x),
+            ("province.owner", U32(x)) => put(&mut self.owner, at, x),
+            ("realm.capital", U32(x)) => put(&mut self.realms.capital, at, x),
+            ("realm.stock", U64(x)) => put(&mut self.realm_stock, at, x),
+            ("army.realm", U32(x)) => put(&mut armies.realm, at, x),
+            ("army.province", U32(x)) => put(&mut armies.province, at, x),
+            ("army.size", U64(x)) => put(&mut armies.size, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -362,6 +395,19 @@ impl World {
             if v.len() < goods {
                 v.resize(goods, 0);
             }
+        }
+        // A new province belongs to nobody until whoever made it says otherwise.
+        if self.owner.len() < n {
+            self.owner.resize(n, crate::grid::NONE);
+        }
+    }
+
+    /// Give every realm a row of stores, empty for a realm that has none yet. The engine calls it
+    /// after every stage and edit, so whoever adds a realm needn't own its stores.
+    pub fn fit_realm_stores(&mut self) {
+        let want = self.realms.count() * self.goods.stride();
+        if self.realm_stock.len() < want {
+            self.realm_stock.resize(want, 0);
         }
     }
 
@@ -384,7 +430,7 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province and pop fields agree on their lengths (after a load).
+    /// Check that province, pop, realm and army fields agree on their lengths (after a load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
         let pops = self.pops.size.len();
@@ -394,6 +440,9 @@ impl World {
                 Tier::Province => n,
                 Tier::ProvinceGood => n * self.goods.stride(),
                 Tier::Pop => pops,
+                Tier::Realm => self.realms.count(),
+                Tier::RealmGood => self.realms.count() * self.goods.stride(),
+                Tier::Army => self.armies.count(),
                 Tier::Cell => continue,
             };
             if len != want {
@@ -417,9 +466,11 @@ impl World {
                 continue;
             }
             let id = FieldId(k as u16);
-            let per_province = if def.tier == Tier::ProvinceGood { self.goods.stride() } else { 1 };
+            let rows = if matches!(def.tier, Tier::Realm | Tier::RealmGood) { self.realms.count() } else { self.provinces.count };
+            let per_row = if def.tier.per_good() { self.goods.stride() } else { 1 };
             let data = match (def.default, self.field(id)) {
-                (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; self.provinces.count * per_province]),
+                (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; rows * per_row]),
+                (crate::fields::Default::NoOne, FieldData::U32(_)) => FieldData::U32(vec![crate::grid::NONE; self.provinces.count]),
                 (crate::fields::Default::Empty, d) => match d {
                     FieldData::U64(_) => FieldData::U64(Vec::new()),
                     FieldData::U32(_) => FieldData::U32(Vec::new()),

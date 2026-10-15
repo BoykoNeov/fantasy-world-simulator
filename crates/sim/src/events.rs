@@ -24,6 +24,9 @@ pub enum Event {
     /// A drought begins: for `days`, rain falls short by `shortfall` per mille within `radius_km`
     /// of (`lon`, `lat`) (degrees), fading out towards the edge. Usually a player's poke.
     Drought { lon: f64, lat: f64, radius_km: f64, shortfall: u64, days: u64 },
+    /// People come to live in a province from outside the pops: soldiers home from an army. Their
+    /// sender has already booked them out (with `cause`); the pops' owner books them in on delivery.
+    Arrived { province: u32, people: u64, cause: crate::requests::Cause },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -33,6 +36,7 @@ pub enum EventKind {
     ContractViolated,
     ConservationBroken,
     Drought,
+    Arrived,
 }
 
 impl EventKind {
@@ -43,12 +47,12 @@ impl EventKind {
     /// | --- | --- | --- |
     /// | destruction and death | 0 | Famine, Drought |
     /// | agreements | 1 | (none yet) |
-    /// | routine changes | 2 | Granted |
+    /// | routine changes | 2 | Granted, Arrived |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
             EventKind::Famine | EventKind::Drought => 0,
-            EventKind::Granted => 2,
+            EventKind::Granted | EventKind::Arrived => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -62,6 +66,7 @@ impl Event {
             Event::ContractViolated { .. } => EventKind::ContractViolated,
             Event::ConservationBroken { .. } => EventKind::ConservationBroken,
             Event::Drought { .. } => EventKind::Drought,
+            Event::Arrived { .. } => EventKind::Arrived,
         }
     }
 
@@ -69,7 +74,7 @@ impl Event {
     pub fn entity(&self) -> u64 {
         match self {
             Event::Granted { request, .. } => request.entity as u64,
-            Event::Famine { province, .. } => *province as u64,
+            Event::Famine { province, .. } | Event::Arrived { province, .. } => *province as u64,
             Event::ContractViolated { entity, .. } => *entity as u64,
             Event::ConservationBroken { .. } | Event::Drought { .. } => 0,
         }
@@ -78,7 +83,7 @@ impl Event {
     /// The province this event is about, if it is about one.
     pub fn province(&self) -> Option<u32> {
         match self {
-            Event::Famine { province, .. } => Some(*province),
+            Event::Famine { province, .. } | Event::Arrived { province, .. } => Some(*province),
             _ => None,
         }
     }
@@ -151,6 +156,7 @@ mod tests {
                 priority: Priority::Essential,
                 cause: Cause::Eating,
                 tag: 0,
+                to: None,
             },
             granted: 1,
         };

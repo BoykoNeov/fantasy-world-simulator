@@ -32,7 +32,8 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::Province => vec![province as usize],
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
-                Tier::Cell => Vec::new(),
+                // Realms' and armies' values are not a province's.
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -65,13 +66,14 @@ pub fn good_name(goods: &Goods, c: usize) -> &str {
 pub fn asked_name(r: &Request, goods: &Goods) -> String {
     match r.good {
         Some(node) => format!("{} {}", goods.tree.name(node), field_name(r.field)),
+        None if r.field.def().name == "pop.size" => "people".into(),
         None => field_name(r.field),
     }
 }
 
-/// The province a request is about, for requests on province and per-good fields.
+/// The province a request is about, if it names one.
 pub fn request_province(r: &Request) -> Option<u32> {
-    matches!(r.field.def().tier, Tier::Province | Tier::ProvinceGood).then_some(r.entity)
+    r.province()
 }
 
 /// The province one value of a field belongs to, for province and per-good fields.
@@ -79,7 +81,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army => None,
     }
 }
 
@@ -109,6 +111,8 @@ pub fn value(id: FieldId, data: &FieldData, i: usize) -> String {
             let (lon, lat) = sim::grid::dir_to_lonlat(v[i]);
             lat_lon(lat.to_degrees(), lon.to_degrees())
         }
+        ("province.owner", FieldData::U32(v)) if v[i] == sim::grid::NONE => "no realm".into(),
+        ("province.owner", _) => format!("realm {}", data.value(i)),
         ("province.lat", _) => format!("{:.1}°", data.value(i).to_degrees()),
         ("province.rain_shortfall", _) => {
             let v = data.value(i);
@@ -134,6 +138,10 @@ pub fn slot_name(s: Slot) -> &'static str {
         Slot::Economics => "Economics",
         Slot::Population => "Population",
         Slot::Weather => "Weather",
+        Slot::Realms => "Realms",
+        Slot::Characters => "Characters",
+        Slot::Diplomacy => "Diplomacy",
+        Slot::Warfare => "Warfare",
     }
 }
 
@@ -153,6 +161,9 @@ fn cause(c: Cause) -> &'static str {
         Cause::WornOut => "worn out",
         Cause::TradeIn => "trade, coming in",
         Cause::TradeOut => "trade, going out",
+        Cause::Taxes => "taxes",
+        Cause::Raised => "raising soldiers",
+        Cause::Returned => "soldiers coming home",
     }
 }
 
@@ -184,6 +195,7 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
             *shortfall as f64 / 10.0,
             duration(*days, cal)
         ),
+        Event::Arrived { people, cause: c, .. } => format!("{} people arrived: {}", group(*people), cause(*c)),
     }
 }
 

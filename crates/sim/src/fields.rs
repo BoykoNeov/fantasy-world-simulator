@@ -18,6 +18,22 @@ pub enum Tier {
     ProvinceGood,
     /// One entry per pop.
     Pop,
+    /// One entry per realm (step 7). Realm numbers are never reused: a dissolved realm stays as an
+    /// empty entry, as a merged province does.
+    Realm,
+    /// One entry per realm per good the world keeps, laid out like [`Tier::ProvinceGood`]: realm `r`'s
+    /// value of column `c` is entity `r * columns + c`. A realm's own stores: its treasury is the
+    /// goods under the money class.
+    RealmGood,
+    /// One entry per army (step 7); numbers are never reused, a disbanded army stays empty.
+    Army,
+}
+
+impl Tier {
+    /// Tiers whose values are kept per good, in the [`Goods`] columns.
+    pub fn per_good(self) -> bool {
+        matches!(self, Tier::ProvinceGood | Tier::RealmGood)
+    }
 }
 
 /// Quantities that are stored as whole numbers and must balance exactly every day.
@@ -53,11 +69,12 @@ impl TryFrom<u16> for Quantity {
 }
 
 impl Quantity {
-    /// The field that holds it.
-    pub fn field(self) -> FieldId {
+    /// The fields that hold it: people live in pops or serve in armies; goods are stored by
+    /// provinces or by realms (a treasury holds coins).
+    pub fn fields(self) -> [FieldId; 2] {
         match self {
-            Quantity::People => known("pop.size"),
-            Quantity::Goods(_) => known("province.stock"),
+            Quantity::People => [known("pop.size"), known("army.size")],
+            Quantity::Goods(_) => [known("province.stock"), known("realm.stock")],
         }
     }
 
@@ -182,9 +199,10 @@ impl Goods {
     /// Exact totals of a conserved field's values, per quantity it holds.
     pub fn totals(&self, id: FieldId, data: &FieldData) -> Vec<(Quantity, u64)> {
         let FieldData::U64(v) = data else { panic!("conserved fields are u64") };
-        match id.def().tier {
-            Tier::ProvinceGood => self.quantities().into_iter().map(|q| (q, self.sum_class(v, q))).collect(),
-            _ => vec![(Quantity::People, v.iter().sum())],
+        if id.def().tier.per_good() {
+            self.quantities().into_iter().map(|q| (q, self.sum_class(v, q))).collect()
+        } else {
+            vec![(Quantity::People, v.iter().sum())]
         }
     }
 
@@ -209,10 +227,12 @@ impl std::default::Default for Goods {
 pub enum Default {
     /// Nothing sensible exists: a configuration that reads it without an owner is refused.
     Required,
-    /// Zero for every province.
+    /// Zero for every province (or realm, for a realm's field).
     Zero,
     /// No entries (pop fields: no pops).
     Empty,
+    /// [`crate::grid::NONE`] for every province: nobody (a province no realm owns).
+    NoOne,
 }
 
 /// Index into [`FIELDS`]. Stable within a build; saves store field names, not ids.
@@ -281,6 +301,16 @@ pub const FIELDS: &[FieldDef] = &[
     // The markets economy's local prices, and who works on what (step 6).
     FieldDef { default: Default::Zero, ..def("province.price", Tier::ProvinceGood, "thousandths of a coin per unit of the good", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Zero, ..def("province.workers", Tier::ProvinceGood, "people working on the good", 0.0, COUNT_MAX) },
+    // Realms and armies (step 7).
+    FieldDef { default: Default::NoOne, ..def("province.owner", Tier::Province, "realm id, none where no realm owns it", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("realm.capital", Tier::Realm, "province id, none for a dissolved realm", -UNBOUNDED, UNBOUNDED) },
+    // A realm's stores per good kept; its coins are its treasury. Kept by the economics module, so
+    // coins have one owner. It always has a row per realm: the engine adds rows of nothing as
+    // realms appear (`World::fit_realm_stores`).
+    FieldDef { conserved: true, default: Default::Zero, ..def("realm.stock", Tier::RealmGood, "of the good", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Empty, ..def("army.realm", Tier::Army, "realm id", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.province", Tier::Army, "province id where it stands", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { conserved: true, default: Default::Empty, ..def("army.size", Tier::Army, "soldiers", 0.0, COUNT_MAX) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {
@@ -430,11 +460,11 @@ impl FieldData {
 
 }
 
-/// Exact total of a conserved quantity, read from the field that holds it.
+/// Exact total of a conserved quantity, from the fields that hold it.
 pub fn quantity_total(world: &World, q: Quantity) -> u64 {
     match q {
-        Quantity::People => world.pops.size.iter().sum(),
-        Quantity::Goods(_) => world.goods.sum_class(&world.stock, q),
+        Quantity::People => world.pops.size.iter().sum::<u64>() + world.armies.size.iter().sum::<u64>(),
+        Quantity::Goods(_) => world.goods.sum_class(&world.stock, q) + world.goods.sum_class(&world.realm_stock, q),
     }
 }
 
@@ -448,9 +478,12 @@ mod tests {
             assert_eq!(id(f.name), Some(FieldId(i as u16)), "{} is listed twice", f.name);
             assert!(f.min <= f.max, "{}", f.name);
         }
-        // Each conserved field is the field of a quantity, and holds it.
-        let conserved: Vec<FieldId> = FieldId::all().filter(|id| id.def().conserved).collect();
-        assert_eq!(conserved, vec![Quantity::Goods(0).field(), Quantity::People.field()]);
+        // Each conserved field holds a quantity, and each quantity's fields are conserved.
+        let mut conserved: Vec<FieldId> = FieldId::all().filter(|id| id.def().conserved).collect();
+        let mut holders: Vec<FieldId> = [Quantity::Goods(0), Quantity::People].iter().flat_map(|q| q.fields()).collect();
+        conserved.sort();
+        holders.sort();
+        assert_eq!(conserved, holders);
         // A request takes from the quantity of what it asks for.
         let goods = Goods::default();
         let ask = |field: &str, good: Option<&str>| Request {
@@ -463,6 +496,7 @@ mod tests {
             priority: crate::requests::Priority::Essential,
             cause: crate::requests::Cause::Eating,
             tag: 0,
+            to: None,
         };
         assert_eq!(goods.quantity_asked(&ask("province.stock", Some("raw"))), Some(Quantity::Goods(1)));
         assert_eq!(goods.quantity_asked(&ask("province.stock", Some("fish"))), Some(Quantity::Goods(0)));
@@ -483,7 +517,7 @@ mod tests {
         assert_eq!(g.quantities(), vec![Quantity::Goods(0), Quantity::Goods(1)]);
         // Two provinces: fish, ore, grain each.
         let data = FieldData::U64(vec![1, 10, 100, 2, 20, 200]);
-        assert_eq!(g.totals(Quantity::Goods(0).field(), &data), vec![(Quantity::Goods(0), 303), (Quantity::Goods(1), 30)]);
+        assert_eq!(g.totals(known("province.stock"), &data), vec![(Quantity::Goods(0), 303), (Quantity::Goods(1), 30)]);
         assert_eq!(g.split(4), (1, 1));
         assert_eq!(Quantity::Goods(1).name(&g), "raw");
 

@@ -57,6 +57,7 @@ static V0: Manifest = Manifest {
     owns: &["province.stock"],
     requests: &[],
     asks: &[],
+    moves: &[],
     requires: &[],
     emits: &[EventKind::Granted],
     handles: &[],

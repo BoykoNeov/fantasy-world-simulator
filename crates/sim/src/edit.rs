@@ -282,12 +282,14 @@ impl Edit {
                 w.grow_province_fields();
                 let moved = map.expect("a province edit changes the map").moved_cells();
                 if let Edit::Split { .. } = self {
-                    // The new province's land had the rain of the province that gave the most of it.
+                    // The new province's land had the rain, and the owner, of the province that gave
+                    // the most of it.
                     let mut from: Vec<u32> = moved.iter().map(|m| m.1).collect();
                     from.sort_unstable();
                     if let Some(run) = from.chunk_by(|a, b| a == b).max_by_key(|run| run.len()) {
                         let new = w.provinces.count - 1;
                         w.rain_shortfall[new] = w.rain_shortfall[run[0] as usize];
+                        w.owner[new] = w.owner[run[0] as usize];
                     }
                 }
                 share_out(w, &moved);
@@ -824,7 +826,8 @@ impl MapChange {
                 crate::fields::Tier::Cell => out.extend(at.iter().map(|&c| w.provinces.of_cell[c as usize])),
                 crate::fields::Tier::Province => out.extend(at.iter().copied()),
                 crate::fields::Tier::ProvinceGood => out.extend(at.iter().map(|&e| w.goods.split(e as usize).0 as u32)),
-                crate::fields::Tier::Pop => {}
+                crate::fields::Tier::Army => out.extend(at.iter().filter_map(|&a| w.armies.province.get(a as usize).copied())),
+                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood => {}
             }
             if id.def().name == "cell.province"
                 && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)

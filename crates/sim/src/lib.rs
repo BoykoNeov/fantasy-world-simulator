@@ -23,6 +23,9 @@ pub mod markets;
 pub mod module;
 pub mod pops;
 pub mod provinces;
+pub mod realms;
+#[cfg(test)]
+mod realm_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;
@@ -31,5 +34,6 @@ pub mod scenario;
 pub mod sim;
 pub mod taxonomy;
 pub mod terrain;
+pub mod warfare;
 pub mod weather;
 pub mod world;

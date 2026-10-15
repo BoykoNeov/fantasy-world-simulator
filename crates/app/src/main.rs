@@ -1403,8 +1403,9 @@ impl MapApp {
                         when(ui, id, pi);
                         ui.end_row();
                     }
-                    // In the goods table below.
-                    Tier::ProvinceGood | Tier::Cell | Tier::Pop => {}
+                    // In the goods table below; realms and armies get pages of their own (later in
+                    // step 7).
+                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army => {}
                 }
             }
         });

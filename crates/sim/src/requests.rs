@@ -9,6 +9,12 @@
 //! A request on a per-good field asks for a node of the goods tree in one province ("food in
 //! province 12"), not for one stored good: the owner serves it from whatever goods it keeps under
 //! that node (see [`serve_goods`]), so the requester works whichever goods the owner keeps.
+//! Likewise a request for people names a province, never one pop: the owner takes them from all
+//! the province's pops (see [`serve_people`]).
+//!
+//! A request can also ask the owner to *move* what it grants into a value of another field it
+//! keeps, instead of using it up (a province's coins into its realm's treasury): see [`Dest`].
+//! Nothing then changes hands between modules, and no flow is booked.
 
 use crate::fields::FieldId;
 use crate::module::{Ctx, Slot};
@@ -51,6 +57,23 @@ pub enum Cause {
     /// both, so the two cancel in each class's total.
     TradeIn,
     TradeOut,
+    /// Coins a realm takes from its provinces into its treasury (step 7).
+    Taxes,
+    /// People taken from the pops into an army, booked out by the pops' owner and in by the
+    /// army's (a day apart: the grant arrives the next day).
+    Raised,
+    /// Soldiers who left an army for home (disbanded, deserted, survivors of a lost army): booked
+    /// out by the army's owner and in by the pops' when they arrive, the next day.
+    Returned,
+}
+
+/// Where a request's grant goes when it is moved rather than used up: one value of a field the
+/// owner also keeps. For a per-good field, `entity` is the row (province or realm); the grant keeps
+/// its goods.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Dest {
+    pub field: FieldId,
+    pub entity: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,7 +82,8 @@ pub struct Request {
     pub day: u64,
     pub requester: Slot,
     pub field: FieldId,
-    /// The province for province and per-good fields, the pop for pop fields.
+    /// The province for province and per-good fields and for people (`pop.size`, served from all
+    /// the province's pops); the realm for realm fields; the army for army fields.
     pub entity: u32,
     /// For per-good fields, the node of the goods tree asked for; `None` for other fields.
     pub good: Option<NodeId>,
@@ -70,9 +94,18 @@ pub struct Request {
     /// The requester's own reference, returned with the grant (e.g. which pop asked). Also the
     /// final tie-break when rationing.
     pub tag: u64,
+    /// Move the grant here instead of using it up (see [`Dest`]).
+    pub to: Option<Dest>,
 }
 
 impl Request {
+    /// The province it is about, if it names one: requests on province and per-province-good
+    /// fields, and for people.
+    pub fn province(&self) -> Option<u32> {
+        use crate::fields::Tier;
+        matches!(self.field.def().tier, Tier::Province | Tier::ProvinceGood | Tier::Pop).then_some(self.entity)
+    }
+
     /// The fixed order an owner applies its queue in: field, entity, good, priority, requester, tag.
     pub fn order_key(&self, requester_rank: usize) -> (FieldId, u32, Option<NodeId>, Priority, usize, u64) {
         (self.field, self.entity, self.good, self.priority, requester_rank, self.tag)
@@ -85,6 +118,13 @@ impl Request {
 /// proportion to how much of each there is, by [`split_proportional`]. With one good kept under
 /// the node, that is simply rationing its store.
 pub fn serve_goods(values: &mut [u64], requests: &[Request], cx: &mut Ctx) {
+    serve_goods_into(values, None, requests, cx);
+}
+
+/// [`serve_goods`] for requests some of which move what they are granted into `into`, the
+/// values of the per-good field their [`Dest`] names (laid out the same way, by the same goods).
+/// Each good taken goes into the same good there.
+pub fn serve_goods_into(values: &mut [u64], mut into: Option<&mut [u64]>, requests: &[Request], cx: &mut Ctx) {
     let goods = cx.goods;
     for run in requests.chunk_by(|a, b| (a.field, a.entity, a.good) == (b.field, b.entity, b.good)) {
         let node = run[0].good.expect("requests on per-good fields name a good");
@@ -93,14 +133,49 @@ pub fn serve_goods(values: &mut [u64], requests: &[Request], cx: &mut Ctx) {
         let wants: Vec<_> = run.iter().map(|r| (r.priority, r.take, r.tag)).collect();
         let grants = ration(at.iter().map(|&i| values[i]).sum(), &wants);
         for (r, g) in run.iter().zip(grants) {
-            if let [i] = at[..] {
-                values[i] -= g;
+            let parts = if let [_] = at[..] {
+                vec![g]
             } else {
                 let held: Vec<u64> = at.iter().map(|&i| values[i]).collect();
                 let ids: Vec<u64> = columns.iter().map(|&c| c as u64).collect();
-                for (&i, part) in at.iter().zip(split_proportional(g, &held, &ids)) {
-                    values[i] -= part;
+                split_proportional(g, &held, &ids)
+            };
+            for (k, &part) in parts.iter().enumerate() {
+                values[at[k]] -= part;
+            }
+            if let Some(dest) = r.to {
+                let into = into.as_deref_mut().expect("the owner passes the values its moves go into");
+                for (&c, &part) in columns.iter().zip(&parts) {
+                    into[goods.index(dest.entity as usize, c)] += part;
                 }
+            }
+            cx.grant(r, g);
+        }
+    }
+}
+
+/// For the owner of the pops: serve today's requests for people (on `pop.size`, each naming a
+/// province) from `sizes`, every pop of that province together as one pool, rationed by [`ration`];
+/// each grant is taken from the pops in proportion to their size, by [`split_proportional`].
+/// `province` is each pop's province. Requests come in the owner's fixed order, so each
+/// province's run together.
+pub fn serve_people(sizes: &mut [u64], province: &[u32], requests: &[Request], cx: &mut Ctx) {
+    let mut pops_of: std::collections::BTreeMap<u32, Vec<usize>> = requests.iter().map(|r| (r.entity, Vec::new())).collect();
+    for (k, p) in province.iter().enumerate() {
+        if let Some(v) = pops_of.get_mut(p) {
+            v.push(k);
+        }
+    }
+    for run in requests.chunk_by(|a, b| (a.field, a.entity) == (b.field, b.entity)) {
+        debug_assert!(run[0].to.is_none(), "people are moved between owners by grant and event, not by Dest");
+        let pops = &pops_of[&run[0].entity];
+        let wants: Vec<_> = run.iter().map(|r| (r.priority, r.take, r.tag)).collect();
+        let grants = ration(pops.iter().map(|&k| sizes[k]).sum(), &wants);
+        for (r, g) in run.iter().zip(grants) {
+            let held: Vec<u64> = pops.iter().map(|&k| sizes[k]).collect();
+            let ids: Vec<u64> = pops.iter().map(|&k| k as u64).collect();
+            for (&k, part) in pops.iter().zip(split_proportional(g, &held, &ids)) {
+                sizes[k] -= part;
             }
             cx.grant(r, g);
         }

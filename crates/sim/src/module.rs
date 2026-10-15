@@ -12,7 +12,7 @@
 use crate::calendar::Calendar;
 use crate::events::{Event, EventKind};
 use crate::fields::{self, FieldId, Goods, Quantity, Tier};
-use crate::requests::{Cause, Priority, Request};
+use crate::requests::{Cause, Dest, Priority, Request};
 use crate::taxonomy::NodeId;
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,14 @@ pub enum Slot {
     Population,
     /// Weather v0 is "droughts": years of missing rain, started by a poke.
     Weather,
+    /// Who owns each province, realms' capitals, taxes, unrest (step 7).
+    Realms,
+    /// Rulers and heirs (step 7).
+    Characters,
+    /// Opinions, wars, peace and truces between realms (step 7).
+    Diplomacy,
+    /// Armies and fleets: raising, moving, fighting (step 7).
+    Warfare,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +81,10 @@ pub struct Manifest {
     /// The nodes of the goods tree it asks for in requests to per-good fields (see
     /// [`Ctx::ask_good`]). The goods kept must be able to serve each.
     pub asks: &'static [&'static str],
+    /// Pairs of fields `(from, into)`: requests on `from` that ask its owner to move what it grants
+    /// into a value of `into` instead of using it up (see [`Ctx::ask_move`]). Both must be kept by
+    /// the same owner and hold the same kind of quantity, so nothing changes hands between owners.
+    pub moves: &'static [(&'static str, &'static str)],
     /// Fields that must have an active owner (beyond what `reads` needs).
     pub requires: &'static [&'static str],
     pub emits: &'static [EventKind],
@@ -87,7 +99,7 @@ pub struct Manifest {
 impl Manifest {
     /// A generation module: it reads some fields and writes the ones it owns, once.
     pub const fn generation(slot: Slot, version: &'static str, tier: Tier, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], asks: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 }
 
@@ -163,16 +175,27 @@ impl Ctx<'_> {
     /// Ask the owner of `field` to remove `take` from `entity`. Applied at the end of today;
     /// the grant arrives tomorrow. `tag` comes back with the grant (e.g. which pop asked).
     pub fn request(&mut self, field: FieldId, entity: u32, take: u64, priority: Priority, cause: Cause, tag: u64) {
-        debug_assert!(field.def().tier != Tier::ProvinceGood, "per-good fields are asked with ask_good");
-        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, good: None, take, priority, cause, tag });
+        debug_assert!(!field.def().tier.per_good(), "per-good fields are asked with ask_good");
+        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, good: None, take, priority, cause, tag, to: None });
     }
 
     /// Ask the owner of the per-good `field` for `take` of the goods under `good` in `province`
     /// ("food", however finely the owner keeps it). The good must be one the manifest `asks` for.
     #[allow(clippy::too_many_arguments)]
     pub fn ask_good(&mut self, field: FieldId, province: u32, good: NodeId, take: u64, priority: Priority, cause: Cause, tag: u64) {
-        debug_assert!(field.def().tier == Tier::ProvinceGood);
-        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: Some(good), take, priority, cause, tag };
+        debug_assert!(field.def().tier.per_good());
+        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: Some(good), take, priority, cause, tag, to: None };
+        self.out.requests.push(r);
+    }
+
+    /// Ask the owner of `field` to move `take` from `entity` (of the goods under `good`, for a
+    /// per-good field) into `to`, a value of another field it keeps: a province's coins into its
+    /// realm's treasury, say. Nothing is made or used up, so no flow is booked. The pair of fields
+    /// must be one the manifest lists in `moves`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ask_move(&mut self, field: FieldId, entity: u32, good: Option<NodeId>, take: u64, to: Dest, priority: Priority, cause: Cause, tag: u64) {
+        debug_assert_eq!(field.def().tier.per_good(), good.is_some(), "per-good fields name a good, others don't");
+        let r = Request { day: self.day, requester: self.slot, field, entity, good, take, priority, cause, tag, to: Some(to) };
         self.out.requests.push(r);
     }
 
@@ -185,10 +208,10 @@ impl Ctx<'_> {
         self.out.flows.add(q, cause, delta);
     }
 
-    /// For owners applying requests: record the grant, report the flow, and tell the requester
-    /// tomorrow.
+    /// For owners applying requests: record the grant, report the flow (none for a move: what was
+    /// taken is still there, elsewhere), and tell the requester tomorrow.
     pub fn grant(&mut self, r: &Request, granted: u64) {
-        if let Some(q) = self.goods.quantity_asked(r) {
+        if let Some(q) = self.goods.quantity_asked(r).filter(|_| r.to.is_none()) {
             self.out.flows.add(q, r.cause, -(granted as i64));
         }
         self.out.applied.push((*r, granted));
@@ -299,6 +322,19 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
                 _ => {}
             }
         }
+        for &(from, into) in m.moves {
+            let (a, b) = (lookup(m, from)?, lookup(m, into)?);
+            if !m.requests.contains(&from) {
+                return err(format!("{} moves {from} into {into} but doesn't list {from} among its requests", name(m)));
+            }
+            if owner[a.0 as usize] != owner[b.0 as usize] {
+                return err(format!("{} moves {from} into {into}, but one module must keep both", name(m)));
+            }
+            let (da, db) = (a.def(), b.def());
+            if !(da.conserved && db.conserved && da.tier.per_good() == db.tier.per_good()) {
+                return err(format!("{} moves {from} into {into}: both must hold the same kind of counted quantity", name(m)));
+            }
+        }
     }
 
     let order = |phase: bool| -> Result<Vec<usize>, ConfigError> {
@@ -347,7 +383,7 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
 pub fn goods_kept(manifests: &[&Manifest], plan: &Plan, tree: crate::taxonomy::Taxonomy) -> Result<Goods, ConfigError> {
     let name = |m: &Manifest| format!("{:?} \"{}\"", m.slot, m.version);
     let mut kept: Option<&Manifest> = None;
-    for id in FieldId::all().filter(|id| id.def().tier == Tier::ProvinceGood) {
+    for id in FieldId::all().filter(|id| id.def().tier.per_good()) {
         let Some(o) = plan.owner[id.0 as usize] else { continue };
         let m = manifests[o];
         if m.goods.is_empty() {
@@ -388,7 +424,7 @@ mod tests {
     use super::*;
 
     fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], asks: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 
     #[test]

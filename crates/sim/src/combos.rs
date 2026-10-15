@@ -399,7 +399,7 @@ impl Watch {
             .world
             .quantities()
             .into_iter()
-            .filter(|q| running.contains(&q.field()))
+            .filter(|q| running.contains(&q.fields()[0]))
             .map(|q| (q, quantity_total(&sim.world, q), None))
             .collect();
         let tops = running.iter().filter(|id| id.def().max.is_finite()).map(|&id| (id, None)).collect();

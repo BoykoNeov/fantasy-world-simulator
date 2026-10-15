@@ -17,7 +17,7 @@
 
 use crate::config::Config;
 use crate::events::Posted;
-use crate::fields::{FieldData, FieldId, Goods, Tier, FIELDS};
+use crate::fields::{FieldData, FieldId, Goods, FIELDS};
 use crate::module::{ConfigError, Flows, Slot};
 use crate::sim::{to_bytes, Command, ModuleRecord, Problems, Sim, YearSummary};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,10 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// per good, and the causes made, made into, used and worn out.
 /// Format 11 (step 6): trade in the markets parameters, and the causes trade in and trade out.
 /// Format 12 (step 6): trade's prices follow the money (two more trade parameters).
-pub const FORMAT_VERSION: u32 = 12;
+/// Format 13 (step 7): province owners, realms and their stores, armies; four new slots; requests
+/// that move what they take (`Request::to`); the causes taxes, raised and returned; the event of
+/// people arriving.
+pub const FORMAT_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
@@ -209,10 +212,7 @@ impl Sim {
 
 /// A field's taxonomy depth and goods, as a save records them.
 fn layout(goods: &Goods, id: FieldId) -> (u8, Vec<String>) {
-    match id.def().tier {
-        Tier::ProvinceGood => (goods.depth(), goods.names()),
-        _ => (0, Vec::new()),
-    }
+    if id.def().tier.per_good() { (goods.depth(), goods.names()) } else { (0, Vec::new()) }
 }
 
 impl Sim {

@@ -5,11 +5,15 @@
 //! day), naming food by the goods tree's class, not by a store.
 //! The grant arrives the next day: fewer children are born when food fell short, and some of the
 //! unfed die. People are whole numbers, so every change balances exactly.
+//!
+//! Others take people by asking for them by province (soldiers for an army): they are taken from
+//! all the province's pops alike. People who come back ([`Event::Arrived`]) join the province's
+//! biggest pop.
 
 use crate::events::{Event, EventKind};
 use crate::fields::{known, Quantity};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::requests::{Cause, Priority};
+use crate::requests::{serve_people, Cause, Priority, Request};
 use crate::rng::{purpose, round_stochastic, Module as Rng};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -65,13 +69,14 @@ static V0: Manifest = Manifest {
     version: "basic",
     tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
-    reads: &["province.food_capacity"],
+    reads: &["province.food_capacity", "province.cells", "province.center"],
     owns: &["pop.province", "pop.species", "pop.culture", "pop.religion", "pop.class", "pop.size", "province.starved_this_year"],
     requests: &["province.stock"],
     asks: &["food"],
+    moves: &[],
     requires: &[],
     emits: &[EventKind::Famine],
-    handles: &[EventKind::Granted],
+    handles: &[EventKind::Granted, EventKind::Arrived],
     state_schema: "none",
     goods: &[],
 };
@@ -112,8 +117,17 @@ impl Module for Population {
         }
     }
 
-    /// A month's eating was granted (in full or not): settle the month's births and deaths.
+    /// People asked for by province (soldiers): taken from its pops alike.
+    fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
+        serve_people(&mut w.pops.size, &w.pops.province, requests, cx);
+    }
+
+    /// A month's eating was granted (in full or not): settle the month's births and deaths. Or
+    /// people arrived from outside the pops.
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
+        if let Event::Arrived { province, people, cause } = *e {
+            return arrive(w, province, people, cause, cx);
+        }
         let Event::Granted { request: r, granted } = e else { return };
         let (p, cal, seed) = (&self.params, cx.calendar, cx.seed);
         let k = r.tag as usize;
@@ -143,4 +157,29 @@ impl Module for Population {
             cx.emit(Event::Famine { province, starved });
         }
     }
+}
+
+/// `people` come to live in `province`, joining its biggest pop (the first, of equals), or a new
+/// one if it has none. A province with no land left sends them to the nearest that has some; with
+/// none anywhere they are lost, and their sender's flow already says they left.
+fn arrive(w: &mut World, province: u32, people: u64, cause: Cause, cx: &mut Ctx) {
+    let p = &w.provinces;
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let to = if p.cells.get(province as usize).is_some_and(|&c| c > 0) {
+        Some(province)
+    } else {
+        let c = p.center[province as usize];
+        (0..p.count).filter(|&q| p.cells[q] > 0).max_by(|&a, &b| dot(c, p.center[a]).total_cmp(&dot(c, p.center[b])).then(b.cmp(&a))).map(|q| q as u32)
+    };
+    let Some(to) = to else { return };
+    let pops = &mut w.pops;
+    let biggest = (0..pops.size.len()).filter(|&k| pops.province[k] == to).max_by(|&a, &b| pops.size[a].cmp(&pops.size[b]).then(b.cmp(&a)));
+    match biggest {
+        Some(k) => pops.size[k] += people,
+        None => pops.push(to, people),
+    }
+    if cx.traced(to) {
+        cx.note(format!("{people} people arrived ({cause:?})"));
+    }
+    cx.flow(Quantity::People, cause, people as i64);
 }

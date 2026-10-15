@@ -38,7 +38,9 @@ What exists:
   the good a change request asks for; format 8 the edit that sets any good; format 9 the land facts;
   format 10 the markets economy (its parameters, prices, workers and four new causes: made, made
   into other goods, used up, worn out); format 11 trade (its parameters, and the causes trade in and
-  trade out); format 12 trade's prices following the money. Loads refuse other format versions,
+  trade out); format 12 trade's prices following the money; format 13 the step-7 groundwork (who
+owns each province, realms and their stores, armies, four new slots, requests that move what they
+take, and the causes and event that come with them). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -195,6 +197,32 @@ What exists:
   sea. After the sea rises 250 m, 310 provinces are in pieces and it takes 0.35 s
   (`examples/route_stats.rs`). Worlds are the same as before: same fingerprints, same tester
   table, same save format.
+- **Realms and armies, the groundwork** (step 7; `realms.rs`, `warfare.rs`, tests in
+  `realm_tests.rs`). No module makes realms or armies yet; this is what they will stand on.
+  - Each province has an owner (`province.owner`, the realm's number, or none). Realms and armies
+    are entities like pops, kept as parallel arrays: a realm has a capital (`realm.capital`) and
+    stores of every good the world keeps (`realm.stock`, laid out like a province's; its coins are
+    its treasury); an army has a realm, the province it stands in and its soldiers (`army.realm`,
+    `army.province`, `army.size`). Their numbers are never reused: a dissolved realm keeps its entry
+    with no capital, a disbanded army keeps its entry with no soldiers, as a merged province does.
+  - Soldiers count in the people total and treasuries in the goods totals (money among them), so
+    the daily checks cover them. A realm's stores always have a row per realm: the engine adds an
+    empty row when a realm appears, so whoever makes a realm needn't own its stores.
+  - **Moving coins** stays with one owner. A request can ask its owner to move what it grants into
+    another value it keeps instead of using it up (`Request::to`, `Ctx::ask_move`): a province's
+    coins into its realm's treasury, or a treasury's coins to a province. No flow is booked, since
+    nothing was made or used. A module lists each pair of fields it moves between (`moves` in its
+    manifest), and a configuration where the two are kept by different modules, or hold different
+    kinds of count, is refused.
+  - **Moving people** goes between two owners, a day apart. A request for people names a province,
+    never one pop, and the pops' owner takes them from all its pops by their sizes
+    (`serve_people`). The grant books them out ("raised"); the army's owner books them in when the
+    grant arrives the next day. Going home, the army's owner books them out ("returned") and sends
+    an event, `Arrived`; the next day Population books them in, in the province's biggest pop (the
+    nearest province with land, if that one has none).
+  - Worlds without these modules are unchanged: no province has an owner and there are no realms
+    or armies. Old scenario files make the same worlds value for value; fingerprints differ only
+    because the new fields are hashed.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a

@@ -704,6 +704,7 @@ impl Sim {
             self.map_at - 1
         });
         let flows = edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i]));
+        self.world.fit_realm_stores();
 
         for (k, &q) in quantities.iter().enumerate() {
             let expected = before[k] as i128 + flows.net(q) as i128;
@@ -818,6 +819,7 @@ impl Sim {
                 panic!("day {}: {who:?} changed {}, which it does not own", self.day, id.def().name);
             }
         }
+        self.world.fit_realm_stores();
         if conserve {
             for (k, &q) in quantities.iter().enumerate() {
                 let net: i64 = outs.iter().map(|(_, o)| o.flows.net(q)).sum();
@@ -841,8 +843,7 @@ impl Sim {
             let slot = self.modules[i].manifest().slot;
             if let Some(t) = &mut self.trace {
                 let p = t.province;
-                // Requests on province and per-good fields name the province.
-                let about = |r: &Request| matches!(r.field.def().tier, Tier::Province | Tier::ProvinceGood) && r.entity == p;
+                let about = |r: &Request| r.province() == Some(p);
                 let step = |what| TraceStep { stage: kind, module: Some(slot), what };
                 t.steps.extend(out.notes.into_iter().map(|n| step(Traced::Note(n))));
                 t.steps.extend(out.requests.iter().filter(|r| about(r)).map(|r| step(Traced::Requested(*r))));
@@ -874,6 +875,9 @@ impl Sim {
             Tier::ProvinceGood => self.world.goods.split(e as usize).0 == t.province as usize,
             Tier::Pop => self.world.pops.province.get(e as usize) == Some(&t.province),
             Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
+            Tier::Army => self.world.armies.province.get(e as usize) == Some(&t.province),
+            // A realm's own values are not a province's.
+            Tier::Realm | Tier::RealmGood => false,
         };
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };

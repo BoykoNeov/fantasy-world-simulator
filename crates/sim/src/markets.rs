@@ -254,6 +254,7 @@ static V1: Manifest = Manifest {
     owns: &["province.stock", "province.price", "province.workers"],
     requests: &[],
     asks: &[],
+    moves: &[],
     // Goods are made by people: a world without them is refused.
     requires: &["pop.size"],
     emits: &[EventKind::Granted],
