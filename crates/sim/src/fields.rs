@@ -271,6 +271,13 @@ pub const FIELDS: &[FieldDef] = &[
     def("cell.rainfall_set", Tier::Cell, "mm a year set by an edit, NaN where not set", -UNBOUNDED, UNBOUNDED),
     def("cell.biome_set", Tier::Cell, "biome id set by an edit, 255 where not set", -UNBOUNDED, UNBOUNDED),
     def("cell.spring", Tier::Cell, "thousand m³ a year a drawn river's spring adds", 0.0, UNBOUNDED),
+    // What each province's land offers, cached from its cells (step 6, for the markets economy).
+    def("province.grazing_capacity", Tier::Province, "rations a year, of food_capacity, better from herds", 0.0, UNBOUNDED),
+    def("province.forest_km2", Tier::Province, "km² of woodland", 0.0, UNBOUNDED),
+    def("province.coast_km", Tier::Province, "km of shore", 0.0, UNBOUNDED),
+    def("province.river_km", Tier::Province, "km of big river", 0.0, UNBOUNDED),
+    def("province.upland_km2", Tier::Province, "km² of hills and mountains", 0.0, UNBOUNDED),
+    def("province.ore_km2", Tier::Province, "km² of land with ore in reach", 0.0, UNBOUNDED),
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

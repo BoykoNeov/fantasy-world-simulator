@@ -98,6 +98,26 @@ impl Biome {
         }
     }
 
+    /// Share of the food this biome yields that comes better from herds than from fields: all of it
+    /// where crops won't grow, little of it in good farming country.
+    pub fn grazing_share(self) -> f64 {
+        match self {
+            Biome::Ocean | Biome::IceCap => 0.0,
+            Biome::Tundra | Biome::Alpine => 1.0,
+            Biome::Desert => 0.9,
+            Biome::Savanna => 0.6,
+            Biome::BorealForest => 0.4,
+            Biome::Grassland => 0.35,
+            Biome::TemperateForest => 0.2,
+            Biome::TropicalForest => 0.1,
+        }
+    }
+
+    /// Whether the land is wooded (timber can be cut).
+    pub fn is_forest(self) -> bool {
+        matches!(self, Biome::BorealForest | Biome::TemperateForest | Biome::TropicalForest)
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Biome::Ocean => "ocean",

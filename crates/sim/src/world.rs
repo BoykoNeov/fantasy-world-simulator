@@ -206,6 +206,12 @@ impl World {
             "cell.rainfall_set" => F32(self.rainfall_set.clone()),
             "cell.biome_set" => U8(self.biome_set.clone()),
             "cell.spring" => U64(self.spring.clone()),
+            "province.grazing_capacity" => U64(p.grazing_capacity.clone()),
+            "province.forest_km2" => F64(p.forest_km2.clone()),
+            "province.coast_km" => F64(p.coast_km.clone()),
+            "province.river_km" => F64(p.river_km.clone()),
+            "province.upland_km2" => F64(p.upland_km2.clone()),
+            "province.ore_km2" => F64(p.ore_km2.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -263,6 +269,12 @@ impl World {
             ("cell.rainfall_set", F32(v)) => self.rainfall_set = v,
             ("cell.biome_set", U8(v)) => self.biome_set = v,
             ("cell.spring", U64(v)) => self.spring = v,
+            ("province.grazing_capacity", U64(v)) => p.grazing_capacity = v,
+            ("province.forest_km2", F64(v)) => p.forest_km2 = v,
+            ("province.coast_km", F64(v)) => p.coast_km = v,
+            ("province.river_km", F64(v)) => p.river_km = v,
+            ("province.upland_km2", F64(v)) => p.upland_km2 = v,
+            ("province.ore_km2", F64(v)) => p.ore_km2 = v,
             _ => return wrong(),
         }
         Ok(())
@@ -310,6 +322,12 @@ impl World {
             ("cell.rainfall_set", F32(x)) => put(&mut self.rainfall_set, at, x),
             ("cell.biome_set", U8(x)) => put(&mut self.biome_set, at, x),
             ("cell.spring", U64(x)) => put(&mut self.spring, at, x),
+            ("province.grazing_capacity", U64(x)) => put(&mut p.grazing_capacity, at, x),
+            ("province.forest_km2", F64(x)) => put(&mut p.forest_km2, at, x),
+            ("province.coast_km", F64(x)) => put(&mut p.coast_km, at, x),
+            ("province.river_km", F64(x)) => put(&mut p.river_km, at, x),
+            ("province.upland_km2", F64(x)) => put(&mut p.upland_km2, at, x),
+            ("province.ore_km2", F64(x)) => put(&mut p.ore_km2, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }

@@ -21,8 +21,11 @@ use std::collections::BinaryHeap;
 pub struct ProvinceGrowth;
 
 static V0: Manifest = Manifest::generation(Slot::Provinces, "growth", crate::fields::Tier::Province,
-    &["cell.elevation", "cell.food_yield", "cell.river_flow"],
-    &["cell.province", "province.cells", "province.area_km2", "province.center", "province.lat", "province.food_capacity"],
+    &["cell.elevation", "cell.food_yield", "cell.river_flow", "cell.biome"],
+    &[
+        "cell.province", "province.cells", "province.area_km2", "province.center", "province.lat", "province.food_capacity",
+        "province.grazing_capacity", "province.forest_km2", "province.coast_km", "province.river_km", "province.upland_km2", "province.ore_km2",
+    ],
 );
 
 impl SimModule for ProvinceGrowth {
@@ -32,7 +35,7 @@ impl SimModule for ProvinceGrowth {
     fn generate(&self, w: &mut World) {
         let p = &w.params;
         let of_cell = generate(&w.grid, &w.elevation, &w.food_per_cell, &w.river_flow, p.provinces, p.seed);
-        w.provinces = aggregate(&w.grid, of_cell, &w.food_per_cell, p.radius_km);
+        w.provinces = aggregate(w, of_cell);
     }
 }
 
@@ -49,7 +52,24 @@ pub struct Provinces {
     pub lat: Vec<f32>,
     /// Food the province's land yields in an average year, in rations.
     pub food_capacity: Vec<u64>,
+    /// The part of `food_capacity` that comes better from herds than from fields.
+    pub grazing_capacity: Vec<u64>,
+    /// Wooded land.
+    pub forest_km2: Vec<f64>,
+    /// Shore along the sea (or a lake below sea level).
+    pub coast_km: Vec<f64>,
+    /// Length of big rivers through the province.
+    pub river_km: Vec<f64>,
+    /// Hill and mountain land, at least [`UPLAND_M`] high.
+    pub upland_km2: Vec<f64>,
+    /// Land with ore in reach: mostly uplands, more of it where the province lies on a rich vein.
+    pub ore_km2: Vec<f64>,
 }
+
+/// Land at least this high counts as hills or mountains.
+pub const UPLAND_M: f32 = 500.0;
+/// Lowland bears a little ore too, at this fraction of upland's.
+const LOWLAND_ORE: f64 = 0.1;
 
 /// How strongly the smooth roughness field bends growth: the cost of a step is scaled by
 /// `exp(ROUGHNESS * noise)`, with the noise roughly in [-1, 1].
@@ -214,23 +234,47 @@ fn join_pieces(grid: &Grid, of_cell: &mut [u32], count: usize) {
     }
 }
 
-/// Per-province aggregates of their cells. Sums run in cell order, so they are the same every run.
-pub fn aggregate(grid: &Grid, of_cell: Vec<u32>, food_per_cell: &[f64], radius_km: f64) -> Provinces {
+/// Per-province aggregates of their cells, from the world's land (its terrain, biomes, rivers and
+/// farmland). Sums run in cell order, so they are the same every run.
+pub fn aggregate(w: &World, of_cell: Vec<u32>) -> Provinces {
+    let grid = &w.grid;
     let count = of_cell.iter().filter(|&&p| p != NONE).map(|&p| p as usize + 1).max().unwrap_or(0);
-    let km2_per_sr = radius_km * radius_km;
+    let km2_per_sr = w.params.radius_km * w.params.radius_km;
     let mut cells = vec![0u32; count];
     let mut area_km2 = vec![0f64; count];
     let mut sum = vec![[0f64; 3]; count];
     let mut food = vec![0f64; count];
+    let mut grazing = vec![0f64; count];
+    let mut forest_km2 = vec![0f64; count];
+    let mut coast_km = vec![0f64; count];
+    let mut river_km = vec![0f64; count];
+    let mut upland_km2 = vec![0f64; count];
+    let mut ore_reach = vec![0f64; count];
     for (c, &p) in of_cell.iter().enumerate() {
         if p == NONE {
             continue;
         }
         let p = p as usize;
         let a = grid.area[c] * km2_per_sr;
+        // A cell's side, near enough: cells are close to square.
+        let side_km = a.sqrt();
+        let biome = w.biome[c];
         cells[p] += 1;
         area_km2[p] += a;
-        food[p] += food_per_cell[c];
+        food[p] += w.food_per_cell[c];
+        grazing[p] += w.food_per_cell[c] * biome.grazing_share();
+        if biome.is_forest() {
+            forest_km2[p] += a;
+        }
+        coast_km[p] += side_km * grid.neighbors[c].iter().filter(|&&m| w.elevation[m as usize] < 0.0).count() as f64;
+        if w.river_flow[c] >= RIVER_MIN_FLOW {
+            river_km[p] += side_km;
+        }
+        let upland = w.elevation[c] >= UPLAND_M;
+        if upland {
+            upland_km2[p] += a;
+        }
+        ore_reach[p] += if upland { a } else { a * LOWLAND_ORE };
         for k in 0..3 {
             sum[p][k] += grid.center[c][k] * a;
         }
@@ -238,7 +282,18 @@ pub fn aggregate(grid: &Grid, of_cell: Vec<u32>, food_per_cell: &[f64], radius_k
     let center: Vec<V3> = sum.into_iter().map(crate::grid::normalize).collect();
     let lat = center.iter().map(|&d| crate::grid::dir_to_lonlat(d).1 as f32).collect();
     let food_capacity = food.iter().map(|&f| f.round() as u64).collect();
-    Provinces { of_cell, count, cells, area_km2, center, lat, food_capacity }
+    // Grazing is part of farmland, so it never exceeds it after rounding.
+    let grazing_capacity = grazing.iter().zip(&food).map(|(&g, &f)| g.round().min(f.round()) as u64).collect();
+    // Veins of ore run through some regions and not others, smoothly, a few provinces across.
+    let vein_key = draw(w.params.seed, Module::Provinces, 0, 0, purpose("ore veins"));
+    let ore_km2 = ore_reach.iter().zip(&center).map(|(&reach, &d)| reach * ore_richness(d, vein_key)).collect();
+    Provinces { of_cell, count, cells, area_km2, center, lat, food_capacity, grazing_capacity, forest_km2, coast_km, river_km, upland_km2, ore_km2 }
+}
+
+/// How much ore the land around `d` bears, from 0 (none) to about 1.
+fn ore_richness(d: V3, key: u64) -> f64 {
+    const VEINS_ACROSS: f64 = 5.0;
+    (fbm([d[0] * VEINS_ACROSS, d[1] * VEINS_ACROSS, d[2] * VEINS_ACROSS], 3, key) + 0.25).clamp(0.0, 1.0)
 }
 
 /// Recompute every province's aggregates after an edit moved cells, keeping province numbers: there
@@ -246,11 +301,15 @@ pub fn aggregate(grid: &Grid, of_cell: Vec<u32>, food_per_cell: &[f64], radius_k
 pub fn reaggregate(w: &mut World, count: usize) {
     let old = std::mem::take(&mut w.provinces);
     // `aggregate` counts up to the highest number in use, and gives empty provinces no centre.
-    let mut p = aggregate(&w.grid, old.of_cell, &w.food_per_cell, w.params.radius_km);
+    let mut p = aggregate(w, old.of_cell);
     p.count = count;
     p.cells.resize(count, 0);
     p.area_km2.resize(count, 0.0);
     p.food_capacity.resize(count, 0);
+    p.grazing_capacity.resize(count, 0);
+    for v in [&mut p.forest_km2, &mut p.coast_km, &mut p.river_km, &mut p.upland_km2, &mut p.ore_km2] {
+        v.resize(count, 0.0);
+    }
     p.center.resize(count, [0.0, 0.0, 1.0]);
     p.lat.resize(count, 0.0);
     for id in 0..count {
@@ -277,23 +336,46 @@ mod tests {
         for c in 0..g.cells() {
             assert_eq!(elevation[c] >= 0.0, of_cell[c] != NONE, "cell {c}");
         }
-        let p = aggregate(&g, of_cell, &fertility, 6371.0);
-        assert!(p.count >= 60, "{}", p.count);
+        let count = of_cell.iter().filter(|&&p| p != NONE).max().unwrap() + 1;
+        assert!(count >= 60, "{count}");
         // Each province is one connected piece: a flood from any of its cells reaches all of them.
-        for id in 0..p.count as u32 {
-            let members: Vec<usize> = (0..g.cells()).filter(|&c| p.of_cell[c] == id).collect();
+        for id in 0..count {
+            let members: Vec<usize> = (0..g.cells()).filter(|&c| of_cell[c] == id).collect();
             let mut seen = std::collections::HashSet::from([members[0]]);
             let mut stack = vec![members[0]];
             while let Some(c) = stack.pop() {
                 for &m in &g.neighbors[c] {
-                    if p.of_cell[m as usize] == id && seen.insert(m as usize) {
+                    if of_cell[m as usize] == id && seen.insert(m as usize) {
                         stack.push(m as usize);
                     }
                 }
             }
             assert_eq!(seen.len(), members.len(), "province {id} is in pieces");
-            assert_eq!(p.cells[id as usize] as usize, members.len());
         }
+    }
+
+    #[test]
+    fn land_facts_add_up() {
+        let w = crate::world::World::generate(&crate::world::WorldParams { n: 48, provinces: 200, seed: 3, land_fraction: 0.36, radius_km: 6371.0 });
+        let p = &w.provinces;
+        let total = |v: &[f64]| v.iter().sum::<f64>();
+        for id in 0..p.count {
+            assert!(p.grazing_capacity[id] <= p.food_capacity[id], "province {id}");
+            for (what, v) in [("forest", p.forest_km2[id]), ("upland", p.upland_km2[id]), ("ore", p.ore_km2[id])] {
+                assert!((0.0..=p.area_km2[id] * 1.000_001).contains(&v), "province {id}: {what} {v} of {}", p.area_km2[id]);
+            }
+        }
+        // Every kind of land turns up somewhere, and most provinces lie on a coast or a river.
+        for (what, v) in [("forest", &p.forest_km2), ("coast", &p.coast_km), ("river", &p.river_km), ("upland", &p.upland_km2), ("ore", &p.ore_km2)] {
+            assert!(total(v) > 0.0, "no {what} anywhere");
+        }
+        assert!(p.grazing_capacity.iter().sum::<u64>() > 0);
+        let watered = (0..p.count).filter(|&i| p.coast_km[i] > 0.0 || p.river_km[i] > 0.0).count();
+        assert!(watered * 2 > p.count, "{watered} of {}", p.count);
+        // Ore lies in veins: some provinces have none, and the richest have far more than the median.
+        let mut ore: Vec<f64> = (0..p.count).map(|i| p.ore_km2[i] / p.area_km2[i].max(1.0)).collect();
+        ore.sort_by(f64::total_cmp);
+        assert!(ore[0] == 0.0 && ore[ore.len() - 1] > 3.0 * ore[ore.len() / 2], "{ore:?}");
     }
 
     #[test]
