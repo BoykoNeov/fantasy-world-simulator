@@ -146,6 +146,7 @@ mod tests {
                 requester: Slot::Population,
                 field: crate::fields::known("province.stock"),
                 entity,
+                good: Some(1),
                 take: 1,
                 priority: Priority::Essential,
                 cause: Cause::Eating,

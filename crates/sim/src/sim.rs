@@ -823,12 +823,8 @@ impl Sim {
             let slot = self.modules[i].manifest().slot;
             if let Some(t) = &mut self.trace {
                 let p = t.province;
-                let goods = &self.world.goods;
-                let about = |r: &Request| match r.field.def().tier {
-                    Tier::Province => r.entity == p,
-                    Tier::ProvinceGood => goods.split(r.entity as usize).0 == p as usize,
-                    Tier::Cell | Tier::Pop => false,
-                };
+                // Requests on province and per-good fields name the province.
+                let about = |r: &Request| matches!(r.field.def().tier, Tier::Province | Tier::ProvinceGood) && r.entity == p;
                 let step = |what| TraceStep { stage: kind, module: Some(slot), what };
                 t.steps.extend(out.notes.into_iter().map(|n| step(Traced::Note(n))));
                 t.steps.extend(out.requests.iter().filter(|r| about(r)).map(|r| step(Traced::Requested(*r))));

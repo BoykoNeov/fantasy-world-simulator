@@ -1,14 +1,16 @@
 //! Per-good values with several goods kept at once. Economics v0 keeps one good (food), so these
 //! tests put a stand-in economy in its slot that keeps grain, fish and ore: two classes, three
-//! columns per province.
+//! columns per province. The last tests turn Population on and check it asks for food through the
+//! goods tree, whichever goods the economy keeps.
 
 use crate::config::Config;
 use crate::edit::Edit;
-use crate::events::Event;
+use crate::events::{Event, EventKind};
 use crate::fields::{known, quantity_total, Quantity, Tier};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::requests::Cause;
+use crate::requests::{ration, serve_goods, Cause, Request};
 use crate::sim::{Problems, Sim, NEVER};
+use crate::taxonomy::TreeDef;
 use crate::world::{World, WorldParams};
 
 static PANTRY: Manifest = Manifest {
@@ -19,6 +21,7 @@ static PANTRY: Manifest = Manifest {
     reads: &[],
     owns: &["province.stock"],
     requests: &[],
+    asks: &[],
     requires: &[],
     emits: &[],
     handles: &[],
@@ -187,4 +190,188 @@ fn edits_move_every_good() {
     assert!(sim.world.stock.iter().all(|&s| s == 0));
     assert_eq!((sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit)), (-(food as i64), -(raw as i64)));
     assert_eq!(sim.problems, Problems::default());
+}
+
+/// Keeps the goods its manifest names, each province starting with `fill(good)` of each. Nothing is
+/// ever made: it only serves what is asked, by the shared rule.
+struct Larder {
+    manifest: &'static Manifest,
+    fill: fn(&str) -> u64,
+}
+
+impl Module for Larder {
+    fn manifest(&self) -> &'static Manifest {
+        self.manifest
+    }
+
+    fn init(&mut self, w: &mut World, _cx: &mut Ctx) {
+        let row: Vec<u64> = w.goods.names().iter().map(|n| (self.fill)(n)).collect();
+        w.stock = (0..w.provinces.count).flat_map(|_| row.clone()).collect();
+    }
+
+    fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
+        serve_goods(&mut w.stock, requests, cx);
+    }
+}
+
+const fn larder(goods: &'static [&'static str]) -> Manifest {
+    Manifest {
+        slot: Slot::Economics,
+        version: "larder",
+        tier: Tier::Province,
+        cadence: Cadence::Monthly,
+        reads: &[],
+        owns: &["province.stock"],
+        requests: &[],
+        asks: &[],
+        requires: &[],
+        emits: &[EventKind::Granted],
+        handles: &[],
+        state_schema: "none",
+        goods,
+    }
+}
+
+static GRAIN_FISH_LIVESTOCK: Manifest = larder(&["grain", "fish", "livestock", "ore"]);
+
+fn eating_config(tree: Option<&str>) -> Config {
+    let mut config = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    if let Some(t) = tree {
+        config.goods = TreeDef::from_toml(t).unwrap();
+    }
+    config
+}
+
+fn with_larder(config: &Config, manifest: &'static Manifest, fill: fn(&str) -> u64) -> Result<Sim, crate::module::ConfigError> {
+    let swap = |m: Box<dyn Module>| -> Box<dyn Module> { if m.manifest().slot == Slot::Economics { Box::new(Larder { manifest, fill }) } else { m } };
+    Sim::new_with(config, config.modules.build().into_iter().map(swap).collect())
+}
+
+fn eating_world(manifest: &'static Manifest, tree: Option<&str>, fill: fn(&str) -> u64) -> Sim {
+    let mut sim = with_larder(&eating_config(tree), manifest, fill).map_err(|e| e.0).unwrap();
+    sim.strict = true;
+    sim
+}
+
+/// Day 0 starts a month: every pop asks for its month of food, served tonight. Returns the requests
+/// served, with what each got.
+fn first_meal(sim: &mut Sim) -> Vec<(Request, u64)> {
+    sim.run_days(1);
+    sim.applied_today.clone()
+}
+
+/// How much of the good named `c` province `p` lost between `before` and now.
+fn taken(sim: &Sim, before: &[u64], p: usize, c: &str) -> u64 {
+    let g = &sim.world.goods;
+    let at = g.index(p, g.column(c).unwrap());
+    before[at] - sim.world.stock[at]
+}
+
+#[test]
+fn population_asks_for_food_and_gets_it_from_every_food_good() {
+    let mut sim = eating_world(&GRAIN_FISH_LIVESTOCK, None, |_| 1_000_000_000);
+    let food = sim.world.goods.tree.find("food").unwrap();
+    let before = sim.world.stock.clone();
+    let served = first_meal(&mut sim);
+
+    // One request per pop, for food in its province, and one grant each: plenty for all.
+    let pops = &sim.world.pops;
+    assert_eq!(served.len(), pops.size.len());
+    for (r, granted) in &served {
+        assert_eq!((r.good, r.entity, *granted), (Some(food), pops.province[r.tag as usize], r.take));
+    }
+    // Each province's meal came out of grain, fish and livestock alike (they held the same), and
+    // no ore was touched.
+    for p in 0..sim.world.provinces.count {
+        let mine = || served.iter().filter(|(r, _)| r.entity == p as u32);
+        let (eaten, meals) = (mine().map(|(_, g)| g).sum::<u64>(), mine().count() as u64);
+        let food_taken = ["grain", "fish", "livestock"].map(|c| taken(&sim, &before, p, c));
+        assert_eq!(food_taken.iter().sum::<u64>(), eaten);
+        assert!(food_taken.iter().all(|t| t.abs_diff(eaten / 3) <= meals), "province {p}: {food_taken:?} of {eaten}");
+        assert_eq!(taken(&sim, &before, p, "ore"), 0);
+    }
+    let eaten: u64 = served.iter().map(|(_, g)| g).sum();
+    assert_eq!((sim.year_flows.get(FOOD, Cause::Eating), sim.year_flows.get(RAW, Cause::Eating)), (-(eaten as i64), 0));
+    let p0: u64 = served.iter().filter(|(r, _)| r.entity == 0).map(|(_, g)| g).sum();
+    assert_eq!(sim.world.stock_under(0, "food"), Some(3_000_000_000 - p0));
+    // The grants are delivered and settled; everything balanced.
+    sim.run_days(1);
+    assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn a_food_shortage_is_shared_out_from_all_the_food_there_is() {
+    // 30 grain, 20 fish and no livestock per province: far less than a month of eating.
+    let mut sim = eating_world(&GRAIN_FISH_LIVESTOCK, None, |good| match good {
+        "grain" => 30,
+        "fish" => 20,
+        "livestock" => 0,
+        _ => 5,
+    });
+    let served = first_meal(&mut sim);
+    let g = sim.world.goods.clone();
+    let eating: Vec<u32> = (0..sim.world.provinces.count as u32).filter(|&p| served.iter().any(|(r, _)| r.entity == p)).collect();
+    assert!(!eating.is_empty());
+    for p in eating {
+        let mine: Vec<&(Request, u64)> = served.iter().filter(|(r, _)| r.entity == p).collect();
+        let wants: Vec<_> = mine.iter().map(|(r, _)| (r.priority, r.take, r.tag)).collect();
+        // The province's 50 rations are shared by the one rule, as a single store's would be.
+        assert_eq!(mine.iter().map(|(_, g)| *g).collect::<Vec<_>>(), ration(50, &wants));
+        let left = ["grain", "fish", "livestock", "ore"].map(|c| sim.world.stock[g.index(p as usize, g.column(c).unwrap())]);
+        assert_eq!(left, [0, 0, 0, 5]);
+    }
+    sim.run_days(1);
+    assert!(sim.year_so_far().ledger.starved > 0);
+    assert_eq!(sim.problems, Problems::default());
+}
+
+/// A deeper tree: cereals is a class of food with goods of its own.
+const DEEP: &str = "root = 'goods'
+[children]
+goods = ['food', 'raw']
+food = ['cereals', 'fish']
+cereals = ['wheat', 'barley']
+raw = ['ore']
+[units]
+food = 'rations'
+";
+
+static CEREALS_WHOLE: Manifest = larder(&["cereals", "fish", "ore"]);
+static CEREALS_SPLIT: Manifest = larder(&["wheat", "barley", "fish"]);
+
+#[test]
+fn food_is_found_however_deep_the_tree_and_whichever_level_is_kept() {
+    for (manifest, food_goods) in [(&CEREALS_WHOLE, &["cereals", "fish"][..]), (&CEREALS_SPLIT, &["wheat", "barley", "fish"][..])] {
+        let mut sim = eating_world(manifest, Some(DEEP), |_| 1_000_000_000);
+        let names = sim.world.goods.names();
+        let before = sim.world.stock.clone();
+        let served = first_meal(&mut sim);
+        assert!(!served.is_empty() && served.iter().all(|(r, granted)| *granted == r.take), "{names:?}");
+        // Every food good kept gave its share, in every province that ate.
+        for p in 0..sim.world.provinces.count {
+            let eaten: u64 = served.iter().filter(|(r, _)| r.entity == p as u32).map(|(_, g)| g).sum();
+            let food_taken: Vec<u64> = food_goods.iter().map(|c| taken(&sim, &before, p, c)).collect();
+            assert_eq!(food_taken.iter().sum::<u64>(), eaten, "{names:?}");
+            assert!(eaten == 0 || food_taken.iter().all(|&t| t > 0), "{names:?}: {food_taken:?}");
+        }
+        // Reading a class sums its goods; a good kept only inside a bigger whole can't be read.
+        let (w, g) = (&sim.world, &sim.world.goods);
+        let held = |c: &str| w.stock[g.index(0, g.column(c).unwrap())];
+        let food: u64 = food_goods.iter().map(|c| held(c)).sum();
+        assert_eq!((w.stock_under(0, "food"), w.stock_under(0, "cereals")), (Some(food), Some(food - held("fish"))));
+        assert_eq!(w.stock_under(0, "wheat").is_some(), g.column("wheat").is_some());
+        assert_eq!(w.stock_under(0, "spice"), None);
+        sim.run_days(40);
+        assert_eq!(sim.problems, Problems::default(), "{names:?}");
+    }
+}
+
+#[test]
+fn a_world_whose_economy_keeps_no_food_is_refused_when_population_eats() {
+    static ORE_ONLY: Manifest = larder(&["ore"]);
+    let refused = with_larder(&eating_config(None), &ORE_ONLY, |_| 0).err().unwrap().0;
+    assert!(refused.contains("Population \"basic\" asks for food, but Economics \"larder\" keeps none"), "{refused}");
+    // A goods tree without food is refused as well.
+    let refused = with_larder(&eating_config(Some("root = 'goods'\n[children]\ngoods = ['raw']\nraw = ['ore']")), &ORE_ONLY, |_| 0).err().unwrap().0;
+    assert!(refused.contains("asks for food, which is not a good"), "{refused}");
 }

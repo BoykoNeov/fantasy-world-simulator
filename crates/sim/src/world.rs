@@ -329,6 +329,15 @@ impl World {
         self.goods.column(name).and_then(|c| self.stock.get(self.goods.index(p, c)).copied())
     }
 
+    /// How much of the good or class named `name` province `p` has stored, however finely it is
+    /// kept: a class sums its goods. `None` when the tree has no such node, or it is kept only as
+    /// part of something bigger.
+    pub fn stock_under(&self, p: usize, name: &str) -> Option<u64> {
+        let k = self.goods.stride();
+        let row = self.stock.get(p * k..(p + 1) * k)?;
+        self.goods.sum_under(row, self.goods.tree.find(name)?)
+    }
+
     /// Check that province and pop fields agree on their lengths (after a load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;

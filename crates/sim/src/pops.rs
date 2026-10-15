@@ -1,7 +1,8 @@
 //! Population v0: people grouped into pops per province, who grow when fed and starve when not.
 //!
 //! The module owns the pop fields and `province.starved_this_year`. On the first day of each month
-//! every pop asks the province's food owner for a month of eating (one ration per person per day).
+//! every pop asks the owner of the province's goods for a month of food (one ration per person per
+//! day), naming food by the goods tree's class, not by a store.
 //! The grant arrives the next day: fewer children are born when food fell short, and some of the
 //! unfed die. People are whole numbers, so every change balances exactly.
 
@@ -67,6 +68,7 @@ static V0: Manifest = Manifest {
     reads: &["province.food_capacity"],
     owns: &["pop.province", "pop.species", "pop.culture", "pop.religion", "pop.class", "pop.size", "province.starved_this_year"],
     requests: &["province.stock"],
+    asks: &["food"],
     requires: &[],
     emits: &[EventKind::Famine],
     handles: &[EventKind::Granted],
@@ -99,15 +101,13 @@ impl Module for Population {
         }
         let days = cx.calendar.def.months[cx.calendar.date(cx.day).month].days as u64;
         let stock = known("province.stock");
-        // Food is asked of the province's food store. (Asking the goods tree for "food", however
-        // finely the economy keeps it, comes in step 6's next piece.)
-        let goods = &w.goods;
-        let food = goods.column("food").expect("the economy keeps a food store");
+        // Food is asked for by its place in the goods tree: the economy serves it from whatever it
+        // keeps under food, whether food as a whole or grain, fish and livestock.
+        let food = cx.goods.tree.find("food").expect("checked at configuration: the goods tree has food");
         for k in 0..w.pops.size.len() {
             let size = w.pops.size[k];
             if size > 0 {
-                let store = goods.index(w.pops.province[k] as usize, food) as u32;
-                cx.request(stock, store, size * days, Priority::Essential, Cause::Eating, k as u64);
+                cx.ask_good(stock, w.pops.province[k], food, size * days, Priority::Essential, Cause::Eating, k as u64);
             }
         }
     }

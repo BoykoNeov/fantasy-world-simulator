@@ -632,7 +632,7 @@ impl MapApp {
         self.log.extend(f.delivered.iter().map(|p| LogEntry::of_event(p, &self.geo.goods)));
         for (r, g) in f.applied.iter().filter(|(r, g)| *g < r.take) {
             let owner = self.owners[r.field.0 as usize].1.unwrap_or(r.requester);
-            self.log.push(LogEntry::rationed(f.day - 1, owner, r, *g, &self.geo.goods));
+            self.log.push(LogEntry::rationed(f.day - 1, owner, r, *g));
         }
         // Years of shortages add up; the oldest go first.
         if self.log.len() > 400_000 {
@@ -970,7 +970,7 @@ impl MapApp {
             let p = p as usize;
             let people = self.view.people[p];
             ui.label(format!("province {p}: {} people, {:.1} per km²", group(people.round() as u64), people / w.provinces.area_km2[p]));
-            if let Some(food) = w.stock_of(p, "food") {
+            if let Some(food) = w.stock_under(p, "food") {
                 ui.label(format!("food stock {} rations", group(food)));
             }
             if self.view.drought[p] > 0.0 {
@@ -1115,7 +1115,7 @@ impl MapApp {
         let front = &self.frames[0];
         let goods = &self.geo.goods;
         let settled: Vec<String> =
-            front.applied.iter().filter(|(r, _)| inspector::province_of(r.field, r.entity, goods) == Some(p)).map(|(r, g)| inspector::grant(r, *g, goods)).collect();
+            front.applied.iter().filter(|(r, _)| inspector::request_province(r) == Some(p)).map(|(r, g)| inspector::grant(r, *g, goods)).collect();
         if !settled.is_empty() {
             ui.separator();
             ui.label(egui::RichText::new(format!("Change requests settled on {}", self.calendar.format(today - 1))).strong());

@@ -10,7 +10,7 @@ use crate::calendar::Calendar;
 use crate::events::EventKind;
 use crate::fields::{known, Goods, Quantity};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::requests::{ration, Cause, Request};
+use crate::requests::{serve_goods, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
 use crate::terrain::fbm;
 use crate::world::World;
@@ -56,6 +56,7 @@ static V0: Manifest = Manifest {
     reads: &["province.food_capacity", "province.center", "province.lat", "province.rain_shortfall"],
     owns: &["province.stock"],
     requests: &[],
+    asks: &[],
     requires: &[],
     emits: &[EventKind::Granted],
     handles: &[],
@@ -113,20 +114,10 @@ impl Module for Food {
         cx.flow(counted, Cause::Spoilage, -(spoiled as i64));
     }
 
+    /// Food is the only good kept, so whatever is asked for (food) comes from the food store.
     fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
-        let stock = known("province.stock");
-        // Requests arrive sorted by field and entity (a province's store of one good): take each
-        // store's run in turn.
-        for run in requests.chunk_by(|a, b| (a.field, a.entity) == (b.field, b.entity)) {
-            debug_assert_eq!(run[0].field, stock);
-            let at = run[0].entity as usize;
-            let wants: Vec<_> = run.iter().map(|r| (r.priority, r.take, r.tag)).collect();
-            let grants = ration(w.stock[at], &wants);
-            for (r, g) in run.iter().zip(grants) {
-                w.stock[at] -= g;
-                cx.grant(r, g);
-            }
-        }
+        debug_assert!(requests.iter().all(|r| r.field == known("province.stock")));
+        serve_goods(&mut w.stock, requests, cx);
     }
 }
 

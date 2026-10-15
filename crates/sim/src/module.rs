@@ -13,6 +13,7 @@ use crate::calendar::Calendar;
 use crate::events::{Event, EventKind};
 use crate::fields::{self, FieldId, Goods, Quantity, Tier};
 use crate::requests::{Cause, Priority, Request};
+use crate::taxonomy::NodeId;
 use crate::world::World;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -69,6 +70,9 @@ pub struct Manifest {
     /// Fields this module asks the owner to change. Grants come back the next day as
     /// [`Event::Granted`], addressed to this module.
     pub requests: &'static [&'static str],
+    /// The nodes of the goods tree it asks for in requests to per-good fields (see
+    /// [`Ctx::ask_good`]). The goods kept must be able to serve each.
+    pub asks: &'static [&'static str],
     /// Fields that must have an active owner (beyond what `reads` needs).
     pub requires: &'static [&'static str],
     pub emits: &'static [EventKind],
@@ -83,7 +87,7 @@ pub struct Manifest {
 impl Manifest {
     /// A generation module: it reads some fields and writes the ones it owns, once.
     pub const fn generation(slot: Slot, version: &'static str, tier: Tier, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], asks: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 }
 
@@ -159,7 +163,17 @@ impl Ctx<'_> {
     /// Ask the owner of `field` to remove `take` from `entity`. Applied at the end of today;
     /// the grant arrives tomorrow. `tag` comes back with the grant (e.g. which pop asked).
     pub fn request(&mut self, field: FieldId, entity: u32, take: u64, priority: Priority, cause: Cause, tag: u64) {
-        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, take, priority, cause, tag });
+        debug_assert!(field.def().tier != Tier::ProvinceGood, "per-good fields are asked with ask_good");
+        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, good: None, take, priority, cause, tag });
+    }
+
+    /// Ask the owner of the per-good `field` for `take` of the goods under `good` in `province`
+    /// ("food", however finely the owner keeps it). The good must be one the manifest `asks` for.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ask_good(&mut self, field: FieldId, province: u32, good: NodeId, take: u64, priority: Priority, cause: Cause, tag: u64) {
+        debug_assert!(field.def().tier == Tier::ProvinceGood);
+        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: Some(good), take, priority, cause, tag };
+        self.out.requests.push(r);
     }
 
     pub fn emit(&mut self, e: Event) {
@@ -174,7 +188,7 @@ impl Ctx<'_> {
     /// For owners applying requests: record the grant, report the flow, and tell the requester
     /// tomorrow.
     pub fn grant(&mut self, r: &Request, granted: u64) {
-        if let Some(q) = self.goods.quantity_at(r.field, r.entity) {
+        if let Some(q) = self.goods.quantity_asked(r) {
             self.out.flows.add(q, r.cause, -(granted as i64));
         }
         self.out.applied.push((*r, granted));
@@ -322,7 +336,8 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
 }
 
 /// The goods a checked configuration keeps: what the owners of per-good fields name in their
-/// manifests (they must agree), or the tree's classes when nobody owns one.
+/// manifests (they must agree), or the tree's classes when nobody owns one. Every good a module
+/// asks for must be in the tree and kept, whole or in parts.
 pub fn goods_kept(manifests: &[&Manifest], plan: &Plan, tree: crate::taxonomy::Taxonomy) -> Result<Goods, ConfigError> {
     let name = |m: &Manifest| format!("{:?} \"{}\"", m.slot, m.version);
     let mut kept: Option<&Manifest> = None;
@@ -339,10 +354,27 @@ pub fn goods_kept(manifests: &[&Manifest], plan: &Plan, tree: crate::taxonomy::T
             _ => kept = Some(m),
         }
     }
-    match kept {
-        Some(m) => Goods::new(tree, m.goods).map_err(|e| ConfigError(format!("{}: {e}", name(m)))),
-        None => Ok(Goods::classes(tree)),
+    let goods = match kept {
+        Some(m) => Goods::new(tree, m.goods).map_err(|e| ConfigError(format!("{}: {e}", name(m))))?,
+        None => Goods::classes(tree),
+    };
+    let keeper = kept.map_or_else(|| "the world".to_string(), name);
+    for m in manifests {
+        for &asked in m.asks {
+            let Some(node) = goods.tree.find(asked).filter(|&n| n != 0) else {
+                return Err(ConfigError(format!("{} asks for {asked}, which is not a good or class of goods in the goods tree", name(m))));
+            };
+            match goods.columns_under(node) {
+                None => {
+                    let whole = goods.columns.iter().find(|&&c| goods.tree.is_under(node, c)).map_or("", |&c| goods.tree.name(c));
+                    return Err(ConfigError(format!("{} asks for {asked}, but {keeper} keeps it only as part of {whole}", name(m))));
+                }
+                Some(c) if c.is_empty() => return Err(ConfigError(format!("{} asks for {asked}, but {keeper} keeps none", name(m)))),
+                Some(_) => {}
+            }
+        }
     }
+    Ok(goods)
 }
 
 #[cfg(test)]
@@ -350,7 +382,7 @@ mod tests {
     use super::*;
 
     fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], asks: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 
     #[test]
@@ -414,6 +446,16 @@ mod tests {
         assert_eq!(kept(&[&m(Slot::Population, Cadence::Monthly, &[], &["pop.size"])]).unwrap(), ["food", "raw", "manufactured"]);
         assert!(kept(&[&owner(&[])]).unwrap_err().0.contains("names no goods"));
         assert!(kept(&[&owner(&["spice"])]).unwrap_err().0.contains("Economics \"test\": the goods tree has no spice"));
+
+        // What a module asks for must be kept, whole or in parts.
+        let eater = |asks| Manifest { asks, requests: &["province.stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
+        assert_eq!(kept(&[&owner(&["grain", "fish"]), &eater(&["food"])]).unwrap(), ["grain", "fish"]);
+        assert_eq!(kept(&[&owner(&["food"]), &eater(&["food"])]).unwrap(), ["food"]);
+        let refused = |ms: &[&Manifest]| kept(ms).unwrap_err().0;
+        assert_eq!(refused(&[&owner(&["ore"]), &eater(&["food"])]), "Population \"test\" asks for food, but Economics \"test\" keeps none");
+        assert_eq!(refused(&[&owner(&["food"]), &eater(&["grain"])]), "Population \"test\" asks for grain, but Economics \"test\" keeps it only as part of food");
+        assert!(refused(&[&owner(&["food"]), &eater(&["spice"])]).contains("asks for spice, which is not a good"));
+        assert!(refused(&[&owner(&["food"]), &eater(&["goods"])]).contains("asks for goods, which is not a good"));
     }
 
     #[test]

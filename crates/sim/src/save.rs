@@ -34,7 +34,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 5 (step 5): climate and biomes painted by the editor, and springs of drawn rivers.
 /// Format 6 (step 6): the goods tree in the configuration, the food store kept per good
 /// (`province.stock`), and the goods each per-good field holds.
-pub const FORMAT_VERSION: u32 = 6;
+/// Format 7 (step 6): change requests name the good asked for, and a request on a per-good field
+/// names the province rather than one stored good.
+pub const FORMAT_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

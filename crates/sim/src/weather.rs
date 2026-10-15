@@ -35,6 +35,7 @@ static V0: Manifest = Manifest {
     reads: &["province.center"],
     owns: &["province.rain_shortfall"],
     requests: &[],
+    asks: &[],
     requires: &[],
     emits: &[],
     handles: &[EventKind::Drought],

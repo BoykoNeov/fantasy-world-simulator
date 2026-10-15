@@ -22,7 +22,11 @@ What exists:
 - **Change requests** (`requests.rs`): a module changes a value it doesn't own by asking its owner.
   Requests are applied at the end of the day; when they ask for more than exists, priority classes
   are served in order and the class that runs short shares by the largest-remainder rule. Grants
-  reach the requester the next day.
+  reach the requester the next day. A request on stored goods names a node of the goods tree in a
+  province ("food in province 12"), never one store: the owner serves it from all the goods it
+  keeps under that node, as one pool (`serve_goods`), so the requester works whichever goods the
+  economics version keeps. Modules list the goods they ask for in their manifest, and a
+  configuration whose goods can't serve one is refused.
 - **Events** (`events.rs`): sent on day N, delivered on day N+1, in a documented priority order.
 - **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and each
   class of goods changed only by what was reported, and clamps values that leave their bounds; both kinds of
@@ -30,7 +34,8 @@ What exists:
   it doesn't own stops the run.
 - **Saves** (`save.rs`): configuration, module versions and state schemas, the command log, and a
   snapshot with every field by name (a per-good field also names the goods it holds) and
-  everything in flight. Format 6 (step 6) added the goods tree and the per-good store. Loads refuse other format versions,
+  everything in flight. Format 6 (step 6) added the goods tree and the per-good store; format 7
+  the good a change request asks for. Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -40,7 +45,7 @@ What exists:
   | Climate | `latitude` (default), `null`: 15 °C and 800 mm everywhere | at generation |
   | Biomes, Rivers, Fertility, Provinces | one each | at generation |
   | Economics | `food`: monthly harvest and spoilage, keeps one store per province of the "food" class; or off | monthly |
-  | Population | `basic`: asks for a month's food, then is born or starves on the grant; or off | monthly |
+  | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop.
@@ -52,7 +57,10 @@ What exists:
   whole); with no economics, readers find each class, empty. People and each top-level class of
   goods are counted separately and must balance on their own, so goods can't turn into other goods
   unannounced. A clamp is booked to the class it hit. Economics v0 gives exactly the same worlds as
-  before goods had a tree (same fingerprints).- **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
+  before goods had a tree (same fingerprints). Readers ask the tree, not a store: a class reads as
+  the sum of its goods (`World::stock_under`), and a good kept only inside a bigger whole (grain,
+  when food is kept whole) can't be read on its own.
+- **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world

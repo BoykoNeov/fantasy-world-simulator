@@ -60,6 +60,20 @@ pub fn good_name(goods: &Goods, c: usize) -> &str {
     goods.tree.name(goods.columns[c])
 }
 
+/// What a request asks for: "food stock" for food asked of the per-good stock, the field's name
+/// otherwise.
+pub fn asked_name(r: &Request, goods: &Goods) -> String {
+    match r.good {
+        Some(node) => format!("{} {}", goods.tree.name(node), field_name(r.field)),
+        None => field_name(r.field),
+    }
+}
+
+/// The province a request is about, for requests on province and per-good fields.
+pub fn request_province(r: &Request) -> Option<u32> {
+    matches!(r.field.def().tier, Tier::Province | Tier::ProvinceGood).then_some(r.entity)
+}
+
 /// The province one value of a field belongs to, for province and per-good fields.
 pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
@@ -128,12 +142,12 @@ fn cause(c: Cause) -> &'static str {
 
 /// "Population asked for 12,000 from the food stock, for eating".
 pub fn request(r: &Request, goods: &Goods) -> String {
-    format!("{} asked for {} from the {}, for {}", slot_name(r.requester), group(r.take), value_name(r.field, r.entity, goods), cause(r.cause))
+    format!("{} asked for {} from the {}, for {}", slot_name(r.requester), group(r.take), asked_name(r, goods), cause(r.cause))
 }
 
 pub fn grant(r: &Request, granted: u64, goods: &Goods) -> String {
     let share = if r.take == 0 { 100.0 } else { 100.0 * granted as f64 / r.take as f64 };
-    let from = value_name(r.field, r.entity, goods);
+    let from = asked_name(r, goods);
     format!("{} was given {} of {} asked from the {from} ({share:.0}%), for {}", slot_name(r.requester), group(granted), group(r.take), cause(r.cause))
 }
 
@@ -222,8 +236,8 @@ impl LogEntry {
     }
 
     /// A change request applied on `day` that got less than it asked for.
-    pub fn rationed(day: u64, owner: Slot, r: &Request, granted: u64, goods: &Goods) -> LogEntry {
-        let province = province_of(r.field, r.entity, goods);
+    pub fn rationed(day: u64, owner: Slot, r: &Request, granted: u64) -> LogEntry {
+        let province = request_province(r);
         LogEntry { day, source: Source::Module(owner), province, what: Logged::Rationed(*r, granted) }
     }
 

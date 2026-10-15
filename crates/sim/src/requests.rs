@@ -5,9 +5,14 @@
 //! fixed order. When requests ask for more than exists, the owner rations: priority classes are
 //! served in order, and within the class that runs out the rest is split in proportion to what was
 //! asked, by the largest-remainder rule. Each grant reaches its requester the next day.
+//!
+//! A request on a per-good field asks for a node of the goods tree in one province ("food in
+//! province 12"), not for one stored good: the owner serves it from whatever goods it keeps under
+//! that node (see [`serve_goods`]), so the requester works whichever goods the owner keeps.
 
 use crate::fields::FieldId;
-use crate::module::Slot;
+use crate::module::{Ctx, Slot};
+use crate::taxonomy::NodeId;
 use serde::{Deserialize, Serialize};
 
 /// Served in this order when there isn't enough for everyone.
@@ -42,7 +47,10 @@ pub struct Request {
     pub day: u64,
     pub requester: Slot,
     pub field: FieldId,
+    /// The province for province and per-good fields, the pop for pop fields.
     pub entity: u32,
+    /// For per-good fields, the node of the goods tree asked for; `None` for other fields.
+    pub good: Option<NodeId>,
     /// Amount to remove.
     pub take: u64,
     pub priority: Priority,
@@ -53,9 +61,37 @@ pub struct Request {
 }
 
 impl Request {
-    /// The fixed order an owner applies its queue in: field, entity, priority, requester, tag.
-    pub fn order_key(&self, requester_rank: usize) -> (FieldId, u32, Priority, usize, u64) {
-        (self.field, self.entity, self.priority, requester_rank, self.tag)
+    /// The fixed order an owner applies its queue in: field, entity, good, priority, requester, tag.
+    pub fn order_key(&self, requester_rank: usize) -> (FieldId, u32, Option<NodeId>, Priority, usize, u64) {
+        (self.field, self.entity, self.good, self.priority, requester_rank, self.tag)
+    }
+}
+
+/// For owners of a per-good field: serve today's requests on it from `values`, the field's values
+/// (one per province per good kept). The requests for one node in one province share the goods kept
+/// under that node as one pool, rationed by [`ration`]; each grant is taken from those goods in
+/// proportion to how much of each there is, by [`split_proportional`]. With one good kept under
+/// the node, that is simply rationing its store.
+pub fn serve_goods(values: &mut [u64], requests: &[Request], cx: &mut Ctx) {
+    let goods = cx.goods;
+    for run in requests.chunk_by(|a, b| (a.field, a.entity, a.good) == (b.field, b.entity, b.good)) {
+        let node = run[0].good.expect("requests on per-good fields name a good");
+        let columns = goods.columns_under(node).expect("checked at configuration: what is asked for is kept whole or in parts");
+        let at: Vec<usize> = columns.iter().map(|&c| goods.index(run[0].entity as usize, c)).collect();
+        let wants: Vec<_> = run.iter().map(|r| (r.priority, r.take, r.tag)).collect();
+        let grants = ration(at.iter().map(|&i| values[i]).sum(), &wants);
+        for (r, g) in run.iter().zip(grants) {
+            if let [i] = at[..] {
+                values[i] -= g;
+            } else {
+                let held: Vec<u64> = at.iter().map(|&i| values[i]).collect();
+                let ids: Vec<u64> = columns.iter().map(|&c| c as u64).collect();
+                for (&i, part) in at.iter().zip(split_proportional(g, &held, &ids)) {
+                    values[i] -= part;
+                }
+            }
+            cx.grant(r, g);
+        }
     }
 }
 

@@ -4,6 +4,7 @@
 //! Modules declare fields by name in their manifests. The engine uses this table to validate a
 //! configuration, check field contracts, check conservation, fingerprint the world and save it.
 
+use crate::requests::Request;
 use crate::taxonomy::{NodeId, Taxonomy};
 use crate::world::{Fingerprint, World};
 use serde::{Deserialize, Serialize};
@@ -120,6 +121,22 @@ impl Goods {
         self.columns.iter().position(|&c| c == n)
     }
 
+    /// The columns that hold goods of `node`: the columns at or below it, in column order. `None`
+    /// when a column above it keeps it only as part of something bigger (grain, when food is kept
+    /// whole): then no amount of it alone is known.
+    pub fn columns_under(&self, node: NodeId) -> Option<Vec<usize>> {
+        if self.columns.iter().any(|&c| c != node && self.tree.is_under(node, c)) {
+            return None;
+        }
+        Some((0..self.columns.len()).filter(|&c| self.tree.is_under(self.columns[c], node)).collect())
+    }
+
+    /// How much of `node` one province holds, from its row of a per-good field: the sum of the
+    /// columns under it. `None` as for [`Goods::columns_under`].
+    pub fn sum_under(&self, row: &[u64], node: NodeId) -> Option<u64> {
+        Some(self.columns_under(node)?.into_iter().map(|c| row[c]).sum())
+    }
+
     pub fn class_of_column(&self, c: usize) -> u8 {
         self.class[c]
     }
@@ -151,15 +168,14 @@ impl Goods {
         q.into_iter().map(Quantity::Goods).collect()
     }
 
-    /// The quantity an entity of a conserved field is counted in.
-    pub fn quantity_at(&self, id: FieldId, entity: u32) -> Option<Quantity> {
-        let def = id.def();
-        if !def.conserved {
+    /// The quantity what a request takes is counted in, if its field is conserved.
+    pub fn quantity_asked(&self, r: &Request) -> Option<Quantity> {
+        if !r.field.def().conserved {
             return None;
         }
-        Some(match def.tier {
-            Tier::ProvinceGood => Quantity::Goods(self.class[entity as usize % self.columns.len()]),
-            _ => Quantity::People,
+        Some(match r.good {
+            Some(node) => Quantity::Goods(self.tree.class_of(node).expect("the root is never asked for") as u8),
+            None => Quantity::People,
         })
     }
 
@@ -425,9 +441,23 @@ mod tests {
         // Each conserved field is the field of a quantity, and holds it.
         let conserved: Vec<FieldId> = FieldId::all().filter(|id| id.def().conserved).collect();
         assert_eq!(conserved, vec![Quantity::Goods(0).field(), Quantity::People.field()]);
+        // A request takes from the quantity of what it asks for.
         let goods = Goods::default();
-        assert_eq!(goods.quantity_at(Quantity::Goods(0).field(), 4), Some(Quantity::Goods(1)));
-        assert_eq!(goods.quantity_at(Quantity::People.field(), 4), Some(Quantity::People));
+        let ask = |field: &str, good: Option<&str>| Request {
+            day: 0,
+            requester: crate::module::Slot::Population,
+            field: known(field),
+            entity: 4,
+            good: good.map(|g| goods.tree.find(g).unwrap()),
+            take: 1,
+            priority: crate::requests::Priority::Essential,
+            cause: crate::requests::Cause::Eating,
+            tag: 0,
+        };
+        assert_eq!(goods.quantity_asked(&ask("province.stock", Some("raw"))), Some(Quantity::Goods(1)));
+        assert_eq!(goods.quantity_asked(&ask("province.stock", Some("fish"))), Some(Quantity::Goods(0)));
+        assert_eq!(goods.quantity_asked(&ask("pop.size", None)), Some(Quantity::People));
+        assert_eq!(goods.quantity_asked(&ask("province.starved_this_year", None)), None);
     }
 
     #[test]
@@ -446,6 +476,16 @@ mod tests {
         assert_eq!(g.totals(Quantity::Goods(0).field(), &data), vec![(Quantity::Goods(0), 303), (Quantity::Goods(1), 30)]);
         assert_eq!(g.split(4), (1, 1));
         assert_eq!(Quantity::Goods(1).name(&g), "raw");
+
+        // What is under a node: food is grain and fish here, raw is ore, cloth isn't kept.
+        let node = |n: &str| tree.find(n).unwrap();
+        assert_eq!((g.columns_under(node("food")), g.columns_under(node("raw"))), (Some(vec![0, 2]), Some(vec![1])));
+        assert_eq!((g.columns_under(node("cloth")), g.columns_under(0)), (Some(vec![]), Some(vec![0, 1, 2])));
+        assert_eq!((g.sum_under(&[1, 10, 100], node("food")), g.sum_under(&[1, 10, 100], node("tools"))), (Some(101), Some(0)));
+        // Kept whole, food can't be split back into grain.
+        let whole = Goods::new(tree.clone(), &["food", "ore"]).unwrap();
+        assert_eq!((whole.columns_under(node("grain")), whole.columns_under(node("food"))), (None, Some(vec![0])));
+        assert_eq!(whole.sum_under(&[7, 3], node("grain")), None);
 
         assert!(Goods::new(tree.clone(), &["food", "fish"]).unwrap_err().contains("overlap"));
         assert!(Goods::new(tree.clone(), &["goods"]).unwrap_err().contains("whole tree"));
