@@ -83,6 +83,24 @@ What exists:
   Province numbers never change: a province merged away stays as an empty placeholder that keeps
   its centre, and a split's new province is numbered after the last. Pops are only ever added, so
   food on its way to a pop still finds it.
+- **Province neighbours and roads** (`routes.rs`, `World::routes`): which provinces border each
+  other and how many days it takes to travel between them. They are neighbours by land when they
+  share a cell side, and by sea when their coasts face each other across water (lakes below sea
+  level count as water). Ships go at most 400 km out from their own shore, so straits and inland
+  seas are crossed but open oceans aren't. A pair can be both. A way runs from one province's seat
+  (its own cell nearest its centre) to the other's. Over land, a laden cart covers 30 km a day on
+  the flat, each kilometre of climbing or descending costs another day, and getting onto or off a
+  big river costs half a day (so crossing one costs a day). The best crossing of the shared border
+  counts. By sea, a ship covers 100 km a day, plus a day in port at each end. Each way costs the
+  same in both directions. Roads are fixed by the land for now. The list is worked out from the
+  map, not saved, whenever the map changes: at world creation, after a map edit, when going back
+  or forward passes a map edit, and after a load. A timeline copy shares it. If an edit cuts a
+  province in two, the way to its far piece goes over the neighbours' land at half speed. Only a
+  one-province island far out at sea has no neighbour. Nothing reads it yet: trade, a later
+  piece, will. Working it out takes about 0.11 s on a large world (on all cores), once per
+  map edit, never per day; there a province has six neighbours at the median, and the median trip
+  is about 7 days by land and 9 by sea (`examples/route_stats.rs`). Worlds are the same as before:
+  same fingerprints, same tester table, same save format.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a

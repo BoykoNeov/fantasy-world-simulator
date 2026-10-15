@@ -18,6 +18,7 @@ use sim::edit::Edit;
 use sim::events::{Event, Posted};
 use sim::fields::{FieldData, FieldId};
 use sim::requests::Request;
+use sim::routes::Routes;
 use sim::sim::{Command, Sim, Trace};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -37,12 +38,14 @@ pub struct MapState {
     /// key, the same map.
     pub key: (u32, u32, usize, usize),
     pub fields: Vec<(FieldId, FieldData)>,
+    /// Province neighbours, worked out from this map.
+    pub routes: Arc<Routes>,
 }
 
 impl MapState {
     pub fn of(opened: u32, timeline: u32, sim: &Sim) -> Self {
         let (at, last) = sim.map_version();
-        MapState { key: (opened, timeline, at, last), fields: sim.map_fields().map(|id| (id, sim.world.field(id))).collect() }
+        MapState { key: (opened, timeline, at, last), fields: sim.map_fields().map(|id| (id, sim.world.field(id))).collect(), routes: sim.world.routes.clone() }
     }
 }
 

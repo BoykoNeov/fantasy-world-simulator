@@ -24,6 +24,7 @@ pub mod pops;
 pub mod provinces;
 pub mod requests;
 pub mod rng;
+pub mod routes;
 pub mod save;
 pub mod scenario;
 pub mod sim;

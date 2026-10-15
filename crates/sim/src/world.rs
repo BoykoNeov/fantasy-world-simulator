@@ -12,6 +12,7 @@ use crate::grid::Grid;
 use crate::module::{plan, Manifest, Module, Slot};
 use crate::pops::Pops;
 use crate::provinces::Provinces;
+use crate::routes::Routes;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -98,6 +99,9 @@ pub struct World {
     /// Food a cell yields in an average year, rations (field `cell.food_yield`).
     pub food_per_cell: Vec<f64>,
     pub provinces: Provinces,
+    /// Province neighbours and the ways between them. Worked out from the map, not saved: whatever
+    /// changes the map calls [`World::rebuild_routes`].
+    pub routes: Arc<Routes>,
     /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
     pub stock: Vec<u64>,
     /// The goods tree, and which of its goods the per-good fields keep. Set from the configuration
@@ -132,6 +136,7 @@ impl World {
             river_flow: Vec::new(),
             food_per_cell: Vec::new(),
             provinces: Provinces::default(),
+            routes: Arc::new(Routes::default()),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
             starved_this_year: Vec::new(),
@@ -153,7 +158,13 @@ impl World {
         for &i in &plan.generation {
             modules[i].generate(&mut w);
         }
+        w.rebuild_routes();
         w
+    }
+
+    /// Work out the province neighbours again, after the map changed.
+    pub fn rebuild_routes(&mut self) {
+        self.routes = Arc::new(Routes::build(self));
     }
 
     pub fn province_population(&self) -> Vec<u64> {

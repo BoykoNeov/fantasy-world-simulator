@@ -565,6 +565,7 @@ impl MapApp {
                 for (id, data) in &front.state.map.fields {
                     self.geo.set_field(*id, data.clone()).expect("a map of this world");
                 }
+                self.geo.routes = front.state.map.routes.clone();
             }
             for (id, data) in &front.state.fields {
                 self.geo.set_field(*id, data.clone()).expect("the worker's world has the same shape");
@@ -1132,6 +1133,35 @@ impl MapApp {
             self.stock_edit = None;
             self.send_edit(Ok(e));
         }
+
+        // Neighbours and the days it takes to reach them, seat to seat; click one to go there.
+        let routes = self.geo.routes.clone();
+        let links: Vec<&sim::routes::Link> = routes.of(p).collect();
+        ui.separator();
+        egui::CollapsingHeader::new(egui::RichText::new(format!("Neighbours ({})", links.len())).strong()).default_open(true).show(ui, |ui| {
+            if links.is_empty() {
+                ui.small("None: no province shares a border with it or faces it across the water.");
+                return;
+            }
+            let days = |d: Option<f32>| d.map_or("—".to_string(), |d| format!("{d:.1} days"));
+            egui::Grid::new("neighbours").striped(true).num_columns(4).show(ui, |ui| {
+                ui.small("province");
+                ui.small("by land");
+                ui.small("by sea");
+                ui.small("shared border");
+                ui.end_row();
+                for l in links {
+                    let q = l.other(p);
+                    if ui.small_button(format!("{q}")).on_hover_text("select this province").clicked() {
+                        (self.selected, self.pop_edit, self.stock_edit) = (Some(q), None, None);
+                    }
+                    ui.label(days(l.land_days));
+                    ui.label(days(l.sea_days));
+                    ui.label(if l.border_km > 0.0 { format!("{} km", group(l.border_km.round() as u64)) } else { "across water".into() });
+                    ui.end_row();
+                }
+            });
+        });
 
         let front = &self.frames[0];
         let goods = &self.geo.goods;

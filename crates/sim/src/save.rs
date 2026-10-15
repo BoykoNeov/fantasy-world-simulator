@@ -172,6 +172,7 @@ impl Sim {
             sim.world.set_field(crate::fields::known(def.name), b.data).map_err(LoadError)?;
         }
         sim.world.check_lengths().map_err(LoadError)?;
+        sim.world.rebuild_routes();
 
         for m in sim.modules.iter_mut() {
             let man = m.manifest();
