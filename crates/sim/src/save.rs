@@ -49,7 +49,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 14 (step 7): Realms "basic": its parameters in the configuration.
 /// Format 15 (step 7): Characters "rulers": its parameters in the configuration, the character
 /// fields, each realm's ruler and heir, and the succession event.
-pub const FORMAT_VERSION: u32 = 15;
+/// Format 16 (step 7): Diplomacy "wars": its parameters in the configuration, the war fields,
+/// occupation, and the events of war and peace.
+pub const FORMAT_VERSION: u32 = 16;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

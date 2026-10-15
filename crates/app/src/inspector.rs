@@ -33,7 +33,7 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
                 // Realms', armies' and characters' values are not a province's.
-                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character => Vec::new(),
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -81,7 +81,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => None,
     }
 }
 
@@ -197,6 +197,18 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
         ),
         Event::Arrived { people, cause: c, .. } => format!("{} people arrived: {}", group(*people), cause(*c)),
         Event::Succession { realm, ruler, how, .. } => format!("realm {realm} has a new ruler, character {ruler}: {}", how.describe()),
+        Event::DeclareWar { attacker, defender } => format!("realm {attacker} is to declare war on realm {defender}"),
+        Event::ForcePeace { a, b, winner } => match *winner {
+            sim::grid::NONE => format!("realms {a} and {b} are to make peace, nobody winning"),
+            w => format!("realms {a} and {b} are to make peace, realm {w} winning"),
+        },
+        Event::WarDeclared { war, attacker, defender, cause } => format!("realm {attacker} declared war on realm {defender} (war {war}): {}", cause.describe()),
+        Event::Peace { war, attacker, defender, winner } => match *winner {
+            sim::grid::NONE => format!("peace between realms {attacker} and {defender} (war {war}): nobody won, all occupied land goes back"),
+            w => format!("peace between realms {attacker} and {defender} (war {war}): realm {w} won and keeps the land it holds"),
+        },
+        Event::Occupied { by, .. } => format!("realm {by} took the province"),
+        Event::WarRefused { attacker, defender, why } => format!("the poke about realms {attacker} and {defender} was turned down: {}", why.describe()),
     }
 }
 

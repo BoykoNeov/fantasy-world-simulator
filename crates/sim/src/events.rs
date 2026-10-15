@@ -30,6 +30,22 @@ pub enum Event {
     /// Character `ruler` takes realm `realm`'s throne (its capital then was `capital`): after a
     /// ruler's death, or as a new realm's first ruler. Not sent for the rulers a world starts with.
     Succession { realm: u32, capital: u32, ruler: u32, how: crate::characters::Succession },
+    /// The player's poke: realm `attacker` declares war on realm `defender`. It breaks a truce.
+    DeclareWar { attacker: u32, defender: u32 },
+    /// The player's poke: the war between realms `a` and `b` (either way round) ends, won by
+    /// `winner`, one of the two, or by nobody ([`crate::grid::NONE`]): then everything goes back.
+    ForcePeace { a: u32, b: u32, winner: u32 },
+    /// War `war` has begun: `attacker` declared it on `defender`.
+    WarDeclared { war: u32, attacker: u32, defender: u32, cause: crate::diplomacy::WarCause },
+    /// War `war` has ended. `winner` (or nobody, [`crate::grid::NONE`]) keeps every province of the
+    /// other's that it occupies; every other occupation between the two ends. The owner of
+    /// provinces hands them over on delivery.
+    Peace { war: u32, attacker: u32, defender: u32, winner: u32 },
+    /// Realm `by` has taken `province` and occupies it, or, when `by` is its owner, freed it. The
+    /// sender (warfare) sends it only for enemies at war; the owner of provinces applies it.
+    Occupied { province: u32, by: u32 },
+    /// A poke about war or peace between `attacker` and `defender` was turned down, and why.
+    WarRefused { attacker: u32, defender: u32, why: crate::diplomacy::Refusal },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -41,6 +57,12 @@ pub enum EventKind {
     Drought,
     Arrived,
     Succession,
+    DeclareWar,
+    ForcePeace,
+    WarDeclared,
+    Peace,
+    Occupied,
+    WarRefused,
 }
 
 impl EventKind {
@@ -49,13 +71,15 @@ impl EventKind {
     ///
     /// | class | value | kinds |
     /// | --- | --- | --- |
-    /// | destruction and death | 0 | Famine, Drought, Succession |
-    /// | agreements | 1 | (none yet) |
+    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied |
+    /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused |
     /// | routine changes | 2 | Granted, Arrived |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
-            EventKind::Famine | EventKind::Drought | EventKind::Succession => 0,
+            // A province taken the day before a peace is handed over (or given back) by it.
+            EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied => 0,
+            EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused => 1,
             EventKind::Granted | EventKind::Arrived => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
@@ -72,6 +96,12 @@ impl Event {
             Event::Drought { .. } => EventKind::Drought,
             Event::Arrived { .. } => EventKind::Arrived,
             Event::Succession { .. } => EventKind::Succession,
+            Event::DeclareWar { .. } => EventKind::DeclareWar,
+            Event::ForcePeace { .. } => EventKind::ForcePeace,
+            Event::WarDeclared { .. } => EventKind::WarDeclared,
+            Event::Peace { .. } => EventKind::Peace,
+            Event::Occupied { .. } => EventKind::Occupied,
+            Event::WarRefused { .. } => EventKind::WarRefused,
         }
     }
 
@@ -83,17 +113,28 @@ impl Event {
             Event::ContractViolated { entity, .. } => *entity as u64,
             Event::ConservationBroken { .. } | Event::Drought { .. } => 0,
             Event::Succession { realm, .. } => *realm as u64,
+            // Pokes about one pair go by the pair, so the player's order between them holds.
+            Event::DeclareWar { attacker: a, defender: b } | Event::ForcePeace { a, b, .. } | Event::WarRefused { attacker: a, defender: b, .. } => {
+                pair(*a, *b)
+            }
+            Event::WarDeclared { war, .. } | Event::Peace { war, .. } => *war as u64,
+            Event::Occupied { province, .. } => *province as u64,
         }
     }
 
     /// The province this event is about, if it is about one.
     pub fn province(&self) -> Option<u32> {
         match self {
-            Event::Famine { province, .. } | Event::Arrived { province, .. } => Some(*province),
+            Event::Famine { province, .. } | Event::Arrived { province, .. } | Event::Occupied { province, .. } => Some(*province),
             Event::Succession { capital, .. } => Some(*capital),
             _ => None,
         }
     }
+}
+
+/// Two realms as one number, the same whichever comes first.
+fn pair(a: u32, b: u32) -> u64 {
+    ((a.min(b) as u64) << 32) | a.max(b) as u64
 }
 
 /// An event waiting for delivery, or in the log.

@@ -11,6 +11,7 @@ pub mod characters;
 pub mod climate;
 pub mod combos;
 pub mod config;
+pub mod diplomacy;
 pub mod economy;
 pub mod edit;
 pub mod events;
@@ -31,6 +32,8 @@ mod realm_tests;
 mod realm_start_tests;
 #[cfg(test)]
 mod ruler_tests;
+#[cfg(test)]
+mod war_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;

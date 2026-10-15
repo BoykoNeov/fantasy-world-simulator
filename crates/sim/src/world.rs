@@ -8,6 +8,7 @@
 use crate::biome::{self, Biome};
 use crate::characters::Characters;
 use crate::config::ModuleConfig;
+use crate::diplomacy::Wars;
 use crate::fields::{FieldData, FieldId, Goods, Quantity, Tier, FIELDS};
 use crate::grid::Grid;
 use crate::module::{plan, Manifest, Module, Slot};
@@ -138,6 +139,11 @@ pub struct World {
     pub armies: Armies,
     /// Rulers and heirs, living and dead.
     pub characters: Characters,
+    /// The enemy realm occupying each province (field `province.occupier`), [`crate::grid::NONE`]
+    /// where none does.
+    pub occupier: Vec<u32>,
+    /// Wars, going on and ended.
+    pub wars: Wars,
 }
 
 impl World {
@@ -172,6 +178,8 @@ impl World {
             realm_stock: Vec::new(),
             armies: Armies::default(),
             characters: Characters::default(),
+            occupier: Vec::new(),
+            wars: Wars::default(),
         }
     }
 
@@ -258,6 +266,14 @@ impl World {
             "character.martial" => U8(self.characters.martial.clone()),
             "character.greed" => U8(self.characters.greed.clone()),
             "character.ability" => U8(self.characters.ability.clone()),
+            "province.occupier" => U32(self.occupier.clone()),
+            "war.attacker" => U32(self.wars.attacker.clone()),
+            "war.defender" => U32(self.wars.defender.clone()),
+            "war.cause" => U8(self.wars.cause.clone()),
+            "war.began" => U64(self.wars.began.clone()),
+            "war.ended" => U64(self.wars.ended.clone()),
+            "war.winner" => U32(self.wars.winner.clone()),
+            "war.truce_until" => U64(self.wars.truce_until.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -270,7 +286,7 @@ impl World {
             Tier::Cell => Some(self.grid.cells()),
             // The province count is set by the province fields themselves; pops, realms, armies
             // and characters vary.
-            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character => None,
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War => None,
             Tier::ProvinceGood | Tier::RealmGood => {
                 let k = self.goods.stride();
                 if !data.len().is_multiple_of(k) {
@@ -342,6 +358,14 @@ impl World {
             ("character.martial", U8(v)) => self.characters.martial = v,
             ("character.greed", U8(v)) => self.characters.greed = v,
             ("character.ability", U8(v)) => self.characters.ability = v,
+            ("province.occupier", U32(v)) => self.occupier = v,
+            ("war.attacker", U32(v)) => self.wars.attacker = v,
+            ("war.defender", U32(v)) => self.wars.defender = v,
+            ("war.cause", U8(v)) => self.wars.cause = v,
+            ("war.began", U64(v)) => self.wars.began = v,
+            ("war.ended", U64(v)) => self.wars.ended = v,
+            ("war.winner", U32(v)) => self.wars.winner = v,
+            ("war.truce_until", U64(v)) => self.wars.truce_until = v,
             _ => return wrong(),
         }
         Ok(())
@@ -361,6 +385,7 @@ impl World {
         let pops = &mut self.pops;
         let armies = &mut self.armies;
         let people = &mut self.characters;
+        let wars = &mut self.wars;
         match (id.def().name, values) {
             ("cell.elevation", F32(x)) => put(&mut self.elevation, at, x),
             ("cell.temperature", F32(x)) => put(&mut self.temperature, at, x),
@@ -417,6 +442,14 @@ impl World {
             ("character.martial", U8(x)) => put(&mut people.martial, at, x),
             ("character.greed", U8(x)) => put(&mut people.greed, at, x),
             ("character.ability", U8(x)) => put(&mut people.ability, at, x),
+            ("province.occupier", U32(x)) => put(&mut self.occupier, at, x),
+            ("war.attacker", U32(x)) => put(&mut wars.attacker, at, x),
+            ("war.defender", U32(x)) => put(&mut wars.defender, at, x),
+            ("war.cause", U8(x)) => put(&mut wars.cause, at, x),
+            ("war.began", U64(x)) => put(&mut wars.began, at, x),
+            ("war.ended", U64(x)) => put(&mut wars.ended, at, x),
+            ("war.winner", U32(x)) => put(&mut wars.winner, at, x),
+            ("war.truce_until", U64(x)) => put(&mut wars.truce_until, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -437,9 +470,12 @@ impl World {
                 v.resize(goods, 0);
             }
         }
-        // A new province belongs to nobody until whoever made it says otherwise.
-        if self.owner.len() < n {
-            self.owner.resize(n, crate::grid::NONE);
+        // A new province belongs to nobody, and nobody occupies it, until whoever made it says
+        // otherwise.
+        for v in [&mut self.owner, &mut self.occupier] {
+            if v.len() < n {
+                v.resize(n, crate::grid::NONE);
+            }
         }
     }
 
@@ -479,7 +515,7 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province, pop, realm, army and character fields agree on their lengths (after a
+    /// Check that province, pop, realm, army, character and war fields agree on their lengths (after a
     /// load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
@@ -494,6 +530,7 @@ impl World {
                 Tier::RealmGood => self.realms.count() * self.goods.stride(),
                 Tier::Army => self.armies.count(),
                 Tier::Character => self.characters.count(),
+                Tier::War => self.wars.count(),
                 Tier::Cell => continue,
             };
             if len != want {

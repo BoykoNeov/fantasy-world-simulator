@@ -4,13 +4,15 @@
 //! simrun [--size small|medium|large|huge] [--n FACE] [--provinces N] [--seed S] [--years Y]
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
-//!        [--realms settled=W,city=W,frontier=W] [--rulers]
+//!        [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
 //! and `--write-scenario` writes the world at the end as one. `--realms` switches realms on, with
 //! the ways to start weighted as given (`--realms settled=1` is the default way). `--rulers` gives
 //! every realm a ruler and heir (and turns realms on the default way if `--realms` isn't given).
+//! `--wars` keeps wars and truces between realms (started and ended only by pokes, from a scenario
+//! file, for now), turning realms on in the same way.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -65,6 +67,10 @@ fn main() {
     if args.iter().any(|a| a == "--rulers") {
         config.modules.realms.get_or_insert_with(Default::default);
         config.modules.characters = Some(Default::default());
+    }
+    if args.iter().any(|a| a == "--wars") {
+        config.modules.realms.get_or_insert_with(Default::default);
+        config.modules.diplomacy = Some(Default::default());
     }
 
     let t = Instant::now();
@@ -193,6 +199,12 @@ fn print_realms(sim: &Sim) {
         w.realms.capital[biggest as usize]
     );
     print_rulers(sim, biggest, &names[biggest as usize]);
+    let wars = &w.wars;
+    if wars.count() > 0 {
+        let on = (0..wars.count() as u32).filter(|&k| wars.ongoing(k)).count();
+        let won = (0..wars.count()).filter(|&k| wars.winner[k] != sim::grid::NONE).count();
+        println!("wars: {} declared, {on} going on, {won} won, {} ended with nobody winning", wars.count(), wars.count() - on - won);
+    }
 }
 
 /// How rulers came to the throne so far, how long the reigns that ended lasted, and the largest

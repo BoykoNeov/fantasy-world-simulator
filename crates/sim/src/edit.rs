@@ -290,6 +290,7 @@ impl Edit {
                         let new = w.provinces.count - 1;
                         w.rain_shortfall[new] = w.rain_shortfall[run[0] as usize];
                         w.owner[new] = w.owner[run[0] as usize];
+                        w.occupier[new] = w.occupier[run[0] as usize];
                     }
                 }
                 share_out(w, &moved);
@@ -829,7 +830,7 @@ impl MapChange {
                 crate::fields::Tier::Province => out.extend(at.iter().copied()),
                 crate::fields::Tier::ProvinceGood => out.extend(at.iter().map(|&e| w.goods.split(e as usize).0 as u32)),
                 crate::fields::Tier::Army => out.extend(at.iter().filter_map(|&a| w.armies.province.get(a as usize).copied())),
-                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood | crate::fields::Tier::Character => {}
+                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood | crate::fields::Tier::Character | crate::fields::Tier::War => {}
             }
             if id.def().name == "cell.province"
                 && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)

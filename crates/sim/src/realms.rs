@@ -24,7 +24,15 @@
 //! empty land (no people) only as far out from its start as its farthest settled province, so
 //! deserts and ice beyond the settled land stay nobody's; a city-state holds none. The capital is its most populous
 //! province. Names come from the world's seed and the realm's number alone ([`names`]).
+//!
+//! It also keeps which enemy occupies each province (`province.occupier`), and hands land over at
+//! the peace: when [`Event::Peace`] arrives, the winner takes every province of the other's it
+//! occupies, and every other occupation between the two ends. Occupation comes by
+//! [`Event::Occupied`], from whoever takes provinces (warfare), which sends it only between realms
+//! at war: realms can't read the wars, since the wars are kept by a module that reads realms.
+//! A realm left with no land is dissolved.
 
+use crate::events::{Event, EventKind};
 use crate::grid::{dot, NONE, V3};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
 use crate::rng::{draw, purpose, unit, Module as Rng};
@@ -94,14 +102,14 @@ static V1: Manifest = Manifest {
     tier: crate::fields::Tier::Realm,
     cadence: Cadence::Monthly,
     reads: &["pop.province", "pop.size", "province.cells", "province.center"],
-    owns: &["province.owner", "realm.capital"],
+    owns: &["province.owner", "realm.capital", "province.occupier"],
     requests: &[],
     asks: &[],
     moves: &[],
     // Realms are made over settled land: without people there is none.
     requires: &["pop.size"],
     emits: &[],
-    handles: &[],
+    handles: &[EventKind::Occupied, EventKind::Peace],
     state_schema: "none",
     goods: &[],
 };
@@ -131,8 +139,17 @@ impl Module for Founding {
 
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
         let (owner, capital) = found(w, &self.params, cx.seed);
+        w.occupier = vec![NONE; owner.len()];
         w.owner = owner;
         w.realms.capital = capital;
+    }
+
+    fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
+        match *e {
+            Event::Occupied { province, by } => occupy(w, cx, province, by),
+            Event::Peace { war, attacker, defender, winner } => peace(w, cx, war, attacker, defender, winner),
+            _ => {}
+        }
     }
 
     /// Settled land nobody owns may be claimed by a realm next to it: by the one nearest in days,
@@ -330,9 +347,50 @@ fn grow(w: &World, settled: &[bool], way: &[u8], starts: &[Start], from: usize, 
     }
 }
 
+/// Realm `by` takes `province`, or frees it if `by` owns it. Land nobody owns can't be occupied.
+fn occupy(w: &mut World, cx: &mut Ctx, province: u32, by: u32) {
+    let p = province as usize;
+    if p >= w.provinces.count || w.provinces.cells[p] == 0 {
+        return;
+    }
+    let owner = w.owner[p];
+    let to = if by == owner {
+        NONE
+    } else if owner != NONE && w.realms.alive(by) {
+        by
+    } else {
+        return;
+    };
+    w.occupier[p] = to;
+    if cx.traced(province) {
+        let what = if to == NONE { format!("freed by its owner, realm {owner}") } else { format!("occupied by realm {by}, at war with its owner, realm {owner}") };
+        cx.note(format!("the province was {what}"));
+    }
+}
+
+/// War `war` between `attacker` and `defender` has ended: `winner` (or nobody) takes every province
+/// of the other's it occupies, and every other occupation between the two ends.
+fn peace(w: &mut World, cx: &mut Ctx, war: u32, attacker: u32, defender: u32, winner: u32) {
+    for p in 0..w.provinces.count {
+        let (owner, by) = (w.owner[p], w.occupier[p]);
+        if !((owner, by) == (attacker, defender) || (owner, by) == (defender, attacker)) {
+            continue;
+        }
+        let kept = winner != NONE && by == winner;
+        if kept {
+            w.owner[p] = winner;
+        }
+        w.occupier[p] = NONE;
+        if cx.traced(p as u32) {
+            let what = if kept { format!("passes to realm {winner}, which held it") } else { format!("goes back to realm {owner}") };
+            cx.note(format!("peace after war {war}: the occupied province {what}"));
+        }
+    }
+    settle(w);
+}
+
 /// Put realms right after an edit changed the map: a province left with no land belongs to
-/// nobody, a capital the realm no longer holds moves to its most populous province, and a realm
-/// left with no land is dissolved. Nothing to do in a world without realms.
+/// nobody, and then [`settle`]. Nothing to do in a world without realms.
 pub fn repair(w: &mut World) {
     if w.realms.count() == 0 {
         return;
@@ -342,6 +400,13 @@ pub fn repair(w: &mut World) {
             w.owner[p] = NONE;
         }
     }
+    settle(w);
+}
+
+/// After land changed hands: a capital the realm no longer holds moves to its most populous
+/// province, a realm left with no land is dissolved, and an occupation ends where its occupier is
+/// gone or owns the province, or nobody does.
+fn settle(w: &mut World) {
     let people = w.province_population();
     for r in 0..w.realms.count() {
         let c = w.realms.capital[r];
@@ -350,6 +415,13 @@ pub fn repair(w: &mut World) {
         }
         let best = (0..w.provinces.count).filter(|&p| w.owner[p] == r as u32).max_by(|&a, &b| people[a].cmp(&people[b]).then(b.cmp(&a)));
         w.realms.capital[r] = best.map_or(NONE, |p| p as u32);
+    }
+    // A world whose realms module keeps no occupation (a stand-in) has none to put right.
+    for p in 0..w.occupier.len().min(w.provinces.count) {
+        let by = w.occupier[p];
+        if by != NONE && (by == w.owner[p] || w.owner[p] == NONE || !w.realms.alive(by)) {
+            w.occupier[p] = NONE;
+        }
     }
 }
 

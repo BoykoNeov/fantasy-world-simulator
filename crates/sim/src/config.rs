@@ -4,6 +4,7 @@
 use crate::biome::Biomes;
 use crate::calendar::{Calendar, CalendarDef};
 use crate::characters::{RulerParams, Rulers};
+use crate::diplomacy::{WarParams, WarState};
 use crate::climate::{LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::Rivers;
@@ -81,6 +82,10 @@ pub struct ModuleConfig {
     /// and out of [`CHOICES`] until step 7's checks, as realms are.
     #[serde(default)]
     pub characters: Option<RulerParams>,
+    /// Diplomacy v0, "wars": wars, peace and truces between realms, by the player's pokes (step 7).
+    /// Needs realms. Off by default and out of [`CHOICES`] until step 7's checks, as realms are.
+    #[serde(default)]
+    pub diplomacy: Option<WarParams>,
 }
 
 impl Default for ModuleConfig {
@@ -94,6 +99,7 @@ impl Default for ModuleConfig {
             markets: None,
             realms: None,
             characters: None,
+            diplomacy: None,
         }
     }
 }
@@ -134,6 +140,9 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.characters {
             out.push(Box::new(Rulers { params: params.clone() }));
+        }
+        if let Some(params) = &self.diplomacy {
+            out.push(Box::new(WarState { params: params.clone() }));
         }
         out
     }

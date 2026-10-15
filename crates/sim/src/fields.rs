@@ -30,6 +30,8 @@ pub enum Tier {
     /// One entry per character: rulers and heirs (step 7). Numbers are never reused: the dead keep
     /// their entries, with the day they died.
     Character,
+    /// One entry per war (step 7); numbers are never reused, an ended war keeps its entry.
+    War,
 }
 
 impl Tier {
@@ -329,6 +331,16 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("character.martial", Tier::Character, "0 cautious to 100 warlike", 0.0, 100.0) },
     FieldDef { default: Default::Empty, ..def("character.greed", Tier::Character, "0 open-handed to 100 greedy", 0.0, 100.0) },
     FieldDef { default: Default::Empty, ..def("character.ability", Tier::Character, "0 inept to 100 able", 0.0, 100.0) },
+    // Wars and occupation (step 7, Diplomacy "wars"). Occupation is kept by the realms module, which
+    // hands occupied land over at the peace.
+    FieldDef { default: Default::NoOne, ..def("province.occupier", Tier::Province, "realm id occupying it, none where no enemy does", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.attacker", Tier::War, "realm id that declared it", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.defender", Tier::War, "realm id it was declared on", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.cause", Tier::War, "why it was declared (see `WarCause`)", 0.0, 255.0) },
+    FieldDef { default: Default::Empty, ..def("war.began", Tier::War, "day declared", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.ended", Tier::War, "day of the peace, none while it goes on", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.winner", Tier::War, "realm id that won, none while it goes on or when nobody won", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.truce_until", Tier::War, "first day the two may fight again, none while it goes on", 0.0, UNBOUNDED) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

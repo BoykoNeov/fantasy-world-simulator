@@ -1405,7 +1405,7 @@ impl MapApp {
                     }
                     // In the goods table below; realms, armies and rulers get pages of their own
                     // (later in step 7).
-                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character => {}
+                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => {}
                 }
             }
         });

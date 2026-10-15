@@ -42,7 +42,8 @@ What exists:
 owns each province, realms and their stores, armies, four new slots, requests that move what they
 take, and the causes and event that come with them); format 14 the realms module's parameters in
 the configuration; format 15 rulers (the characters module's parameters, the character fields,
-each realm's ruler and heir, and the succession event). Loads refuse other format versions,
+each realm's ruler and heir, and the succession event); format 16 wars (the diplomacy module's
+parameters, the war fields, occupation, and the events of war and peace). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -56,6 +57,7 @@ each realm's ruler and heir, and the succession event). Loads refuse other forma
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
   | Realms | `basic`: makes the starting realms and claims unowned settled land (see below); or off (the default until step 7's checks) | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
+  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -158,7 +160,8 @@ each realm's ruler and heir, and the succession event). Loads refuse other forma
   are (`--no-trade` turns trade off, `--money 1,3` sets the response and range).
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
-  far is a drought: a centre, a radius, how much rain goes missing, and for how long.
+  far are a drought (a centre, a radius, how much rain goes missing, and for how long), and, with
+  wars on, declaring war and forcing a peace (see Wars below).
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world
   react (so far: a pop's size and what it is, a new pop, a province's store of any good the world
   keeps on its own, and reshaping provinces: moving land between them, splitting one, merging two).
@@ -300,6 +303,43 @@ each realm's ruler and heir, and the succession event). Loads refuse other forma
     largest realm's ruler and heir.
   - The engine gives each new realm a ruler and heir of nobody (`World::fit_realm_rows`, as it does
     its stores), so a world with realms but no rulers saves and loads.
+- **Wars** (step 7; Diplomacy "wars", `diplomacy.rs`, tests in `war_tests.rs`). Off by default and
+  not among the tester's choices yet, like realms; a configuration (`ModuleConfig::diplomacy`), a
+  scenario file or `simrun --wars` turns it on. It needs realms (refused without them).
+  - **Wars** are entities like realms, kept as parallel arrays (`war.*` fields): the realm that
+    declared it and the one it was declared on, why (`war.cause`: so far only "the player's poke"),
+    the day it began and the day of the peace, who won (nobody, or one of the two), and the first
+    day the two may fight again (`war.truce_until`). Numbers are never reused: an ended war keeps
+    its entry. Two realms are at war while a war between them goes on, under a truce until its truce
+    ends, and at peace otherwise (`diplomacy::standing`, `at_war`; `enemies` lists each realm's
+    enemies at once, for readers that ask about many pairs).
+  - **Pokes.** `DeclareWar { attacker, defender }` starts a war; it also breaks a truce between them
+    (the truce then ends that day: the player may always start a war). `ForcePeace { a, b, winner }`
+    ends the war between the two, won by one of them or by nobody. A poke that doesn't fit (a realm
+    and itself, a realm that doesn't exist or was dissolved, two already at war, a peace with no war,
+    a winner who isn't one of the two) is turned down with a `WarRefused` event saying why, in the
+    event log. Pokes about the same two realms on the same day keep the player's order.
+  - **The peace.** The winner keeps every province of the other's that it occupies, and every other
+    occupation between the two ends: what it doesn't hold goes back, and with nobody winning
+    everything goes back (the user's choice: a war is not fought over named provinces). A truce of
+    5 years follows (`WarParams::truce_years`). Diplomacy sends `Peace`, and the realms module hands
+    the land over when it arrives: capitals lost move, and a realm left with no land is dissolved.
+    A war with a dissolved realm ends at the next month's start, won by the other side; until then
+    `at_war` already counts it as over.
+  - **Occupation** (`province.occupier`, the enemy realm holding a province) is kept by the realms
+    module. It comes by `Occupied { province, by }` events, which warfare will send for enemies at
+    war (and which tests poke in directly); `by` being the owner frees the province. Occupied land
+    changes hands only at the peace. A split province keeps its occupier; one with no land, or whose
+    occupier is gone, has none.
+  - **Who reads whom.** The engine refuses modules that read each other's fields in a circle. Realms
+    keep the land and occupation; the wars read realms; armies will read both and send occupation
+    back by event. So the realms module can't read the wars, and peace changes land by an event
+    (a test builds this order). Later pieces will need a way to read the day before's values without
+    an order between the modules: trade will read the wars, while realms choosing war will read
+    trade's stores and prices.
+  - With no pokes, worlds with wars on hold the same values as without (a test). Wars cost nothing
+    measurable per day. `simrun` prints how many wars were declared, go on, were won and ended with
+    nobody winning.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
