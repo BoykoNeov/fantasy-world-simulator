@@ -1,0 +1,56 @@
+//! Throwaway: write a scenario file with this build, and each timeline's end state.
+use sim::branch::Timelines;
+use sim::config::Config;
+use sim::edit::{Brush, Edit, Override, PopValues};
+use sim::events::Event;
+use sim::grid::dir_to_lonlat;
+use sim::sim::Sim;
+use sim::world::WorldParams;
+
+fn line(name: &str, v: impl Iterator<Item = u64>) -> String {
+    format!("{name} {}\n", v.map(|x| x.to_string()).collect::<Vec<_>>().join(" "))
+}
+
+fn dump(sim: &Sim) -> String {
+    let w = &sim.world;
+    let mut out = format!("day {}\n", sim.day);
+    out += &line("people", w.province_population().into_iter());
+    out += &line("starved", w.starved_this_year.iter().copied());
+    out += &line("stock food", w.food_stock.iter().copied());
+    out
+}
+
+fn main() {
+    let dir = std::env::args().nth(1).unwrap();
+    let mut s = Sim::new(&Config::new(WorldParams { n: 24, provinces: 40, seed: 21, land_fraction: 0.4, radius_km: 6371.0 })).unwrap();
+    let (lon, lat) = dir_to_lonlat(s.world.provinces.center[0]);
+    let here = [lon.to_degrees(), lat.to_degrees()];
+    s.run_days(40);
+    s.edit(Edit::SetFoodStock { province: 0, rations: 7 }).unwrap();
+    s.run_days(100);
+    s.edit(Edit::SetPop { pop: 1, to: PopValues::people(4321) }).unwrap();
+    s.edit(Edit::AddPop { province: 2, values: PopValues::people(99) }).unwrap();
+    let cells: Vec<u32> = (0..s.world.grid.cells() as u32).filter(|&c| s.world.provinces.of_cell[c as usize] == 3).collect();
+    s.edit(Edit::Split { cells: cells[..cells.len() / 2].to_vec() }).unwrap();
+    s.edit(Edit::Merge { from: 4, into: 5 }).unwrap();
+    s.edit(Edit::Paint { path: vec![here, [here[0] + 3.0, here[1]]], radius_km: 600.0, brush: Brush::Roughen(900.0) }).unwrap();
+    s.edit(Edit::Override { path: vec![here], radius_km: 500.0, set: Override::Rainfall(2500.0) }).unwrap();
+    s.run_days(50);
+    s.edit(Edit::SeaLevel { rise_m: -20.0 }).unwrap();
+    s.edit(Edit::River { path: vec![here, [here[0] + 10.0, here[1] + 5.0]], spring: 30_000_000 }).unwrap();
+    let drought = Event::Drought { lon: here[0], lat: here[1], radius_km: 2000.0, shortfall: 600, days: 300 };
+    s.poke(drought.clone());
+    s.schedule(700, drought).unwrap();
+    s.run_days(500);
+    let mut t = Timelines::new(s);
+    t.branch(200).unwrap();
+    t.sim_mut().edit(Edit::SetFoodStock { province: 6, rations: 12345 }).unwrap();
+    t.sim_mut().run_days(400);
+    std::fs::write(format!("{dir}/step5_food.toml"), t.scenario_text()).unwrap();
+    let mut out = String::new();
+    for tl in &t.list {
+        out += &format!("timeline {}\n", tl.id);
+        out += &dump(&tl.sim);
+    }
+    std::fs::write(format!("{dir}/step5_food.expected"), out).unwrap();
+}

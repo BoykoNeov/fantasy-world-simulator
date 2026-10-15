@@ -10,6 +10,10 @@
 //! - `markets_before_trade`: commit 7593428. Economics "markets" before trade: no trade table.
 //! - `trade_before_money`: commit f27d284. Trade before prices followed the money: a trade table
 //!   without `money_response` or `money_range`.
+//!
+//! The programs that wrote them are kept beside them (`make_fixture_*.rs.txt`, not built): to make a
+//! file again, check out that commit, put the program in `crates/sim/examples/` and run it with the
+//! folder to write to (and, for the markets one, the file's name).
 
 use sim::branch::Timelines;
 use sim::sim::Sim;

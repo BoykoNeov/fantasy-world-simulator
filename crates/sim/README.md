@@ -294,7 +294,8 @@ random-number ID. Results for the same seed differ from step 2's.
 
 ## Running
 
-Tests (a few seconds; the story test runs a world twice for four years):
+Tests (a few seconds; the story tests run story 1's world for four years, twice on Economics "food"
+and three times on markets):
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim
@@ -334,7 +335,11 @@ was meaningless (markets 3–6 ms a day, v0 0.25–0.32 ms). Counted instead as 
 (`RAYON_NUM_THREADS=1`, the process's processor time for 10 years less that for none, large world,
 seeds 1 and 7): a day costs 0.2–0.3 ms for Economics "food", about 1.6 ms for markets without trade
 and 2.3 ms with it. Markets keeps to the 1.5 ms budget only by working provinces on several cores;
-on one free core it would not. Clock time on a quiet machine still to be re-measured.
+on one free core it would not. Once the load fell to about 7 of 16 cores busy, clock time was
+0.48–0.54 ms a day for markets with trade and 0.15–0.16 ms for "food" (two rounds, seeds 1 and 7),
+as when trade was built. With every core busy, markets on all cores was slower than on one (4.7–6.5
+ms against about 3.4 ms): each month's work waits for its slowest share. Capping its cores, or
+handing out work in bigger shares, could help.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 

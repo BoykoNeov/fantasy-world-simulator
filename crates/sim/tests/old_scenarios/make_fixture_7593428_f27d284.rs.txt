@@ -1,0 +1,56 @@
+//! Throwaway: write a scenario file with this build, and each timeline's end state.
+use sim::branch::Timelines;
+use sim::config::Config;
+use sim::edit::Edit;
+use sim::module::Slot;
+use sim::sim::Sim;
+use sim::world::WorldParams;
+
+fn line(name: &str, v: impl Iterator<Item = u64>) -> String {
+    format!("{name} {}\n", v.map(|x| x.to_string()).collect::<Vec<_>>().join(" "))
+}
+
+fn dump(sim: &Sim) -> String {
+    let w = &sim.world;
+    let mut out = format!("day {}\n", sim.day);
+    out += &line("people", w.province_population().into_iter());
+    out += &line("starved", w.starved_this_year.iter().copied());
+    let k = w.goods.stride();
+    let count = w.stock.len() / k;
+    for (c, name) in w.goods.names().iter().enumerate() {
+        out += &line(&format!("stock {name}"), (0..count).map(|p| w.stock[p * k + c]));
+        if !w.price.is_empty() {
+            out += &line(&format!("price {name}"), (0..count).map(|p| w.price[p * k + c]));
+            out += &line(&format!("workers {name}"), (0..count).map(|p| w.workers[p * k + c]));
+        }
+    }
+    out
+}
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let (dir, name) = (args.next().unwrap(), args.next().unwrap());
+    let mut c = Config::new(WorldParams { n: 32, provinces: 80, seed: 5, land_fraction: 0.4, radius_km: 1000.0 });
+    c.modules.set_choice(Slot::Economics, "markets").unwrap();
+    let mut s = Sim::new(&c).unwrap();
+    s.run_days(100);
+    s.edit(Edit::SetStock { province: 1, good: "grain".into(), amount: 0 }).unwrap();
+    s.edit(Edit::SetStock { province: 2, good: "coin".into(), amount: 50_000 }).unwrap();
+    let cells: Vec<u32> = (0..s.world.grid.cells() as u32).filter(|&c| s.world.provinces.of_cell[c as usize] == 3).collect();
+    s.edit(Edit::Split { cells: cells[..cells.len() / 2].to_vec() }).unwrap();
+    s.edit(Edit::Merge { from: 4, into: 5 }).unwrap();
+    let (start, drought) = sim::combos::test_drought(&s).unwrap();
+    s.schedule(start.max(s.day + 30), drought).unwrap();
+    s.run_days(900);
+    let mut t = Timelines::new(s);
+    t.branch(400).unwrap();
+    t.sim_mut().edit(Edit::SetStock { province: 6, good: "tools".into(), amount: 12345 }).unwrap();
+    t.sim_mut().run_days(300);
+    std::fs::write(format!("{dir}/{name}.toml"), t.scenario_text()).unwrap();
+    let mut out = String::new();
+    for tl in &t.list {
+        out += &format!("timeline {}\n", tl.id);
+        out += &dump(&tl.sim);
+    }
+    std::fs::write(format!("{dir}/{name}.expected"), out).unwrap();
+}
