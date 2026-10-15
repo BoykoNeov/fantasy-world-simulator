@@ -1,7 +1,7 @@
 //! Per-good values with several goods kept at once. Economics v0 keeps one good (food), so these
-//! tests put a stand-in economy in its slot that keeps grain, fish and ore: two classes, three
-//! columns per province. The last tests turn Population on and check it asks for food through the
-//! goods tree, whichever goods the economy keeps.
+//! tests put a stand-in economy in its slot that keeps grain, fish, ore and coins: three classes,
+//! four columns per province. The last tests turn Population on and check it asks for food through
+//! the goods tree, whichever goods the economy keeps.
 
 use crate::config::Config;
 use crate::edit::Edit;
@@ -26,14 +26,16 @@ static PANTRY: Manifest = Manifest {
     emits: &[],
     handles: &[],
     state_schema: "none",
-    goods: &["grain", "fish", "ore"],
+    goods: &["grain", "fish", "ore", "coin"],
 };
 
 const FOOD: Quantity = Quantity::Goods(0);
 const RAW: Quantity = Quantity::Goods(1);
+const MONEY: Quantity = Quantity::Goods(3);
 
-/// Each month every province grows 3 grain and digs 2 ore; fish never changes. With `leak`, a unit
-/// of province 0's ore turns into grain, and no flow says so.
+/// Each month every province grows 3 grain and digs 2 ore; fish never changes; province 0 pays
+/// province 1 five coins, which moves coins without making or losing any. With `leak`, a unit of
+/// province 0's ore turns into grain and province 2 finds a coin, and no flow says so.
 struct Pantry {
     leak: bool,
 }
@@ -44,13 +46,13 @@ impl Module for Pantry {
     }
 
     fn init(&mut self, w: &mut World, _cx: &mut Ctx) {
-        // Columns in the order kept: grain, fish, ore.
-        w.stock = (0..w.provinces.count as u64).flat_map(|p| [100 + p, 50, 10]).collect();
+        // Columns in the order kept: grain, fish, ore, coin.
+        w.stock = (0..w.provinces.count as u64).flat_map(|p| [100 + p, 50, 10, 1_000]).collect();
     }
 
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         let g = w.goods.clone();
-        let (grain, ore) = (g.column("grain").unwrap(), g.column("ore").unwrap());
+        let (grain, ore, coin) = (g.column("grain").unwrap(), g.column("ore").unwrap(), g.column("coin").unwrap());
         for p in 0..w.provinces.count {
             w.stock[g.index(p, grain)] += 3;
             w.stock[g.index(p, ore)] += 2;
@@ -58,9 +60,12 @@ impl Module for Pantry {
         let n = w.provinces.count as i64;
         cx.flow(FOOD, Cause::Harvest, 3 * n);
         cx.flow(RAW, Cause::Harvest, 2 * n);
+        w.stock[g.index(0, coin)] -= 5;
+        w.stock[g.index(1, coin)] += 5;
         if self.leak {
             w.stock[g.index(0, ore)] -= 1;
             w.stock[g.index(0, grain)] += 1;
+            w.stock[g.index(2, coin)] += 1;
         }
     }
 }
@@ -88,17 +93,21 @@ fn several_goods_are_kept_counted_stamped_and_saved() {
     let mut sim = world(false);
     let n = sim.world.provinces.count;
     let g = sim.world.goods.clone();
-    assert_eq!(g.names(), ["grain", "fish", "ore"]);
-    assert_eq!(sim.world.stock.len(), 3 * n);
-    assert_eq!(sim.world.quantities(), [Quantity::People, FOOD, RAW]);
+    assert_eq!(g.names(), ["grain", "fish", "ore", "coin"]);
+    assert_eq!(sim.world.stock.len(), 4 * n);
+    assert_eq!(sim.world.quantities(), [Quantity::People, FOOD, RAW, MONEY]);
+    assert_eq!(MONEY.name(&g), "money");
     let total = |sim: &Sim, q| quantity_total(&sim.world, q);
     let (food, raw) = (total(&sim, FOOD), total(&sim, RAW));
-    assert_eq!(raw, 10 * n as u64);
+    assert_eq!((raw, total(&sim, MONEY)), (10 * n as u64, 1_000 * n as u64));
 
-    // Two month starts: day 0 and the first day of the second month.
+    // Two month starts: day 0 and the first day of the second month. Coins changed hands twice,
+    // but none were made or lost.
     let month = sim.calendar.def.months[0].days as u64;
     sim.run_days(month + 1);
     assert_eq!((total(&sim, FOOD), total(&sim, RAW)), (food + 6 * n as u64, raw + 4 * n as u64));
+    assert_eq!(total(&sim, MONEY), 1_000 * n as u64);
+    assert_eq!((sim.world.stock_of(0, "coin"), sim.world.stock_of(1, "coin"), sim.world.stock_under(1, "money")), (Some(990), Some(1_010), Some(1_010)));
     assert_eq!(sim.problems, Problems::default());
     // The year's ledger counts food only.
     let year = sim.year_so_far();
@@ -117,16 +126,16 @@ fn several_goods_are_kept_counted_stamped_and_saved() {
     assert_eq!(sim.fingerprint(), print);
     let loaded = Sim::load_with(&sim.save(), |c| modules(c, false)).unwrap();
     assert_eq!(loaded.fingerprint(), print);
-    assert_eq!(loaded.world.goods.names(), ["grain", "fish", "ore"]);
+    assert_eq!(loaded.world.goods.names(), ["grain", "fish", "ore", "coin"]);
 }
 
 #[test]
 fn conservation_is_checked_per_class() {
     // Ore turned into grain leaves the whole store's total as it was, but food and raw goods each
-    // changed unexplained.
+    // changed unexplained; so did money, by the coin found.
     let mut sim = world(true);
     sim.run_days(2);
-    assert_eq!(sim.problems.conservation_breaks, 2);
+    assert_eq!(sim.problems.conservation_breaks, 3);
     let broken: Vec<(Quantity, i64, Vec<Slot>)> = sim
         .event_log
         .entries
@@ -136,7 +145,7 @@ fn conservation_is_checked_per_class() {
             _ => None,
         })
         .collect();
-    assert_eq!(broken, vec![(FOOD, 1, vec![Slot::Economics]), (RAW, -1, vec![Slot::Economics])]);
+    assert_eq!(broken, vec![(FOOD, 1, vec![Slot::Economics]), (RAW, -1, vec![Slot::Economics]), (MONEY, 1, vec![Slot::Economics])]);
 }
 
 #[test]
@@ -165,20 +174,20 @@ fn edits_move_every_good() {
     let w = &sim.world;
     let p = (0..w.provinces.count).max_by_key(|&p| w.provinces.cells[p]).unwrap();
     let cells: Vec<u32> = (0..w.grid.cells() as u32).filter(|&c| w.provinces.of_cell[c as usize] == p as u32).collect();
-    let before: Vec<u64> = (0..3).map(|c| w.stock[g.index(p, c)]).collect();
+    let before: Vec<u64> = (0..4).map(|c| w.stock[g.index(p, c)]).collect();
 
-    // Half its land becomes a new province, which takes a share of each good.
+    // Half its land becomes a new province, which takes a share of each good and of the coins.
     sim.edit(Edit::Split { cells: cells[..cells.len() / 2].to_vec() }).unwrap();
     let new = sim.world.provinces.count - 1;
-    assert_eq!(sim.world.stock.len(), 3 * (new + 1));
+    assert_eq!(sim.world.stock.len(), 4 * (new + 1));
     let w = &sim.world;
-    for c in 0..3 {
+    for c in 0..4 {
         assert_eq!(w.stock[g.index(p, c)] + w.stock[g.index(new, c)], before[c], "column {c}");
         assert!(w.stock[g.index(new, c)] > 0, "column {c}");
     }
     // Merged back, it all returns.
     sim.edit(Edit::Merge { from: new as u32, into: p as u32 }).unwrap();
-    assert_eq!((0..3).map(|c| sim.world.stock[g.index(p, c)]).collect::<Vec<_>>(), before);
+    assert_eq!((0..4).map(|c| sim.world.stock[g.index(p, c)]).collect::<Vec<_>>(), before);
     assert_eq!(sim.problems, Problems::default());
 
     // Any good kept on its own can be set; the change is the edit's doing.
@@ -189,6 +198,11 @@ fn edits_move_every_good() {
     sim.edit(set("ore", had_ore + 40)).unwrap();
     assert_eq!((sim.world.stock[grain], sim.world.stock[ore]), (7, had_ore + 40));
     assert_eq!((sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit)), (7 - had_grain as i64, 40));
+    // Coins are set the same way, and the money they add is the edit's doing too.
+    let coin = g.index(2, g.column("coin").unwrap());
+    let had_coins = sim.world.stock[coin];
+    sim.edit(set("coin", had_coins + 250)).unwrap();
+    assert_eq!((sim.world.stock[coin], sim.year_flows.get(MONEY, Cause::Edit)), (had_coins + 250, 250));
     assert_eq!(sim.problems, Problems::default());
     // Food is kept as grain and fish here, so it can't be set as one store; nor can what isn't kept.
     let food_whole = "food is kept as grain and fish; set each of those";
@@ -199,15 +213,14 @@ fn edits_move_every_good() {
     assert!(sim.edit(set("grain", 2_000_000_000_000_000)).unwrap_err().contains("more than province.stock can hold"));
     // Refused edits leave nothing in the log.
     let logged = sim.commands.iter().filter(|c| matches!(&c.kind, crate::sim::CommandKind::Edit { edit: Edit::SetStock { .. } })).count();
-    assert_eq!(logged, 2);
+    assert_eq!(logged, 3);
 
-    // The sea covers everything: every good is lost, and the year's flows say so.
-    let (food, raw) = (quantity_total(&sim.world, FOOD), quantity_total(&sim.world, RAW));
-    let set_before = (sim.year_flows.get(FOOD, Cause::Edit), sim.year_flows.get(RAW, Cause::Edit));
+    // The sea covers everything: every good and coin is lost, and the year's flows say so.
+    let had = [FOOD, RAW, MONEY].map(|q| (quantity_total(&sim.world, q), sim.year_flows.get(q, Cause::Edit)));
     sim.edit(Edit::SeaLevel { rise_m: 20_000.0 }).unwrap();
     assert!(sim.world.stock.iter().all(|&s| s == 0));
-    let lost = (sim.year_flows.get(FOOD, Cause::Edit) - set_before.0, sim.year_flows.get(RAW, Cause::Edit) - set_before.1);
-    assert_eq!(lost, (-(food as i64), -(raw as i64)));
+    let lost = [FOOD, RAW, MONEY].map(|q| sim.year_flows.get(q, Cause::Edit));
+    assert_eq!(lost, had.map(|(total, set)| set - total as i64));
     assert_eq!(sim.problems, Problems::default());
 }
 

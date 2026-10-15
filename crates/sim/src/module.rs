@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(kept(&[&owner(&["food"])]).unwrap(), ["food"]);
         assert_eq!(kept(&[&owner(&["grain", "ore"])]).unwrap(), ["grain", "ore"]);
         // Nobody keeps goods: readers find each class, empty.
-        assert_eq!(kept(&[&m(Slot::Population, Cadence::Monthly, &[], &["pop.size"])]).unwrap(), ["food", "raw", "manufactured"]);
+        assert_eq!(kept(&[&m(Slot::Population, Cadence::Monthly, &[], &["pop.size"])]).unwrap(), ["food", "raw", "manufactured", "money"]);
         assert!(kept(&[&owner(&[])]).unwrap_err().0.contains("names no goods"));
         assert!(kept(&[&owner(&["spice"])]).unwrap_err().0.contains("Economics \"test\": the goods tree has no spice"));
 

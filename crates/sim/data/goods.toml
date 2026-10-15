@@ -1,16 +1,22 @@
 # The goods tree (build step 6). Each line names a node's children, in order; the root's children
 # are the top-level classes, and conservation is checked per class. Economics versions choose which
-# nodes they keep stores of (Economics v0 keeps one store of "food"; v1 will keep the eight goods),
-# and readers ask the tree for what they need instead of naming goods in code.
+# nodes they keep stores of (Economics v0 keeps one store of "food"; v1 will keep the eight goods
+# and coins), and readers ask the tree for what they need instead of naming goods in code.
+#
+# Money is a class of its own: coins are counted exactly, like food, and are never made or lost
+# except for a declared cause. One kind of coin for now; more kinds (copper, silver, gold) can be
+# added under "money" later. Keep "money" the last class, so earlier nodes keep their numbers.
 
 root = "goods"
 
 [children]
-goods = ["food", "raw", "manufactured"]
+goods = ["food", "raw", "manufactured", "money"]
 food = ["grain", "fish", "livestock"]
 raw = ["timber", "stone", "ore"]
 manufactured = ["cloth", "tools"]
+money = ["coin"]
 
 # What a good is counted in. A node without one uses its parent's.
 [units]
 food = "rations"
+money = "coins"

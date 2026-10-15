@@ -50,7 +50,9 @@ What exists:
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop.
 - **Goods** (`taxonomy.rs`, `data/goods.toml`, `fields.rs`): the goods tree is data: food (grain,
-  fish, livestock), raw (timber, stone, ore) and manufactured (cloth, tools). It is part of the
+  fish, livestock), raw (timber, stone, ore), manufactured (cloth, tools) and money (coin, counted
+  in coins). Coins are stored and counted like any good: a class of their own, so they are never
+  made or lost unannounced, and edits set and move them like goods. It is part of the
   configuration, so saves and scenarios carry it; a scenario without one gets the shipped tree.
   Stored goods are one field, `province.stock`, with a value per province *per good kept*. The
   economics version chooses which nodes of the tree it keeps (Economics v0 keeps one: "food" as a

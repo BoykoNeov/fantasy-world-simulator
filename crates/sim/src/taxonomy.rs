@@ -151,11 +151,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_shipped_tree_has_three_classes_and_eight_goods() {
+    fn the_shipped_tree_has_eight_goods_and_coins() {
         let t = Taxonomy::standard_goods();
         let names = |v: Vec<NodeId>| v.into_iter().map(|n| t.name(n).to_string()).collect::<Vec<_>>();
-        assert_eq!(names(t.classes()), ["food", "raw", "manufactured"]);
-        assert_eq!(names(t.leaves_under(0)), ["grain", "fish", "livestock", "timber", "stone", "ore", "cloth", "tools"]);
+        assert_eq!(names(t.classes()), ["food", "raw", "manufactured", "money"]);
+        assert_eq!(names(t.leaves_under(0)), ["grain", "fish", "livestock", "timber", "stone", "ore", "cloth", "tools", "coin"]);
+        // Money came last, so the goods before it kept their numbers.
+        assert_eq!((t.find("tools"), t.find("money"), t.find("coin")), (Some(11), Some(12), Some(13)));
+        let coin = t.find("coin").unwrap();
+        assert_eq!((t.class_of(coin), t.unit(coin)), (Some(3), Some("coins")));
         let fish = t.find("fish").unwrap();
         assert_eq!(t.parent(fish), t.find("food"));
         assert_eq!((t.depth(fish), t.class_of(fish), t.unit(fish)), (2, Some(0), Some("rations")));
