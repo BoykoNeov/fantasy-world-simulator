@@ -98,6 +98,11 @@ What exists:
   with each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs. The
   verdict comes from small test worlds (200 provinces, 20 years, default settings), whatever world
   is shown, so green means "no problems found", not "proven safe".
+- **New world** (step 6): pick a size, a seed, the years to run before showing it, and a version
+  for each module; what the combination tester found for those versions shows as they are picked,
+  and a mix it refuses can't be made. Making one asks first, since it replaces the world shown and
+  all its timelines; the world is generated and run on another thread while the old one stays up.
+  If the simulation refuses it anyway, the window says why and keeps the old world.
 
 Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
 
@@ -126,6 +131,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   `graticule`, `roads` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
+- `--remake SIZE,SEED,YEARS[,SLOT=VERSION,...]`: once the window is open, make a new world through
+  the New world section, as a player would (versions not given stay as they are).
 - `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`, `--undo`: once the window is open, in the
   order given, raise land along a short stroke, split half a province off (and select the new one),
   or take back the last change, as a player would (for scripted screenshots; `--split best --undo`

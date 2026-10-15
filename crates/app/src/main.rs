@@ -5,7 +5,8 @@
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
-//!            [--open FILE] [--modules SLOT=VERSION,...] [--bench --out DIR --tag NAME]
+//!            [--open FILE] [--modules SLOT=VERSION,...] [--remake SIZE,SEED,YEARS[,SLOT=VERSION...]]
+//!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
 //! trade, balance (0..1), and coasts, rivers, borders, graticule, roads (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
@@ -18,7 +19,9 @@
 //! `--open` shows a saved world instead of making one: a scenario (`.toml`) or a save of its
 //! timelines (world options, `--years`, `--drought` and `--days` are then ignored). `--modules`
 //! picks module versions, e.g. `economics=off,population=off` (see `sim::config::CHOICES`); the
-//! Modules section shows what the combination tester found for the mix running.
+//! Modules section shows what the combination tester found for the mix running. `--remake` makes a
+//! new world through the New world section once the window is open, as a player would (the
+//! versions given change those of the world shown).
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
@@ -86,6 +89,8 @@ struct Options {
     open: Option<String>,
     /// Edits made through the window once it is open (scripted runs): see `--paint` and `--split`.
     live_edits: Vec<LiveEdit>,
+    /// A new world made through the window once it is open (scripted runs): see `--remake`.
+    remake: Option<String>,
     bench: bool,
     out_dir: String,
     tag: String,
@@ -114,6 +119,7 @@ impl Options {
             screenshot: None,
             open: None,
             live_edits: Vec::new(),
+            remake: None,
             bench: false,
             out_dir: "W:/temp/claude/fantasymap-mapview/bench".into(),
             tag: "default".into(),
@@ -212,6 +218,7 @@ impl Options {
                     let v = value(&mut i);
                     o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
                 }
+                "--remake" => o.remake = Some(value(&mut i)),
                 "--bench" => o.bench = true,
                 "--out" => o.out_dir = value(&mut i),
                 "--tag" => o.tag = value(&mut i),
@@ -270,6 +277,101 @@ struct ModulesInfo {
     verdict: Result<Option<(Verdict, Vec<String>)>, String>,
     /// What the tester's runs were: the verdict says nothing about other worlds.
     tested_on: String,
+}
+
+/// What the window works out once for each world.
+struct WorldInfo {
+    /// Per field: which module sets it, in words, and the owning slot.
+    owners: Vec<(String, Option<Slot>)>,
+    modules: ModulesInfo,
+    /// The columns of the per-good fields that hold coins.
+    coin_columns: Vec<usize>,
+    /// The good the price layer shows first (`good`, or else the first good that is priced).
+    price_good: usize,
+    /// Whether the world trades: markets with trade on.
+    trades: bool,
+}
+
+impl WorldInfo {
+    fn of(sim: &Sim, table: &Result<Table, String>, good: Option<&str>) -> WorldInfo {
+        let manifests = sim.manifests();
+        let owners = FieldId::all()
+            .map(|id| match sim.plan.owner[id.0 as usize] {
+                Some(o) => (format!("{} \"{}\"", inspector::slot_name(manifests[o].slot), manifests[o].version), Some(manifests[o].slot)),
+                None => ("nobody (a default)".into(), None),
+            })
+            .collect();
+        let mc = &sim.config.modules;
+        let versions = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
+        let modules = ModulesInfo { versions, verdict: table.as_ref().map(|t| t.verdict_for(mc)).map_err(|e| e.clone()), tested_on: tested_on(table) };
+        let goods = &sim.world.goods;
+        let coin_columns = mc.markets.as_ref().and_then(|m| goods.columns_under(goods.tree.find(&m.money)?)).unwrap_or_default();
+        let price_good = match good {
+            Some(name) => goods.column(name).filter(|c| !coin_columns.contains(c)).unwrap_or_else(|| panic!("--good {name}: this world doesn't price it")),
+            None => (0..goods.stride()).find(|c| !coin_columns.contains(c)).unwrap_or(0),
+        };
+        WorldInfo { owners, modules, coin_columns, price_good, trades: mc.markets.as_ref().is_some_and(|m| m.trade.is_some()) }
+    }
+}
+
+/// What the combination tester's runs were: its verdict says nothing about other worlds.
+fn tested_on(table: &Result<Table, String>) -> String {
+    table.as_ref().map_or(String::new(), |t| {
+        let s = &t.settings;
+        format!(
+            "Only tested on small worlds ({} provinces, face {}), for {} years on {} seeds, with default settings. Larger worlds, longer runs and changed settings were not tested: this is \"no problems found\", not \"proven safe\".",
+            s.provinces,
+            s.n,
+            s.years,
+            s.seeds.len()
+        )
+    })
+}
+
+/// A world made on another thread: its timelines, its picture and how long it took, or why it
+/// couldn't be made.
+type Made = Result<(Timelines, MapData, f64), String>;
+
+/// The New world section: the size, seed, years run first and module versions picked, and a
+/// world being made from them.
+struct NewWorld {
+    size: Size,
+    seed: u64,
+    years: i64,
+    modules: sim::config::ModuleConfig,
+    /// "make it" was pressed once: the next press replaces the world.
+    confirm: bool,
+    /// A world being made on another thread, since when.
+    making: Option<(Instant, mpsc::Receiver<Made>)>,
+    /// Why the last world couldn't be made.
+    failed: Option<String>,
+}
+
+impl NewWorld {
+    /// Picks that start as the world the window was started with.
+    fn like(opts: &Options, modules: &sim::config::ModuleConfig) -> NewWorld {
+        NewWorld { size: opts.size, seed: opts.params.seed, years: opts.years, modules: modules.clone(), confirm: false, making: None, failed: None }
+    }
+
+    /// Make the world picked on another thread: generate it, run it its years, and build its
+    /// picture. `done` is called when it is ready.
+    fn make(&mut self, done: impl Fn() + Send + 'static) {
+        let mut config = Config::new(WorldParams::preset(self.size, self.seed));
+        config.modules = self.modules.clone();
+        let years = self.years;
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let t0 = Instant::now();
+            let made = Sim::new(&config).map(|mut sim| {
+                sim.run_to_year(sim.calendar.def.first_year + years);
+                let data = MapData::build(&sim);
+                (Timelines::new(sim), data, t0.elapsed().as_secs_f64())
+            }).map_err(|e| e.to_string());
+            let _ = tx.send(made);
+            done();
+        });
+        (self.making, self.confirm, self.failed) = (Some((Instant::now(), rx)), false, None);
+    }
 }
 
 struct MapApp {
@@ -333,6 +435,10 @@ struct MapApp {
     market_for: Option<(usize, usize)>,
     /// Whether the world trades (markets with trade on): the trade layers are offered.
     trades: bool,
+    /// The combination tester's table, shipped with the simulation.
+    table: Result<Table, String>,
+    /// The New world section: what is picked, and a world being made.
+    new_world: NewWorld,
     /// The trade record and map the trade lines on the GPU were built for, and lines waiting for
     /// the next paint callback to upload them.
     trade_lines_for: Option<(usize, usize)>,
@@ -425,33 +531,9 @@ impl MapApp {
         let top = (0..people.len()).max_by_key(|&p| people[p]).unwrap_or(0);
         let bench_target = sim.world.provinces.center.get(top).map_or((0.0, 0.0), |&d| sim::grid::dir_to_lonlat(d));
 
-        let manifests = sim.manifests();
-        let owners = FieldId::all()
-            .map(|id| match sim.plan.owner[id.0 as usize] {
-                Some(o) => (format!("{} \"{}\"", inspector::slot_name(manifests[o].slot), manifests[o].version), Some(manifests[o].slot)),
-                None => ("nobody (a default)".into(), None),
-            })
-            .collect();
-        let mc = &sim.config.modules;
-        let versions = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
         let table = Table::shipped();
-        let tested_on = table.as_ref().map_or(String::new(), |t| {
-            let s = &t.settings;
-            format!(
-                "Only tested on small worlds ({} provinces, face {}), for {} years on {} seeds, with default settings.                  Larger worlds, longer runs and changed settings were not tested: this is \"no problems found\", not \"proven safe\".",
-                s.provinces,
-                s.n,
-                s.years,
-                s.seeds.len()
-            )
-        });
-        let modules = ModulesInfo { versions, verdict: table.map(|t| t.verdict_for(mc)), tested_on };
-        let goods = &sim.world.goods;
-        let coin_columns = mc.markets.as_ref().and_then(|m| goods.columns_under(goods.tree.find(&m.money)?)).unwrap_or_default();
-        let price_good = match &opts.good {
-            Some(name) => goods.column(name).filter(|c| !coin_columns.contains(c)).unwrap_or_else(|| panic!("--good {name}: this world doesn't price it")),
-            None => (0..goods.stride()).find(|c| !coin_columns.contains(c)).unwrap_or(0),
-        };
+        let WorldInfo { owners, modules, coin_columns, price_good, trades } = WorldInfo::of(sim, &table, opts.good.as_deref());
+        let new_world = NewWorld::like(&opts, &sim.config.modules);
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -494,7 +576,9 @@ impl MapApp {
             price_good,
             market: layers::MarketView::default(),
             market_for: None,
-            trades: mc.markets.as_ref().is_some_and(|m| m.trade.is_some()),
+            trades,
+            table,
+            new_world,
             trade_lines_for: None,
             pending_trade: None,
             view: frame.state.view.clone(),
@@ -533,6 +617,39 @@ impl MapApp {
 
     fn day(&self) -> u64 {
         self.frames[0].day
+    }
+
+    /// Show a new world in place of this one: its timelines, and its picture (`data`), made in
+    /// `gen_s` seconds. The old world's simulation stops, and nothing of it is kept.
+    fn adopt(&mut self, timelines: Timelines, data: MapData, gen_s: f64) {
+        let sim = timelines.sim();
+        let WorldInfo { owners, modules, coin_columns, price_good, trades } = WorldInfo::of(sim, &self.table, None);
+        let frame = Frame::now(sim, 0);
+        (self.owners, self.modules, self.coin_columns, self.price_good, self.trades) = (owners, modules, coin_columns, price_good, trades);
+        self.geo = sim.world.clone();
+        self.calendar = sim.calendar.clone();
+        self.clock = Clock::new(sim.day);
+        self.run_to_year = sim.calendar.date(sim.day).year + 5;
+        self.log = sim.event_log.entries.iter().map(|p| LogEntry::of_event(p, &sim.world.goods)).collect();
+        self.seen = HashMap::from([(timelines.active_id(), sim.day)]);
+        self.left_at.clear();
+        (self.shown_state, self.drawn_map, self.view) = (frame.state.clone(), frame.state.map.clone(), frame.state.view.clone());
+        self.frames = VecDeque::from([frame]);
+        (self.epoch, self.opened, self.status, self.rate) = (0, 0, Status::default(), Rate::default());
+        (self.waiting, self.scrub, self.rebuild) = (None, None, None);
+        (self.selected, self.trace_pending, self.trace, self.hover) = (None, None, None, None);
+        // Framed afresh, as a world is when the window opens.
+        self.cam = None;
+        (self.pop_edit, self.stock_good, self.stock_edit) = (None, 0, None);
+        (self.market, self.market_for, self.tables_for, self.trade_lines_for) = (layers::MarketView::default(), None, None, None);
+        (self.pending_tables, self.pending_trade) = (None, None);
+        self.provinces = ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
+        (self.line_segments, self.gpu_provinces, self.gen_s) = (data.lines.len(), data.provinces, gen_s);
+        self.pending_gpu = Some(Arc::new(data));
+        let ctx = self.repaint.clone();
+        let old = std::mem::replace(&mut self.worker, Worker::start_timelines(timelines, move || ctx.request_repaint()));
+        // The old simulation finishes the day it is on before it stops: not on the window's time.
+        std::thread::spawn(move || drop(old));
     }
 
     /// Take in what the simulation sent.
@@ -917,6 +1034,7 @@ impl MapApp {
         ui.separator();
 
         self.modules_section(ui);
+        self.new_world_section(ui);
         ui.separator();
 
         ui.label("Edit");
@@ -1021,6 +1139,12 @@ impl MapApp {
         ui.label("Modules");
         let line: Vec<String> = versions.iter().map(|(slot, v)| format!("{slot} {v}")).collect();
         ui.small(line.join(" · "));
+        Self::verdict_line(ui, verdict, tested_on, "running");
+    }
+
+    /// The combination tester's verdict on a set of versions, in colour, with what it found. `id`
+    /// tells apart the places it is shown.
+    fn verdict_line(ui: &mut egui::Ui, verdict: &Result<Option<(Verdict, Vec<String>)>, String>, tested_on: &str, id: &str) {
         match verdict {
             Ok(Some((v, notes))) => {
                 let (color, words) = match v {
@@ -1029,9 +1153,9 @@ impl MapApp {
                     Verdict::Red => (egui::Color32::from_rgb(180, 50, 40), "unstable in testing"),
                     Verdict::Refused => (egui::Color32::from_rgb(180, 50, 40), "refused: these can't run together"),
                 };
-                ui.colored_label(color, words).on_hover_text(tested_on.as_str());
+                ui.colored_label(color, words).on_hover_text(tested_on);
                 if !notes.is_empty() {
-                    egui::CollapsingHeader::new(format!("what the tester found ({})", notes.len())).show(ui, |ui| {
+                    egui::CollapsingHeader::new(format!("what the tester found ({})", notes.len())).id_salt((id, "tester found")).show(ui, |ui| {
                         for n in notes {
                             ui.small(n);
                         }
@@ -1045,6 +1169,75 @@ impl MapApp {
                 ui.small(format!("the combination tester's table can't be read: {e}"));
             }
         }
+    }
+
+    /// Make another world: its size, seed and module versions, with what the combination tester
+    /// found for those versions, shown as they are picked.
+    fn new_world_section(&mut self, ui: &mut egui::Ui) {
+        let nw = &mut self.new_world;
+        egui::CollapsingHeader::new("New world").default_open(self.opts.remake.is_some()).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("new world size").selected_text(format!("{:?}", nw.size)).show_ui(ui, |ui| {
+                    for z in [Size::Small, Size::Medium, Size::Large, Size::Huge] {
+                        ui.selectable_value(&mut nw.size, z, format!("{z:?}"));
+                    }
+                });
+                ui.label("seed");
+                ui.add(egui::DragValue::new(&mut nw.seed));
+            });
+            ui.horizontal(|ui| {
+                ui.label("run");
+                ui.add(egui::DragValue::new(&mut nw.years).range(0..=500).suffix(" years"));
+                ui.label("before showing it");
+            });
+            egui::Grid::new("new world modules").num_columns(2).show(ui, |ui| {
+                for &(slot, versions) in CHOICES {
+                    ui.label(inspector::slot_name(slot));
+                    let mut v = nw.modules.choice(slot).expect("a slot with a choice");
+                    egui::ComboBox::from_id_salt(("new world version", inspector::slot_name(slot))).selected_text(v).show_ui(ui, |ui| {
+                        for &x in versions {
+                            ui.selectable_value(&mut v, x, x);
+                        }
+                    });
+                    if Some(v) != nw.modules.choice(slot) {
+                        nw.modules.set_choice(slot, v).expect("a version offered for the slot");
+                        nw.confirm = false;
+                    }
+                    ui.end_row();
+                }
+            });
+            // What the tester found for these versions, as they are picked.
+            let verdict = self.table.as_ref().map(|t| t.verdict_for(&nw.modules)).map_err(|e| e.clone());
+            let refused = matches!(verdict, Ok(Some((Verdict::Refused, _))));
+            Self::verdict_line(ui, &verdict, &tested_on(&self.table), "new world");
+            if let Some((since, _)) = &nw.making {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(format!("making the world… {:.0} s", since.elapsed().as_secs_f64()));
+                });
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+            } else if nw.confirm {
+                ui.label("This replaces the world shown and all its timelines; anything not saved is lost.");
+                ui.horizontal(|ui| {
+                    if ui.button("make it").clicked() {
+                        let ctx = self.repaint.clone();
+                        nw.make(move || ctx.request_repaint());
+                    }
+                    if ui.button("cancel").clicked() {
+                        nw.confirm = false;
+                    }
+                });
+            } else if ui
+                .add_enabled(!refused, egui::Button::new("make a new world"))
+                .on_disabled_hover_text("these versions can't run together")
+                .clicked()
+            {
+                nw.confirm = true;
+            }
+            if let Some(e) = &nw.failed {
+                ui.colored_label(egui::Color32::from_rgb(180, 50, 40), format!("couldn't make it: {e}"));
+            }
+        });
     }
 
     fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {
@@ -1528,6 +1721,18 @@ impl eframe::App for MapApp {
         let ppp = ctx.pixels_per_point() as f64;
 
         self.pump();
+        // A new world made: it takes the place of this one.
+        if let Some((_, rx)) = &self.new_world.making {
+            match rx.try_recv() {
+                Ok(Ok((timelines, data, gen_s))) => {
+                    self.new_world.making = None;
+                    self.adopt(timelines, data, gen_s);
+                }
+                Ok(Err(e)) => (self.new_world.making, self.new_world.failed) = (None, Some(e)),
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => (self.new_world.making, self.new_world.failed) = (None, Some("the world maker stopped".into())),
+            }
+        }
         self.play(dt.as_secs_f64().min(0.25));
 
         egui::Panel::top("time").show(ui, |ui| self.time_bar(ui));
@@ -1623,9 +1828,36 @@ impl eframe::App for MapApp {
                     let e = self.opts.live_edits.remove(0);
                     self.live_edit(e);
                 }
-                // Wait for an explanation asked for on the command line, and for edits and the
-                // redrawn map, so they are in the picture.
-                let settled = self.trace_pending.is_none() && self.waiting.is_none() && self.rebuild.is_none() && self.pending_gpu.is_none() && self.opts.live_edits.is_empty();
+                // A new world from the command line, made as a player would.
+                if self.frame >= 3
+                    && let Some(text) = self.opts.remake.take()
+                {
+                    let nw = &mut self.new_world;
+                    let parts: Vec<&str> = text.splitn(4, ',').collect();
+                    nw.size = match parts[0] {
+                        "small" => Size::Small,
+                        "medium" => Size::Medium,
+                        "large" => Size::Large,
+                        "huge" => Size::Huge,
+                        other => panic!("--remake: unknown size {other}"),
+                    };
+                    nw.seed = parts.get(1).expect("--remake SIZE,SEED,YEARS[,SLOT=VERSION...]").parse().expect("--remake seed");
+                    nw.years = parts.get(2).expect("--remake SIZE,SEED,YEARS[,SLOT=VERSION...]").parse().expect("--remake years");
+                    if let Some(m) = parts.get(3) {
+                        sim::combos::choose(&mut nw.modules, m).unwrap_or_else(|e| panic!("--remake: {e}"));
+                    }
+                    let ctx = self.repaint.clone();
+                    nw.make(move || ctx.request_repaint());
+                }
+                // Wait for an explanation asked for on the command line, for edits, a new world and
+                // the redrawn map, so they are in the picture.
+                let settled = self.trace_pending.is_none()
+                    && self.waiting.is_none()
+                    && self.rebuild.is_none()
+                    && self.pending_gpu.is_none()
+                    && self.opts.live_edits.is_empty()
+                    && self.opts.remake.is_none()
+                    && self.new_world.making.is_none();
                 if self.opts.screenshot.is_some() && self.frame >= 10 && settled && !self.screenshot_sent {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
                     self.screenshot_sent = true;
