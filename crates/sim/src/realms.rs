@@ -10,7 +10,7 @@
 //!
 //! - **realms over settled land**: about one realm per [`RealmParams::provinces_per_realm`]
 //!   provinces, and every settled province owned;
-//! - **city-states**: many small realms of one to three settled provinces each;
+//! - **city-states**: many small realms of one to three provinces each, all settled;
 //! - **a frontier**: realms that hold only the land nearest their capital, with unclaimed land
 //!   between them that they claim over time.
 //!
@@ -22,7 +22,7 @@
 //! (by land, and by sea where coasts face each other), so mountains and open water make borders.
 //! Settled land a realm can't reach (an island far out) starts a realm of its own. A realm holds
 //! empty land (no people) only as far out from its start as its farthest settled province, so
-//! deserts and ice beyond the settled land stay nobody's. The capital is its most populous
+//! deserts and ice beyond the settled land stay nobody's; a city-state holds none. The capital is its most populous
 //! province. Names come from the world's seed and the realm's number alone ([`names`]).
 
 use crate::grid::{dot, NONE, V3};
@@ -72,7 +72,7 @@ impl Default for RealmParams {
     }
 }
 
-/// The largest city-state, in settled provinces.
+/// The largest city-state, in provinces. City-states hold no empty land.
 pub const CITY_STATE_MAX: u32 = 3;
 
 /// The three ways to start, as the areas the settled land is split into.
@@ -298,8 +298,8 @@ fn spread(w: &World, cands: &[u32], k: usize, people: &[u64], seed: u64, way: u8
 }
 
 /// Grow the realms `starts[from..]` out over land nobody owns yet, nearest first by travel time
-/// (thousandths of a day), within their own way's area. A city-state stops once it holds its
-/// share of settled provinces. Ties go to the lower realm, then the lower province.
+/// (thousandths of a day), within their own way's area. A city-state takes settled land only,
+/// and stops once it holds its share. Ties go to the lower realm, then the lower province.
 #[allow(clippy::too_many_arguments)]
 fn grow(w: &World, settled: &[bool], way: &[u8], starts: &[Start], from: usize, owner: &mut [u32], dist: &mut [u64], taken: &mut Vec<u32>) {
     taken.resize(starts.len(), 0);
@@ -309,7 +309,7 @@ fn grow(w: &World, settled: &[bool], way: &[u8], starts: &[Start], from: usize, 
     }
     while let Some(Reverse((d, r, p))) = heap.pop() {
         let (pu, s) = (p as usize, &starts[r as usize]);
-        if owner[pu] != NONE || way[pu] != s.way || taken[r as usize] >= s.quota {
+        if owner[pu] != NONE || way[pu] != s.way || taken[r as usize] >= s.quota || (s.way == CITY && !settled[pu]) {
             continue;
         }
         owner[pu] = r;

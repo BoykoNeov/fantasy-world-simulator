@@ -1,9 +1,11 @@
 //! Realms at world creation (step 7): the three ways to start and their mix, capitals, names,
 //! claims over time, and realms put right after edits change the map.
 
+use crate::branch::Timelines;
 use crate::config::Config;
 use crate::edit::Edit;
 use crate::grid::NONE;
+use crate::module::Slot;
 use crate::realms::{names, RealmParams, CITY_STATE_MAX};
 use crate::sim::{Problems, Sim};
 use crate::world::{World, WorldParams};
@@ -102,13 +104,16 @@ fn realms_over_settled_land_own_all_of_it() {
 }
 
 #[test]
-fn city_states_hold_one_to_three_settled_provinces() {
+fn city_states_hold_one_to_three_provinces_all_settled() {
     let sim = world(params(0.0, 1.0, 0.0), 2);
     let w = &sim.world;
     check_realms(w);
     assert_eq!(unowned_settled(w), 0);
     let settled = settled(w);
-    let sizes: Vec<usize> = alive(w).iter().map(|&r| provinces_of(w, r).iter().filter(|&&p| settled[p as usize]).count()).collect();
+    for r in alive(w) {
+        assert!(provinces_of(w, r).iter().all(|&p| settled[p as usize]), "city-state {r} holds empty land");
+    }
+    let sizes: Vec<usize> = alive(w).iter().map(|&r| provinces_of(w, r).len()).collect();
     assert!(sizes.iter().all(|&n| (1..=CITY_STATE_MAX as usize).contains(&n)), "{sizes:?}");
     assert!(sizes.iter().any(|&n| n > 1), "{sizes:?}");
     assert!(sizes.len() as f64 >= settled.iter().filter(|&&s| s).count() as f64 / CITY_STATE_MAX as f64);
@@ -266,6 +271,34 @@ fn claims_survive_saving_loading_and_going_back() {
     sim.goto(today + 2 * year).unwrap();
     assert_eq!(sim.fingerprint(), end);
     assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn realms_run_under_every_economy() {
+    // Not with economics off: realms need people, and people need someone to keep their food.
+    for economics in ["markets", "food"] {
+        let mut c = config(params(1.0, 1.0, 1.0), 2);
+        c.modules.set_choice(Slot::Economics, economics).unwrap();
+        let mut sim = Sim::new(&c).unwrap();
+        sim.strict = true;
+        let at_start = unowned_settled(&sim.world);
+        sim.run_to_year(sim.calendar.date(0).year + 3);
+        check_realms(&sim.world);
+        assert!(unowned_settled(&sim.world) < at_start, "{economics}: claims");
+        assert_eq!(sim.problems, Problems::default(), "{economics}");
+    }
+}
+
+#[test]
+fn a_scenario_file_keeps_its_realms() {
+    let mut sim = world(params(1.0, 1.0, 1.0), 3);
+    sim.run_days(400);
+    let text = Timelines::new(sim.fork()).scenario_text();
+    assert!(text.contains("city_states"), "the realms settings are written");
+    let mut read = Timelines::from_scenario_text(&text).unwrap();
+    let back = read.list.swap_remove(read.active).sim;
+    assert_eq!((back.day, back.fingerprint()), (sim.day, sim.fingerprint()));
+    assert_eq!(back.world.owner, sim.world.owner);
 }
 
 #[test]

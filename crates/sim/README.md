@@ -234,7 +234,7 @@ the configuration. Loads refuse other format versions,
   need Population (refused without it).
   - **Three ways to start, mixable** (`RealmParams`, a weight for each): realms over settled land
     (the default; about one realm per 25 provinces, every settled province owned), city-states (one
-    to three settled provinces each, every settled province owned), and a frontier (realms the same
+    to three provinces each, all settled; every settled province owned), and a frontier (realms the same
     size but holding only the 40% of their settled land nearest their capital, the rest unclaimed).
     A mix goes by region: a large smooth pattern over the planet (the terrain's noise) splits the
     settled land into areas of each way in the shares asked for, so a coast of city-states can lie
@@ -244,7 +244,8 @@ the configuration. Loads refuse other format versions,
     little), and realms grow from them by travel time along the province ways, by land and short
     sea crossings, within their own way's area; mountains and open sea become borders. Settled land
     no realm reached (a far island) starts a realm of its own. A realm holds empty land only as far
-    out as its farthest settled province, so deserts and ice beyond the settled land are nobody's.
+    out as its farthest settled province, so deserts and ice beyond the settled land are nobody's;
+    a city-state holds none.
     Each realm starts in one piece. Its capital is its most populous province.
   - **Claims.** Each month a settled province nobody owns is claimed, with a chance of 0.5%, by the
     neighbouring realm nearest it in days (by the owners at the month's start). On the large world a
