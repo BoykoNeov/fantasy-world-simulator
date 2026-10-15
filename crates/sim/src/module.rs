@@ -324,6 +324,9 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
         }
         for &(from, into) in m.moves {
             let (a, b) = (lookup(m, from)?, lookup(m, into)?);
+            if a == b {
+                return err(format!("{} moves {from} into itself", name(m)));
+            }
             if !m.requests.contains(&from) {
                 return err(format!("{} moves {from} into {into} but doesn't list {from} among its requests", name(m)));
             }

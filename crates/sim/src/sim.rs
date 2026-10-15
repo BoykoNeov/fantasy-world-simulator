@@ -38,12 +38,17 @@ pub struct Ledger {
     pub starved: u64,
     /// Net change from field contracts clamping a value back into bounds (normally 0). With it,
     /// each year balances exactly: food after = before + produced − spoiled − eaten + food_clamped,
-    /// people after = before + births − deaths + people_clamped.
+    /// people after = before + births − deaths + people_clamped + people_edited +
+    /// people_on_the_way.
     pub food_clamped: i64,
     pub people_clamped: i64,
     /// Net change from the player's edits, which balance the year in the same way.
     pub food_edited: i64,
     pub people_edited: i64,
+    /// People between pops and armies at the year's end, counted as gone (negative): soldiers raised
+    /// whose grant arrives next year, or soldiers sent home who arrive next year. The next year
+    /// counts them back in. Zero when nobody moves people between owners.
+    pub people_on_the_way: i64,
 }
 
 impl Ledger {
@@ -67,6 +72,7 @@ impl Ledger {
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
             food_edited: food_net(Cause::Edit),
             people_edited: f.get(Quantity::People, Cause::Edit),
+            people_on_the_way: f.get(Quantity::People, Cause::Raised) + f.get(Quantity::People, Cause::Returned),
         }
     }
 }

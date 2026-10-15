@@ -45,7 +45,7 @@ fn an_edit_shows_at_once_and_balances_the_year() {
     let before = sim.history[sim.history.len() - 2].population;
     let l = &y.ledger;
     assert_eq!(l.people_edited, 12_345 + 777);
-    assert_eq!(y.population as i64, before as i64 + l.births as i64 - l.deaths as i64 + l.people_clamped + l.people_edited);
+    assert_eq!(y.population as i64, before as i64 + l.births as i64 - l.deaths as i64 + l.people_clamped + l.people_edited + l.people_on_the_way);
     assert_eq!(sim.problems, Default::default());
 }
 

@@ -126,15 +126,18 @@ static MUSTER: Manifest = Manifest {
     goods: &[],
 };
 
-/// Raises 100 soldiers a month from one province into one army, and from the second month sends
-/// 30 home again.
+/// Raises 100 soldiers a month (a day, with [`MUSTER_DAILY`]) from one province into one army,
+/// and once it has 30 sends 30 home each time.
 struct Muster {
     from: u32,
+    manifest: &'static Manifest,
 }
+
+static MUSTER_DAILY: Manifest = Manifest { cadence: Cadence::Daily, ..MUSTER };
 
 impl Module for Muster {
     fn manifest(&self) -> &'static Manifest {
-        &MUSTER
+        self.manifest
     }
 
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
@@ -165,20 +168,28 @@ fn muster_from(config: &Config) -> u32 {
     Sim::new(config).unwrap().world.pops.province[0]
 }
 
-fn modules(config: &Config, from: u32) -> Vec<Box<dyn Module>> {
+fn modules_with(config: &Config, from: u32, muster: &'static Manifest) -> Vec<Box<dyn Module>> {
     let swap = |m: Box<dyn Module>| -> Box<dyn Module> { if m.manifest().slot == Slot::Economics { Box::new(Coffers) } else { m } };
     let mut out: Vec<Box<dyn Module>> = config.modules.build().into_iter().map(swap).collect();
     out.push(Box::new(Crowns));
-    out.push(Box::new(Muster { from }));
+    out.push(Box::new(Muster { from, manifest: muster }));
     out
 }
 
-fn world() -> (Sim, u32) {
+fn modules(config: &Config, from: u32) -> Vec<Box<dyn Module>> {
+    modules_with(config, from, &MUSTER)
+}
+
+fn world_with(muster: &'static Manifest) -> (Sim, u32) {
     let config = config();
     let from = muster_from(&config);
-    let mut sim = Sim::new_with(&config, modules(&config, from)).unwrap();
+    let mut sim = Sim::new_with(&config, modules_with(&config, from, muster)).unwrap();
     sim.strict = true;
     (sim, from)
+}
+
+fn world() -> (Sim, u32) {
+    world_with(&MUSTER)
 }
 
 #[test]
@@ -312,6 +323,9 @@ fn moves_must_stay_with_one_owner_and_be_listed() {
     static INTO_PEOPLE: Manifest = Manifest { moves: &[("province.stock", "army.size")], ..CROWNS };
     let e = with(&[&PEOPLE, &NO_ARMY, &INTO_PEOPLE]).unwrap_err().0;
     assert!(e.contains("the same kind of counted quantity"), "{e}");
+    // Nor into the same field.
+    static INTO_ITSELF: Manifest = Manifest { moves: &[("province.stock", "province.stock")], ..CROWNS };
+    assert!(with(&[&INTO_ITSELF]).unwrap_err().0.contains("moves province.stock into itself"));
 }
 
 #[test]
@@ -335,5 +349,64 @@ fn a_province_split_off_keeps_its_owner() {
     assert_eq!(sim.world.owner.len(), sim.world.provinces.count);
     assert_eq!(sim.world.owner[sim.world.provinces.count - 1], 1);
     sim.run_days(40);
+    assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn every_year_balances_with_soldiers_on_the_way_at_new_year() {
+    // Soldiers are raised and sent home every day, so some are always on the way at a year's end.
+    let (mut sim, _) = world_with(&MUSTER_DAILY);
+    let mut start = quantity_total(&sim.world, Quantity::People);
+    // A year's summary is written as the next year's first day runs.
+    sim.run_to_year(sim.calendar.date(0).year + 2);
+    sim.run_days(1);
+    assert_eq!(sim.history.len(), 2);
+    // The first year ends with the last day's 100 raised and 30 sent home on the way; the second
+    // takes those 130 in and ends with 130 more on the way.
+    for (y, on_the_way) in sim.history.iter().zip([-130, 0]) {
+        let l = &y.ledger;
+        assert_eq!(l.people_on_the_way, on_the_way, "year {}", y.year);
+        let end = start as i64 + l.births as i64 - l.deaths as i64 + l.people_clamped + l.people_edited + l.people_on_the_way;
+        assert_eq!(y.population as i64, end, "year {}", y.year);
+        start = y.population;
+    }
+    assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn people_on_the_way_survive_saving_loading_and_going_back() {
+    let config = config();
+    let from = muster_from(&config);
+    let fresh = || {
+        let mut sim = Sim::new_with(&config, modules_with(&config, from, &MUSTER_DAILY)).unwrap();
+        sim.strict = true;
+        sim
+    };
+    let mut sim = fresh();
+    let year = sim.calendar.days_per_year() as u64;
+    // Days to stop at, each with people in flight: soldiers granted last night; the first 30 sent
+    // home; a new year whose checkpoint holds both.
+    let stops = [1, 2, 31, year, year + 1];
+    let mut prints = Vec::new();
+    for &d in &stops {
+        sim.run_days(d - sim.day);
+        assert!(sim.pending.iter().any(|p| matches!(p.event, Event::Granted { .. } | Event::Arrived { .. })), "day {d}: nothing in flight");
+        // Saved here and loaded, the world runs on exactly as the one never saved.
+        let mut loaded = Sim::load_with(&sim.save(), |c| modules_with(c, from, &MUSTER_DAILY)).unwrap();
+        loaded.strict = true;
+        let mut twin = fresh();
+        twin.run_days(d + 40);
+        loaded.run_days(40);
+        assert_eq!(loaded.fingerprint(), twin.fingerprint(), "saved on day {d}");
+        prints.push(sim.fingerprint());
+    }
+    // Going back to each of those days gives the same world.
+    let today = sim.day;
+    for (&d, &print) in stops.iter().zip(&prints).rev() {
+        sim.goto(d).unwrap();
+        assert_eq!(sim.fingerprint(), print, "back to day {d}");
+    }
+    sim.goto(today).unwrap();
+    assert_eq!(sim.fingerprint(), prints[prints.len() - 1]);
     assert_eq!(sim.problems, Problems::default());
 }

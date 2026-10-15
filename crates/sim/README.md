@@ -219,7 +219,9 @@ take, and the causes and event that come with them). Loads refuse other format v
     (`serve_people`). The grant books them out ("raised"); the army's owner books them in when the
     grant arrives the next day. Going home, the army's owner books them out ("returned") and sends
     an event, `Arrived`; the next day Population books them in, in the province's biggest pop (the
-    nearest province with land, if that one has none).
+    nearest province with land, if that one has none). People still on the way when a year ends
+    are counted in that year's summary (`Ledger::people_on_the_way`, negative), so every year
+    balances: people at its end = at its start + births − deaths + clamped + edited + on the way.
   - Worlds without these modules are unchanged: no province has an owner and there are no realms
     or armies. Old scenario files make the same worlds value for value; fingerprints differ only
     because the new fields are hashed.
