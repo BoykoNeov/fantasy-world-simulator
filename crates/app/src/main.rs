@@ -1093,7 +1093,7 @@ impl MapApp {
         if !self.market.price.is_empty() {
             ui.horizontal(|ui| {
                 ui.add(egui::Slider::new(&mut l.prices, 0.0..=1.0).text("prices of"))
-                    .on_hover_text("what the good costs to trade (its local price times the money level) against the middle province: purple cheap, orange dear, from a quarter to four times; clear where nobody lives");
+                    .on_hover_text("what the good costs to trade (its local price times the money level) against the middle province: purple cheap, orange dear, from a quarter to four times; clear where nobody lives. Food goods are priced together, so grain, fish and livestock show the same map");
                 let goods = &self.geo.goods;
                 let mut c = self.price_good;
                 egui::ComboBox::from_id_salt("price layer good").selected_text(inspector::good_name(goods, c)).show_ui(ui, |ui| {

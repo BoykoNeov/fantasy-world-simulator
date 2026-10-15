@@ -1,5 +1,6 @@
 //! How the markets economy settles: each year, people, starved, and per good the world's stores,
-//! workers and median price; then the speed.
+//! workers and median price, what trade moved, where the coins are, and the size of the record of
+//! last month's trade kept for showing it; then the speed.
 //!
 //! cargo run --release -p sim --example market_stats -- [--n FACE] [--provinces N] [--seed S] [--years Y] [--food] [--no-trade] [--money R,X]
 //!
@@ -71,14 +72,16 @@ fn main() {
         let top: u64 = coins[..coins.len().div_ceil(10)].iter().sum();
         let top_share = if all > 0 { top as f64 / all as f64 } else { 0.0 };
         println!(
-            "year {}: people {} starved {} famine provinces {}{} traded {} coins: {poor} provinces under 1 a person, richest tenth hold {:.0}%",
+            "year {}: people {} starved {} famine provinces {}{} traded {} coins: {poor} provinces under 1 a person, richest tenth hold {:.0}%; last month's trade kept for showing: {} shipments, {} KB",
             h.year,
             h.population,
             h.ledger.starved,
             h.famine_provinces,
             row(&sim),
             traded.join(" "),
-            top_share * 100.0
+            top_share * 100.0,
+            sim.world.trade.shipments.len(),
+            std::mem::size_of_val(&sim.world.trade.shipments[..]) / 1024
         );
     }
     let days = sim.day as f64;

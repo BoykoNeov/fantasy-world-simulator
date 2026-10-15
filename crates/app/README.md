@@ -182,5 +182,10 @@ results are in `bench/results/`.
 - **The oval costs more than the rectangle**: each pixel's map position needs a few steps of Newton's
   method instead of a straight formula. Zooming costs more than panning because more line segments
   are on screen.
+- **Re-checked after the step-6 window piece (Oct 15):** one round, oval map, integrated GPU.
+  Default layers: pan 8.7 ms, zoom 11.3 ms (median), within the earlier numbers. With the markets
+  economy and both trade layers on (lines and tint): pan 9.7 ms, zoom 12.0 ms, about 1 ms more.
+  The static line buffer grew from about 315,000 to 385,000 segments with the roads and sea lanes,
+  which are drawn only when switched on. Raw results: `bench/results/step6_window_*.json`.
 - **The RTX 5090 numbers are not informative.** That day it showed a flat 15.6 ms (about 64 frames a
   second) for this app *and* for the renderer trial's program, so something capped it.

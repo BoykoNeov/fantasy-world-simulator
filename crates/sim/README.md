@@ -106,7 +106,9 @@ What exists:
      is kept for showing it (`markets::TradeRecord`, `World::trade`): each good sent along each
      way and what was paid for it. It sits beside the fields, so it is not saved, not in the
      fingerprint, and read by no module; checkpoints in memory carry it, so going back shows the
-     trade of that time, and a world just opened has none until a month's trade runs.
+     trade of that time, and a world just opened has none until a month's trade runs. On the
+     large world it holds 25,000–32,000 shipments, 0.8–1 MB in each yearly checkpoint (about a
+     third of what markets' checkpoints already cost); `examples/market_stats.rs` prints it.
 
   Coins (the goods under the money class, found through the tree) are never made, used or priced:
   each person starts with 20, held by the province, and trade moves them. How each good is made,
