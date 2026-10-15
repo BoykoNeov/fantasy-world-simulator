@@ -207,7 +207,7 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
             sim::grid::NONE => format!("peace between realms {attacker} and {defender} (war {war}): nobody won, all occupied land goes back"),
             w => format!("peace between realms {attacker} and {defender} (war {war}): realm {w} won and keeps the land it holds"),
         },
-        Event::Occupied { by, .. } => format!("realm {by} took the province"),
+        Event::Occupied { by, .. } => format!("realm {by} took the province (or, if it owns it, freed it)"),
         Event::WarRefused { attacker, defender, why } => format!("the poke about realms {attacker} and {defender} was turned down: {}", why.describe()),
     }
 }
