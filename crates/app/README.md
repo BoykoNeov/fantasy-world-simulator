@@ -67,8 +67,10 @@ What exists:
   shown.
 
 - **Modules** (step 6): the module versions running, and what the combination tester found for
-  that mix (`crates/sim/data/compatibility.toml`): works together, known quirks, or unstable, with
-  each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs.
+  that mix (`crates/sim/data/compatibility.toml`): no problems found, known quirks, or unstable,
+  with each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs. The
+  verdict comes from small test worlds (200 provinces, 20 years, default settings), whatever world
+  is shown, so green means "no problems found", not "proven safe".
 
 Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
 

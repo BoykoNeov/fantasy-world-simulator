@@ -260,6 +260,8 @@ struct DroughtTool {
 struct ModulesInfo {
     versions: Vec<(String, &'static str)>,
     verdict: Result<Option<(Verdict, Vec<String>)>, String>,
+    /// What the tester's runs were: the verdict says nothing about other worlds.
+    tested_on: String,
 }
 
 struct MapApp {
@@ -409,7 +411,18 @@ impl MapApp {
             .collect();
         let mc = &sim.config.modules;
         let versions = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
-        let modules = ModulesInfo { versions, verdict: Table::shipped().map(|t| t.verdict_for(mc)) };
+        let table = Table::shipped();
+        let tested_on = table.as_ref().map_or(String::new(), |t| {
+            let s = &t.settings;
+            format!(
+                "Only tested on small worlds ({} provinces, face {}), for {} years on {} seeds, with default settings.                  Larger worlds, longer runs and changed settings were not tested: this is \"no problems found\", not \"proven safe\".",
+                s.provinces,
+                s.n,
+                s.years,
+                s.seeds.len()
+            )
+        });
+        let modules = ModulesInfo { versions, verdict: table.map(|t| t.verdict_for(mc)), tested_on };
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -913,20 +926,19 @@ impl MapApp {
 
     /// The versions running, and the combination tester's verdict on them.
     fn modules_section(&self, ui: &mut egui::Ui) {
-        let ModulesInfo { versions, verdict } = &self.modules;
+        let ModulesInfo { versions, verdict, tested_on } = &self.modules;
         ui.label("Modules");
         let line: Vec<String> = versions.iter().map(|(slot, v)| format!("{slot} {v}")).collect();
         ui.small(line.join(" · "));
-        let tested = "the combination tester ran this mix of versions for 20 years on small worlds, three seeds";
         match verdict {
             Ok(Some((v, notes))) => {
                 let (color, words) = match v {
-                    Verdict::Green => (egui::Color32::from_rgb(70, 130, 60), "tested: works together"),
-                    Verdict::Yellow => (egui::Color32::from_rgb(170, 130, 30), "tested: known quirks"),
-                    Verdict::Red => (egui::Color32::from_rgb(180, 50, 40), "tested: unstable"),
+                    Verdict::Green => (egui::Color32::from_rgb(70, 130, 60), "no problems found in testing"),
+                    Verdict::Yellow => (egui::Color32::from_rgb(170, 130, 30), "known quirks found in testing"),
+                    Verdict::Red => (egui::Color32::from_rgb(180, 50, 40), "unstable in testing"),
                     Verdict::Refused => (egui::Color32::from_rgb(180, 50, 40), "refused: these can't run together"),
                 };
-                ui.colored_label(color, words).on_hover_text(tested);
+                ui.colored_label(color, words).on_hover_text(tested_on.as_str());
                 if !notes.is_empty() {
                     egui::CollapsingHeader::new(format!("what the tester found ({})", notes.len())).show(ui, |ui| {
                         for n in notes {
