@@ -11,7 +11,7 @@
 
 use crate::calendar::Calendar;
 use crate::events::{Event, EventKind};
-use crate::fields::{self, FieldId, Quantity, Tier};
+use crate::fields::{self, FieldId, Goods, Quantity, Tier};
 use crate::requests::{Cause, Priority, Request};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -75,12 +75,15 @@ pub struct Manifest {
     pub handles: &'static [EventKind],
     /// Layout of the module's private state in saves. Change it whenever that layout changes.
     pub state_schema: &'static str,
+    /// For owners of per-good fields: the nodes of the goods tree it keeps values of, one column
+    /// each (see [`Goods`]). Empty for everyone else.
+    pub goods: &'static [&'static str],
 }
 
 impl Manifest {
     /// A generation module: it reads some fields and writes the ones it owns, once.
     pub const fn generation(slot: Slot, version: &'static str, tier: Tier, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 }
 
@@ -133,6 +136,8 @@ pub struct Ctx<'a> {
     pub day: u64,
     pub seed: u64,
     pub calendar: &'a Calendar,
+    /// The goods tree and the goods the world keeps.
+    pub goods: &'a Goods,
     pub slot: Slot,
     pub(crate) out: &'a mut Outbox,
     /// The province being traced, when the inspector replays a day to explain it.
@@ -169,7 +174,7 @@ impl Ctx<'_> {
     /// For owners applying requests: record the grant, report the flow, and tell the requester
     /// tomorrow.
     pub fn grant(&mut self, r: &Request, granted: u64) {
-        if let Some(q) = r.field.def().conserved {
+        if let Some(q) = self.goods.quantity_at(r.field, r.entity) {
             self.out.flows.add(q, r.cause, -(granted as i64));
         }
         self.out.applied.push((*r, granted));
@@ -316,18 +321,42 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
     Ok(Plan { generation: order(true)?, runtime: order(false)?, owner })
 }
 
+/// The goods a checked configuration keeps: what the owners of per-good fields name in their
+/// manifests (they must agree), or the tree's classes when nobody owns one.
+pub fn goods_kept(manifests: &[&Manifest], plan: &Plan, tree: crate::taxonomy::Taxonomy) -> Result<Goods, ConfigError> {
+    let name = |m: &Manifest| format!("{:?} \"{}\"", m.slot, m.version);
+    let mut kept: Option<&Manifest> = None;
+    for id in FieldId::all().filter(|id| id.def().tier == Tier::ProvinceGood) {
+        let Some(o) = plan.owner[id.0 as usize] else { continue };
+        let m = manifests[o];
+        if m.goods.is_empty() {
+            return Err(ConfigError(format!("{} owns {}, kept per good, but names no goods to keep", name(m), id.def().name)));
+        }
+        match kept {
+            Some(k) if k.goods != m.goods => {
+                return Err(ConfigError(format!("{} keeps goods {:?} but {} keeps {:?}: per-good fields must keep the same goods", name(k), k.goods, name(m), m.goods)));
+            }
+            _ => kept = Some(m),
+        }
+    }
+    match kept {
+        Some(m) => Goods::new(tree, m.goods).map_err(|e| ConfigError(format!("{}: {e}", name(m)))),
+        None => Ok(Goods::classes(tree)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none" }
+        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 
     #[test]
     fn owners_run_before_readers_and_ties_go_by_slot() {
         let a = m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]);
-        let b = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.food_stock"]);
+        let b = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.stock"]);
         let c = m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]);
         let d = m(Slot::Climate, Cadence::Generation, &["cell.elevation"], &["cell.temperature"]);
         let p = plan(&[&d, &b, &a, &c]).unwrap();
@@ -336,7 +365,7 @@ mod tests {
         assert_eq!(p.generation, vec![3, 0]);
         // Independent modules: slot order, whatever order they were listed in.
         let e = m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]);
-        let f = m(Slot::Economics, Cadence::Monthly, &[], &["province.food_stock"]);
+        let f = m(Slot::Economics, Cadence::Monthly, &[], &["province.stock"]);
         assert_eq!(plan(&[&e, &f]).unwrap().runtime, vec![1, 0]);
     }
 
@@ -356,22 +385,35 @@ mod tests {
     fn unmet_needs_are_refused() {
         let reads = m(Slot::Climate, Cadence::Generation, &["cell.elevation"], &["cell.temperature"]);
         fails(&[&reads], "reads cell.elevation, but no active module provides it");
-        let requires = Manifest { requires: &["province.food_stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
-        fails(&[&requires], "requires province.food_stock");
-        let requests = Manifest { requests: &["province.food_stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
-        fails(&[&requests], "sends change requests to province.food_stock, but no active module owns it");
+        let requires = Manifest { requires: &["province.stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
+        fails(&[&requires], "requires province.stock");
+        let requests = Manifest { requests: &["province.stock"], ..m(Slot::Population, Cadence::Monthly, &[], &["pop.size"]) };
+        fails(&[&requests], "sends change requests to province.stock, but no active module owns it");
         let typo = m(Slot::Climate, Cadence::Generation, &["cell.elevaton"], &[]);
         fails(&[&typo], "unknown field cell.elevaton");
         // A field with a documented default may be read without an owner.
-        let ok = m(Slot::Population, Cadence::Monthly, &["province.food_stock"], &["pop.size"]);
+        let ok = m(Slot::Population, Cadence::Monthly, &["province.stock"], &["pop.size"]);
         assert!(plan(&[&ok]).is_ok());
     }
 
     #[test]
     fn cycles_are_refused() {
-        let a = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.food_stock"]);
-        let b = m(Slot::Population, Cadence::Monthly, &["province.food_stock"], &["pop.size"]);
+        let a = m(Slot::Economics, Cadence::Monthly, &["pop.size"], &["province.stock"]);
+        let b = m(Slot::Population, Cadence::Monthly, &["province.stock"], &["pop.size"]);
         fails(&[&a, &b], "same-day dependency cycle among Economics \"test\", Population \"test\"");
+    }
+
+    #[test]
+    fn the_owner_of_the_stock_chooses_the_goods_kept() {
+        let tree = crate::taxonomy::Taxonomy::standard_goods;
+        let kept = |ms: &[&Manifest]| goods_kept(ms, &plan(ms).unwrap(), tree()).map(|g| g.names());
+        let owner = |goods| Manifest { goods, ..m(Slot::Economics, Cadence::Monthly, &[], &["province.stock"]) };
+        assert_eq!(kept(&[&owner(&["food"])]).unwrap(), ["food"]);
+        assert_eq!(kept(&[&owner(&["grain", "ore"])]).unwrap(), ["grain", "ore"]);
+        // Nobody keeps goods: readers find each class, empty.
+        assert_eq!(kept(&[&m(Slot::Population, Cadence::Monthly, &[], &["pop.size"])]).unwrap(), ["food", "raw", "manufactured"]);
+        assert!(kept(&[&owner(&[])]).unwrap_err().0.contains("names no goods"));
+        assert!(kept(&[&owner(&["spice"])]).unwrap_err().0.contains("Economics \"test\": the goods tree has no spice"));
     }
 
     #[test]
@@ -379,8 +421,8 @@ mod tests {
         let a = m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]);
         let b = m(Slot::Terrain, Cadence::Generation, &[], &["cell.temperature"]);
         fails(&[&a, &b], "two modules fill the Terrain slot");
-        let run = m(Slot::Economics, Cadence::Monthly, &[], &["province.food_stock"]);
-        let gen_reader = m(Slot::Provinces, Cadence::Generation, &["province.food_stock"], &[]);
-        fails(&[&run, &gen_reader], "runs at generation but reads province.food_stock");
+        let run = m(Slot::Economics, Cadence::Monthly, &[], &["province.stock"]);
+        let gen_reader = m(Slot::Provinces, Cadence::Generation, &["province.stock"], &[]);
+        fails(&[&run, &gen_reader], "runs at generation but reads province.stock");
     }
 }

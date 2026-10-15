@@ -144,7 +144,7 @@ mod tests {
             request: Request {
                 day: 4,
                 requester: Slot::Population,
-                field: crate::fields::known("province.food_stock"),
+                field: crate::fields::known("province.stock"),
                 entity,
                 take: 1,
                 priority: Priority::Essential,
@@ -154,7 +154,7 @@ mod tests {
             granted: 1,
         };
         let mut v = vec![
-            posted(None, 0, Event::ConservationBroken { quantity: Quantity::Food, expected: 1, actual: 2, by: vec![] }),
+            posted(None, 0, Event::ConservationBroken { quantity: Quantity::Goods(0), expected: 1, actual: 2, by: vec![] }),
             posted(Some(Slot::Economics), 1, grant(9)),
             posted(Some(Slot::Economics), 2, grant(3)),
             posted(Some(Slot::Population), 3, Event::Famine { province: 5, starved: 1 }),

@@ -17,7 +17,7 @@
 
 use crate::config::{Config, ModuleConfig, CHOICES};
 use crate::events::Event;
-use crate::fields::{quantity_total, FieldId, Quantity, FIELDS, QUANTITIES};
+use crate::fields::{quantity_total, FieldId, Quantity};
 use crate::module::{plan, Manifest};
 use crate::scenario::{Scenario, ScenarioCommand, ScenarioTimeline, SCENARIO_FORMAT};
 use crate::sim::Sim;
@@ -394,10 +394,13 @@ impl Watch {
     fn new(sim: &Sim) -> Watch {
         let owned = |id: FieldId| sim.plan.owner[id.0 as usize].is_some();
         let running: Vec<FieldId> = sim.running_fields().filter(|&id| owned(id)).collect();
-        let totals = QUANTITIES
-            .iter()
-            .filter(|&&q| FIELDS.iter().position(|f| f.conserved == Some(q)).is_some_and(|i| running.contains(&FieldId(i as u16))))
-            .map(|&q| (q, quantity_total(&sim.world, q), None))
+        // Only goods the world keeps count (a class with no store is always empty).
+        let totals = sim
+            .world
+            .quantities()
+            .into_iter()
+            .filter(|q| running.contains(&q.field()))
+            .map(|q| (q, quantity_total(&sim.world, q), None))
             .collect();
         let tops = running.iter().filter(|id| id.def().max.is_finite()).map(|&id| (id, None)).collect();
         Watch { totals, tops, problems: sim.problems, changed: sim.day, still: (0, sim.day), findings: Vec::new(), clamps: None, breaks: None }
@@ -418,7 +421,9 @@ impl Watch {
         }
         if p.conservation_breaks > self.problems.conservation_breaks && self.breaks.is_none() {
             let what = sim.pending.iter().find_map(|e| match &e.event {
-                Event::ConservationBroken { quantity, expected, actual, by } => Some(format!("{quantity:?} was {actual}, expected {expected} (by {by:?})")),
+                Event::ConservationBroken { quantity, expected, actual, by } => {
+                    Some(format!("{} was {actual}, expected {expected} (by {by:?})", quantity.name(&sim.world.goods)))
+                }
                 _ => None,
             });
             self.breaks = Some(self.findings.len());
@@ -434,7 +439,7 @@ impl Watch {
             match (now, *zero) {
                 (0, None) => *zero = Some(day),
                 (0, Some(since)) if day - since == GONE_DAYS => {
-                    self.findings.push(Finding { problem: Problem::AllGone, day: since, what: format!("{q:?} at zero for {GONE_DAYS} days"), known: None });
+                    self.findings.push(Finding { problem: Problem::AllGone, day: since, what: format!("{} at zero for {GONE_DAYS} days", q.name(&sim.world.goods)), known: None });
                 }
                 (0, Some(_)) => {}
                 _ => *zero = None,
@@ -738,7 +743,7 @@ mod tests {
         assert!(Mix::parse("economics=gold").unwrap_err().contains("no version gold"));
         assert!(Mix::parse("magic=on").unwrap_err().contains("no slot magic"));
         // People need food to ask for.
-        assert!(Mix::parse("economics=off").unwrap().check().unwrap_err().contains("province.food_stock"));
+        assert!(Mix::parse("economics=off").unwrap().check().unwrap_err().contains("province.stock"));
         assert_eq!(all_mixes().len(), 32);
     }
 
@@ -798,10 +803,10 @@ mod tests {
     fn the_scorer_catches_planted_faults() {
         quiet_panics();
         // Food from nowhere, on the first day (a month start): blamed on the economy.
-        let f = rogue_run("population=off", Slot::Economics, 1, |w, _| w.food_stock[0] += 1);
+        let f = rogue_run("population=off", Slot::Economics, 1, |w, _| w.stock[0] += 1);
         assert_eq!(problems(&f), vec![Problem::ConservationBroken]);
         assert_eq!(f[0].day, 0);
-        assert!(f[0].what.contains("Food") && f[0].what.contains("Economics"), "{}", f[0].what);
+        assert!(f[0].what.contains("food was") && f[0].what.contains("Economics"), "{}", f[0].what);
 
         // Missing rain past its bound: clamped back, and so held at the top.
         let f = rogue_run("", Slot::Weather, 2, |w, _| w.rain_shortfall[3] = 5000);
@@ -815,9 +820,9 @@ mod tests {
 
         // All the food thrown away every month, declared: nothing is broken, but nothing is left.
         let f = rogue_run("population=off", Slot::Economics, 1, |w, cx| {
-            let all: u64 = w.food_stock.iter().sum();
-            w.food_stock.iter_mut().for_each(|s| *s = 0);
-            cx.flow(Quantity::Food, Cause::Spoilage, -(all as i64));
+            let all: u64 = w.stock.iter().sum();
+            w.stock.iter_mut().for_each(|s| *s = 0);
+            cx.flow(Quantity::Goods(0), Cause::Spoilage, -(all as i64));
         });
         assert_eq!(problems(&f), vec![Problem::AllGone], "{f:?}");
 

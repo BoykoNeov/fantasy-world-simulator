@@ -7,16 +7,17 @@
 //! - each module's slot, version and private-state schema, so a load with a different build is
 //!   refused instead of misread;
 //! - the command log, which starts with the configuration's timeline segment;
-//! - snapshots. Each holds every shared field by name with its taxonomy depth, each module's
-//!   private state tagged with its schema, and the engine's state in flight: events waiting for
-//!   delivery (grants included), the year's flows, the history of years and the problem counts.
+//! - snapshots. Each holds every shared field by name with its taxonomy depth (and, for a per-good
+//!   field, the goods it holds), each module's private state tagged with its schema, and the
+//!   engine's state in flight: events waiting for delivery (grants included), the year's flows,
+//!   the history of years and the problem counts.
 //!
 //! The event log is not saved: it is history, and prunable. Saves are taken between days, when no
 //! change request is queued.
 
 use crate::config::Config;
 use crate::events::Posted;
-use crate::fields::{FieldData, FieldId, FIELDS};
+use crate::fields::{FieldData, FieldId, Goods, Tier, FIELDS};
 use crate::module::{ConfigError, Flows, Slot};
 use crate::sim::{to_bytes, Command, ModuleRecord, Problems, Sim, YearSummary};
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 4 (step 5): the drainage order is no longer stored (it is rebuilt from the downstream
 /// links when rivers are worked out).
 /// Format 5 (step 5): climate and biomes painted by the editor, and springs of drawn rivers.
-pub const FORMAT_VERSION: u32 = 5;
+/// Format 6 (step 6): the goods tree in the configuration, the food store kept per good
+/// (`province.stock`), and the goods each per-good field holds.
+pub const FORMAT_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
@@ -52,7 +55,11 @@ pub struct Snapshot {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FieldBlob {
     pub name: String,
+    /// Taxonomy depth the values are stored at: the deepest good kept, for a per-good field; 0
+    /// for every other field.
     pub depth: u8,
+    /// For a per-good field, the goods it holds, in column order; empty otherwise.
+    pub goods: Vec<String>,
     pub data: FieldData,
 }
 
@@ -92,7 +99,10 @@ impl Sim {
     /// The whole simulation as save-file bytes, with one snapshot at the current day.
     pub fn save(&self) -> Vec<u8> {
         let fields = FieldId::all()
-            .map(|id| FieldBlob { name: id.def().name.into(), depth: id.def().depth, data: self.world.field(id) })
+            .map(|id| {
+                let (depth, goods) = layout(&self.world.goods, id);
+                FieldBlob { name: id.def().name.into(), depth, goods, data: self.world.field(id) }
+            })
             .collect();
         let module_state = self
             .modules
@@ -119,6 +129,11 @@ impl Sim {
 
     /// Rebuild a simulation from save-file bytes, from its latest snapshot.
     pub fn load(bytes: &[u8]) -> Result<Sim, LoadError> {
+        Sim::load_with(bytes, |c| c.modules.build())
+    }
+
+    /// [`Sim::load`] with modules of the caller's own, built from the save's configuration (tests).
+    pub(crate) fn load_with(bytes: &[u8], build: impl FnOnce(&Config) -> Vec<Box<dyn crate::module::Module>>) -> Result<Sim, LoadError> {
         let err = |s: String| Err(LoadError(s));
         if bytes.len() < 12 || &bytes[..8] != MAGIC {
             return err("not a save file".into());
@@ -128,7 +143,7 @@ impl Sim {
             return err(format!("save format {format}; this build reads format {FORMAT_VERSION}"));
         }
         let file: SaveFile = postcard::from_bytes(&bytes[12..]).map_err(|e| LoadError(format!("damaged save: {e}")))?;
-        let mut sim = Sim::assemble(&file.config)?;
+        let mut sim = Sim::assemble_with(&file.config, build(&file.config))?;
 
         let here: Vec<ModuleRecord> = sim.manifests().iter().map(|m| ModuleRecord::of(m)).collect();
         if here != file.modules {
@@ -144,8 +159,12 @@ impl Sim {
         for def in FIELDS {
             let Some(k) = blobs.iter().position(|b| b.name == def.name) else { return err(format!("missing field {}", def.name)) };
             let b = blobs.swap_remove(k);
-            if b.depth != def.depth {
-                return err(format!("{} is stored at taxonomy depth {}, this build uses {}", def.name, b.depth, def.depth));
+            let (depth, goods) = layout(&sim.world.goods, crate::fields::known(def.name));
+            if b.depth != depth {
+                return err(format!("{} is stored at taxonomy depth {}, this world uses {depth}", def.name, b.depth));
+            }
+            if b.goods != goods {
+                return err(format!("{} holds goods [{}], this world keeps [{}]", def.name, b.goods.join(", "), goods.join(", ")));
             }
             sim.world.set_field(crate::fields::known(def.name), b.data).map_err(LoadError)?;
         }
@@ -176,6 +195,17 @@ impl Sim {
         Ok(sim)
     }
 
+}
+
+/// A field's taxonomy depth and goods, as a save records them.
+fn layout(goods: &Goods, id: FieldId) -> (u8, Vec<String>) {
+    match id.def().tier {
+        Tier::ProvinceGood => (goods.depth(), goods.names()),
+        _ => (0, Vec::new()),
+    }
+}
+
+impl Sim {
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
         std::fs::write(path, self.save())
     }

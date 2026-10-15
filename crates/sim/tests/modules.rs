@@ -89,14 +89,14 @@ fn turning_off_economics_while_people_still_eat_is_refused() {
     let mut c = Config::new(params(1));
     c.modules.economics = None;
     let e = Sim::new(&c).err().expect("refused");
-    assert!(e.0.contains("Population \"basic\" sends change requests to province.food_stock, but no active module owns it"), "{e}");
+    assert!(e.0.contains("Population \"basic\" sends change requests to province.stock, but no active module owns it"), "{e}");
     // With both off, the world just sits there: no people, no stores, nothing to break.
     c.modules.population = None;
     let mut sim = Sim::new(&c).unwrap();
     sim.strict = true;
     sim.run_to_year(3);
     assert_eq!(quantity_total(&sim.world, Quantity::People), 0);
-    assert!(sim.world.food_stock.iter().all(|&f| f == 0));
+    assert!(sim.world.stock.iter().all(|&f| f == 0));
 }
 
 /// Run to the end of the first month-start day on which some pop was granted less food than it
@@ -161,12 +161,17 @@ fn loads_refuse_what_they_cannot_read() {
     assert!(refused(&other_version).contains("the save's modules are [Terrain plates (none)"));
     let other_schema = edit(&|f| f.snapshots[0].module_state[7].state_schema = "pops-2".into());
     assert!(refused(&other_schema).contains("Population state is schema pops-2"));
-    let food = |f: &SaveFile| f.snapshots[0].fields.iter().position(|b| b.name == "province.food_stock").unwrap();
+    let food = |f: &SaveFile| f.snapshots[0].fields.iter().position(|b| b.name == "province.stock").unwrap();
     let deeper = edit(&|f| {
         let k = food(f);
         f.snapshots[0].fields[k].depth = 2
     });
-    assert!(refused(&deeper).contains("province.food_stock is stored at taxonomy depth 2"));
+    assert!(refused(&deeper).contains("province.stock is stored at taxonomy depth 2"));
+    let other_goods = edit(&|f| {
+        let k = food(f);
+        f.snapshots[0].fields[k].goods = vec!["grain".into()];
+    });
+    assert!(refused(&other_goods).contains("province.stock holds goods [grain], this world keeps [food]"));
     let missing = edit(&|f| {
         f.snapshots[0].fields.remove(0);
     });
@@ -177,7 +182,7 @@ fn loads_refuse_what_they_cannot_read() {
             v.pop();
         }
     });
-    assert!(refused(&short).contains("province.food_stock"));
+    assert!(refused(&short).contains("province.stock"));
     assert!(refused(&bytes[..bytes.len() / 2]).contains("damaged save"));
     // And the untouched bytes still load.
     assert!(Sim::load(&bytes).is_ok());
@@ -188,7 +193,7 @@ fn out_of_bounds_values_are_clamped_reported_and_still_balance() {
     let mut sim = Sim::new(&Config::new(params(3))).unwrap();
     sim.run_days(5);
     // A value far past the food stock's contract, as a buggy edit might leave it.
-    sim.world.food_stock[0] = 5_000_000_000_000_000;
+    sim.world.stock[0] = 5_000_000_000_000_000;
     let month = sim.calendar.def.months[0].days as u64;
     sim.run_days(month - 5 + 2);
     assert_eq!(sim.problems.conservation_breaks, 0);
@@ -197,7 +202,7 @@ fn out_of_bounds_values_are_clamped_reported_and_still_balance() {
         Event::ContractViolated { field, entity, clamped_to, by, .. } => Some((field.def().name, *entity, *clamped_to, *by)),
         _ => None,
     }).collect();
-    assert_eq!(v, vec![("province.food_stock", 0, 1e15, Some(Slot::Economics))]);
+    assert_eq!(v, vec![("province.stock", 0, 1e15, Some(Slot::Economics))]);
     let year = sim.year_so_far();
     assert!(year.food_stock < 2_000_000_000_000_000);
     // The clamp is in the year's totals, so the year still balances.

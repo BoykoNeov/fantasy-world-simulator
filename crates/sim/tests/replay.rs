@@ -118,7 +118,7 @@ fn tracing_a_past_day_explains_it_and_changes_nothing() {
     let notes: Vec<(Slot, &str)> = t.steps.iter().filter_map(|s| if let Traced::Note(n) = &s.what { Some((s.module.unwrap(), n.as_str())) } else { None }).collect();
     assert!(notes.iter().any(|(m, n)| *m == Slot::Weather && n.contains("drought")), "{notes:?}");
     assert!(notes.iter().any(|(m, n)| *m == Slot::Economics && n.starts_with("harvest") && n.contains("for the rain")), "{notes:?}");
-    let stock = known("province.food_stock");
+    let stock = known("province.stock");
     let harvested = t.steps.iter().any(|s| s.stage == Stage::Tick && matches!(s.what, Traced::Changed { field, entity, .. } if field == stock && entity == province));
     assert!(harvested, "{:#?}", t.steps);
     assert!(t.steps.iter().any(|s| matches!(&s.what, Traced::Requested(r) if r.requester == Slot::Population)));
@@ -139,7 +139,7 @@ fn tracing_a_past_day_explains_it_and_changes_nothing() {
 #[test]
 fn last_changed_days_follow_the_running_world() {
     let mut sim = Sim::new(&harsh(2)).unwrap();
-    let stock = known("province.food_stock").0 as usize;
+    let stock = known("province.stock").0 as usize;
     let elevation = known("cell.elevation").0 as usize;
     assert!(sim.last_change[stock].iter().all(|&d| d == NEVER));
     let month = sim.calendar.def.months[0].days as u64;

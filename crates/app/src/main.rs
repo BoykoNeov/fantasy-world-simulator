@@ -429,7 +429,7 @@ impl MapApp {
         // On the command line, explain the last day the province changed.
         let trace_pending = opts.explain.then(|| {
             let p = selected.unwrap_or(breadbasket(&sim.world) as u32);
-            let day = inspector::latest_change(&sim.last_change, sim.running_fields(), &sim.world.pops.province, p);
+            let day = inspector::latest_change(&sim.last_change, sim.running_fields(), &sim.world.pops.province, &sim.world.goods, p);
             (day.unwrap_or(sim.day.saturating_sub(1)), p)
         });
         let ctx = cc.egui_ctx.clone();
@@ -440,7 +440,7 @@ impl MapApp {
             modules,
             clock: Clock { speed: opts.speed, ..Clock::new(sim.day) },
             run_to_year: sim.calendar.date(sim.day).year + 5,
-            log: sim.event_log.entries.iter().map(LogEntry::of_event).collect(),
+            log: sim.event_log.entries.iter().map(|p| LogEntry::of_event(p, &sim.world.goods)).collect(),
             shown_state: frame.state.clone(),
             drawn_map: frame.state.map.clone(),
             rebuild: None,
@@ -504,7 +504,7 @@ impl MapApp {
             match m {
                 // After a change, a jump or a switch: the day it lands on replaces the day on screen.
                 FromSim::Frame(f) if f.epoch == self.epoch && f.replaces.is_some() => {
-                    self.log = f.replaces.iter().flatten().map(LogEntry::of_event).collect();
+                    self.log = f.replaces.iter().flatten().map(|p| LogEntry::of_event(p, &self.geo.goods)).collect();
                     self.clock.pos = f.day as f64;
                     self.frames.clear();
                     self.frames.push_back(f);
@@ -629,10 +629,10 @@ impl MapApp {
     /// The front frame was just reached: log what happened the day before it.
     fn absorb(&mut self) {
         let f = &self.frames[0];
-        self.log.extend(f.delivered.iter().map(LogEntry::of_event));
+        self.log.extend(f.delivered.iter().map(|p| LogEntry::of_event(p, &self.geo.goods)));
         for (r, g) in f.applied.iter().filter(|(r, g)| *g < r.take) {
             let owner = self.owners[r.field.0 as usize].1.unwrap_or(r.requester);
-            self.log.push(LogEntry::rationed(f.day - 1, owner, r, *g));
+            self.log.push(LogEntry::rationed(f.day - 1, owner, r, *g, &self.geo.goods));
         }
         // Years of shortages add up; the oldest go first.
         if self.log.len() > 400_000 {
@@ -970,7 +970,9 @@ impl MapApp {
             let p = p as usize;
             let people = self.view.people[p];
             ui.label(format!("province {p}: {} people, {:.1} per km²", group(people.round() as u64), people / w.provinces.area_km2[p]));
-            ui.label(format!("food stock {} rations", group(w.food_stock[p])));
+            if let Some(food) = w.stock_of(p, "food") {
+                ui.label(format!("food stock {} rations", group(food)));
+            }
             if self.view.drought[p] > 0.0 {
                 ui.label(format!("drought: {:.0}% of the rain missing", 100.0 * self.view.drought[p]));
             }
@@ -1019,13 +1021,30 @@ impl MapApp {
             ui.small("set by");
             ui.small("last changed");
             ui.end_row();
-            for id in FieldId::all().filter(|id| id.def().tier == Tier::Province) {
+            for id in FieldId::all() {
                 let data = self.geo.field(id);
-                ui.label(inspector::field_name(id));
-                ui.label(inspector::value(id, &data, pi));
-                ui.label(&self.owners[id.0 as usize].0);
-                when(ui, id, pi);
-                ui.end_row();
+                match id.def().tier {
+                    Tier::Province => {
+                        ui.label(inspector::field_name(id));
+                        ui.label(inspector::value(id, &data, pi));
+                        ui.label(&self.owners[id.0 as usize].0);
+                        when(ui, id, pi);
+                        ui.end_row();
+                    }
+                    // One row per good kept.
+                    Tier::ProvinceGood => {
+                        let goods = &self.geo.goods;
+                        for c in 0..goods.stride() {
+                            let i = goods.index(pi, c);
+                            ui.label(inspector::value_name(id, i as u32, goods));
+                            ui.label(data.is_empty().then(String::new).unwrap_or_else(|| inspector::good_value(goods, c, data.value(i) as u64)));
+                            ui.label(&self.owners[id.0 as usize].0);
+                            when(ui, id, i);
+                            ui.end_row();
+                        }
+                    }
+                    Tier::Cell | Tier::Pop => {}
+                }
             }
         });
         let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
@@ -1079,7 +1098,7 @@ impl MapApp {
         });
         ui.horizontal_wrapped(|ui| {
             // The store as it is, until a new amount is typed.
-            let mut food = self.food_edit.unwrap_or_else(|| self.geo.food_stock.get(pi).copied().unwrap_or(0));
+            let mut food = self.food_edit.unwrap_or_else(|| self.geo.stock_of(pi, "food").unwrap_or(0));
             if ui.add(egui::DragValue::new(&mut food).range(0..=1_000_000_000_000u64).speed(1000.0).suffix(" rations")).changed() {
                 self.food_edit = Some(food);
             }
@@ -1094,7 +1113,9 @@ impl MapApp {
         }
 
         let front = &self.frames[0];
-        let settled: Vec<String> = front.applied.iter().filter(|(r, _)| r.entity == p && r.field.def().tier == Tier::Province).map(|(r, g)| inspector::grant(r, *g)).collect();
+        let goods = &self.geo.goods;
+        let settled: Vec<String> =
+            front.applied.iter().filter(|(r, _)| inspector::province_of(r.field, r.entity, goods) == Some(p)).map(|(r, g)| inspector::grant(r, *g, goods)).collect();
         if !settled.is_empty() {
             ui.separator();
             ui.label(egui::RichText::new(format!("Change requests settled on {}", self.calendar.format(today - 1))).strong());
@@ -1105,7 +1126,7 @@ impl MapApp {
 
         ui.separator();
         // Most days nothing happens to a province; offer the last day something did.
-        let latest = inspector::latest_change(&state.last_change, state.fields.iter().map(|f| f.0), &self.geo.pops.province, p);
+        let latest = inspector::latest_change(&state.last_change, state.fields.iter().map(|f| f.0), &self.geo.pops.province, &self.geo.goods, p);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Why").strong());
             if let Some(d) = latest
@@ -1139,7 +1160,7 @@ impl MapApp {
                             ui.label(egui::RichText::new(inspector::stage(s.stage)).italics());
                             stage = Some(s.stage);
                         }
-                        ui.label(format!("• {}", inspector::trace_step(s, &self.calendar)));
+                        ui.label(format!("• {}", inspector::trace_step(s, &self.calendar, &self.geo.goods)));
                     }
                 }
             }
@@ -1177,7 +1198,7 @@ impl MapApp {
             if e.province.is_some_and(|q| q != p) || (e.province.is_none() && e.source != Source::Player) || self.hidden_sources.contains(&e.source) {
                 continue;
             }
-            ui.label(format!("{} · {} · {}", self.calendar.format(e.day), e.source.name(), e.text(&self.calendar)));
+            ui.label(format!("{} · {} · {}", self.calendar.format(e.day), e.source.name(), e.text(&self.calendar, &self.geo.goods)));
             shown += 1;
             if shown == 150 {
                 ui.small("(older entries not shown)");

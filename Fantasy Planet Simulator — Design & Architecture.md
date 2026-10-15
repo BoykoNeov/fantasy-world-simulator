@@ -29,7 +29,7 @@ Modules never call each other. They read named **fields** on the world, change f
 
 The scheduler runs each module on its own cadence. Every module reads fields, submits change requests and exchanges events. The renderer, the inspector and the editor therefore never depend on which module version is active.
 
-**Fields.** The world is a set of typed arrays keyed by entity tier: `cell.elevation`, `cell.temperature`, `cell.rainfall`, `province.population`, `province.food_stock`, `faction.treasury`, `faction.tech_level`. Each field has exactly one **owner** module, and any module may read it. If no active module owns a field, the engine supplies a documented default, so readers always find a value.
+**Fields.** The world is a set of typed arrays keyed by entity tier: `cell.elevation`, `cell.temperature`, `cell.rainfall`, `province.population`, `province.stock` (one value per good), `faction.treasury`, `faction.tech_level`. Each field has exactly one **owner** module, and any module may read it. If no active module owns a field, the engine supplies a documented default, so readers always find a value.
 
 **Change requests: how many modules affect one value.** Many values are changed by several domains. Births, war, plague, famine and migration all change population. Food is grown by the economy, eaten by armies and spoiled by floods. So other modules never write a field directly. They submit a **change request** to its owner, for example "remove 3,000 people from province 812, cause: plague". The rules are:
 
@@ -292,9 +292,11 @@ Rule for "real-world principles": economics, logistics, climate and warfare must
 
 **Versions declare their depth.**
 
-- Economics v0 works at `goods`.
-- Economics v1 works at `goods.food`, `goods.raw` and `goods.manufactured`.
-- Economics v2 works at the leaves.
+- Economics v0 ("food") keeps one value per province: the `food` class as a whole.
+- Economics v1 ("markets") keeps the eight leaves: grain, fish, livestock, timber, stone, ore, cloth, tools.
+- A later version could keep a deeper tree, such as one with kinds of grain.
+
+A version names the nodes it keeps in its manifest. They need not be one whole depth: v0 keeps `food` and nothing of `raw` or `manufactured`. When no module keeps goods, readers find each top-level class, empty.
 
 A reader may read at its own depth or any coarser one; the engine sums children on the fly. Warfare v1 asking for `food` from Economics v2 just gets grain + fish + livestock + fruit.
 
@@ -433,7 +435,11 @@ Start with a thin slice you can watch, and pull the framework out of real module
    - The history slider also covers step 4's leftover "scrubbing back through history".
 6. **Economics v1 and taxonomies.** Goods tree, prices, local markets, roads, trade layer. The combination tester and evaluator start here, once two slots have two versions each. Planned Oct 15, in this order:
    - **The tester comes first.** Done Oct 15 (`crates/sim/src/combos.rs`, the `combos` program; see the sim README). Every mix that runs is green so far; story 1's famine half is a shipped scenario with expectations. Terrain and climate already have two versions each, and weather, population and economics can be switched off, so it can start now and guard every later piece. It runs headless, covering every pair of versions, the shipped scenarios and a random sample, on small worlds and several seeds. The scorer checks clamped values, conservation drift, values stuck at a bound or at zero, stagnation and ms per day, and writes a green/yellow/red table with the seed and day that reproduce each problem. Scenario files gain assertions (expected ranges at chosen years). The window shows the table's verdict when versions are picked for a new world; the full module panel stays in step 12.
-   - **Goods as data.** A goods tree in TOML: food → grain, fish, livestock; raw → timber, stone, ore; manufactured → cloth, tools. Shared fields gain values per province *and per good*. Totals, bounds, saves, checkpoints, last-changed stamps and the inspector all handle them, and conservation is checked per top-level class. Economics v0 ("food") behaves exactly as before.
+   - **Goods as data.** Done Oct 15 (`crates/sim/src/taxonomy.rs`, `crates/sim/data/goods.toml`; see the sim README). A goods tree in TOML: food → grain, fish, livestock; raw → timber, stone, ore; manufactured → cloth, tools. Shared fields gain values per province *and per good*. Totals, bounds, saves, checkpoints, last-changed stamps and the inspector all handle them, and conservation is checked per top-level class. Economics v0 ("food") behaves exactly as before: same fingerprints, same tester table.
+     - The food store became `province.stock`, which holds one value per province for each good the economics version keeps. v0 keeps one, food as a whole, so the stored numbers are unchanged.
+     - The tree is part of the configuration (save format 6). Scenario files without one get the shipped tree, so old scenarios still load.
+     - Moving land between provinces, or sinking it, already moves every good kept. Left for the "edits" piece: setting any good from the inspector, and refusing an edit to a field nobody owns.
+     - Tested with a stand-in economy that keeps grain, fish and ore. Speed is unchanged: about 0.25 ms per simulated day on a large world, against the 1.5 ms budget.
    - **Readers ask the taxonomy.** Population asks for "food" through the tree, not for a named field, so it works with either economics version. Reading a class sums its goods (tested with a deeper toy tree too).
    - **Edits move every good.** Split, merge, redraw and sinking provinces move all goods, and the inspector sets any good. An edit that needs a field nobody owns is refused with a message.
    - **Province neighbours and roads.** A province graph with a travel cost per shared border (slope, big rivers, sea crossings between coasts). It is rebuilt whenever the map changes, and stays right through edits, undo and timelines. Roads are fixed by the land in v1; roads that grow with traffic can be a later version.

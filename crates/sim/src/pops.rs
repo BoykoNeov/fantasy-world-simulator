@@ -66,11 +66,12 @@ static V0: Manifest = Manifest {
     cadence: Cadence::Monthly,
     reads: &["province.food_capacity"],
     owns: &["pop.province", "pop.species", "pop.culture", "pop.religion", "pop.class", "pop.size", "province.starved_this_year"],
-    requests: &["province.food_stock"],
+    requests: &["province.stock"],
     requires: &[],
     emits: &[EventKind::Famine],
     handles: &[EventKind::Granted],
     state_schema: "none",
+    goods: &[],
 };
 
 impl Module for Population {
@@ -97,11 +98,16 @@ impl Module for Population {
             w.starved_this_year.iter_mut().for_each(|s| *s = 0);
         }
         let days = cx.calendar.def.months[cx.calendar.date(cx.day).month].days as u64;
-        let stock = known("province.food_stock");
+        let stock = known("province.stock");
+        // Food is asked of the province's food store. (Asking the goods tree for "food", however
+        // finely the economy keeps it, comes in step 6's next piece.)
+        let goods = &w.goods;
+        let food = goods.column("food").expect("the economy keeps a food store");
         for k in 0..w.pops.size.len() {
             let size = w.pops.size[k];
             if size > 0 {
-                cx.request(stock, w.pops.province[k], size * days, Priority::Essential, Cause::Eating, k as u64);
+                let store = goods.index(w.pops.province[k] as usize, food) as u32;
+                cx.request(stock, store, size * days, Priority::Essential, Cause::Eating, k as u64);
             }
         }
     }

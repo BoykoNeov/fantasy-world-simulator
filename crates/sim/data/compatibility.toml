@@ -86,13 +86,13 @@ finding = []
 [[mix]]
 versions = "terrain=noise climate=latitude economics=off population=basic weather=droughts"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=off population=basic weather=off"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
@@ -212,13 +212,13 @@ finding = []
 [[mix]]
 versions = "terrain=noise climate=null economics=off population=basic weather=droughts"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
 versions = "terrain=noise climate=null economics=off population=basic weather=off"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
@@ -338,13 +338,13 @@ finding = []
 [[mix]]
 versions = "terrain=null climate=latitude economics=off population=basic weather=droughts"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
 versions = "terrain=null climate=latitude economics=off population=basic weather=off"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
@@ -464,13 +464,13 @@ finding = []
 [[mix]]
 versions = "terrain=null climate=null economics=off population=basic weather=droughts"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]
 versions = "terrain=null climate=null economics=off population=basic weather=off"
 verdict = "refused"
-refused = 'Population "basic" sends change requests to province.food_stock, but no active module owns it'
+refused = 'Population "basic" sends change requests to province.stock, but no active module owns it'
 run = []
 
 [[mix]]

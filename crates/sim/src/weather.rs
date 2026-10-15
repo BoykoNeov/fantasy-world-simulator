@@ -39,6 +39,7 @@ static V0: Manifest = Manifest {
     emits: &[],
     handles: &[EventKind::Drought],
     state_schema: "droughts-1",
+    goods: &[],
 };
 
 impl Droughts {

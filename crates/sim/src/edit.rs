@@ -20,10 +20,11 @@
 //! change either: a province merged away stays as an empty placeholder, and a new one is numbered
 //! after the last.
 //!
-//! When land changes province, its people and food go with it, in proportion to the farmland that
-//! moved: a province that gives away a third of its farmland gives away a third of each pop and a
-//! third of its store. Land with no farmland at all is shared by area instead. Shares are whole
-//! people and rations by the largest-remainder rule, so nothing is lost or made.
+//! When land changes province, its people and stored goods go with it, in proportion to the
+//! farmland that moved: a province that gives away a third of its farmland gives away a third of
+//! each pop and a third of its store of each good. Land with no farmland at all is shared by area
+//! instead. Shares are whole people and units of goods by the largest-remainder rule, so nothing
+//! is lost or made.
 
 use crate::fields::{known, FieldData, FieldId, Quantity};
 use crate::grid::{dot, lonlat_to_dir, Grid, NONE, V3};
@@ -139,10 +140,10 @@ impl Edit {
             }
             Edit::SetFoodStock { province: p, rations } => {
                 province(p)?;
-                if w.food_stock.len() <= p as usize {
-                    return Err("nobody keeps food stores in this world".into());
+                if w.stock_of(p as usize, "food").is_none() {
+                    return Err("nobody keeps a food store in this world".into());
                 }
-                count("province.food_stock", rations)
+                count("province.stock", rations)
             }
             Edit::MoveCells { ref cells, to } => {
                 province(to)?;
@@ -269,8 +270,10 @@ impl Edit {
                 (p.species[k], p.culture[k], p.religion[k], p.class[k]) = (v.species, v.culture, v.religion, v.class);
             }
             Edit::SetFoodStock { province, rations } => {
-                let s = &mut w.food_stock[province as usize];
-                flows.add(Quantity::Food, Cause::Edit, delta(*s, rations));
+                let c = w.goods.column("food").expect("checked: a food store is kept");
+                let (at, food) = (w.goods.index(province as usize, c), Quantity::Goods(w.goods.class_of_column(c)));
+                let s = &mut w.stock[at];
+                flows.add(food, Cause::Edit, delta(*s, rations));
                 *s = rations;
             }
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } => {
@@ -543,7 +546,7 @@ fn reshape_after_height(w: &mut World, regenerate: &mut dyn FnMut(&mut World)) {
     crate::provinces::reaggregate(w, count);
 }
 
-/// People and food of provinces whose land all sank move to the nearest province that still has
+/// People and stored goods of provinces whose land all sank move to the nearest province that still has
 /// land (by distance between centres; the lower number wins a tie). With no land left anywhere they
 /// are lost, and the flows say so.
 fn rehouse(w: &mut World, emptied: &[u32]) -> Flows {
@@ -558,7 +561,6 @@ fn rehouse(w: &mut World, emptied: &[u32]) -> Flows {
         let to = (0..w.provinces.count).filter(|&p| w.provinces.cells[p] > 0).max_by(|&a, &b| {
             dot(c, w.provinces.center[a]).total_cmp(&dot(c, w.provinces.center[b])).then(b.cmp(&a))
         });
-        let food = std::mem::take(&mut w.food_stock[f]);
         for k in pops_of.get(&from).cloned().unwrap_or_default() {
             let n = std::mem::take(&mut w.pops.size[k]);
             match to {
@@ -566,9 +568,14 @@ fn rehouse(w: &mut World, emptied: &[u32]) -> Flows {
                 None => flows.add(Quantity::People, Cause::Edit, -(n as i64)),
             }
         }
-        match to {
-            Some(t) => w.food_stock[t] += food,
-            None => flows.add(Quantity::Food, Cause::Edit, -(food as i64)),
+        // Every good kept goes with them.
+        let goods = w.goods.clone();
+        for c in 0..goods.stride() {
+            let amount = std::mem::take(&mut w.stock[goods.index(f, c)]);
+            match to {
+                Some(t) => w.stock[goods.index(t, c)] += amount,
+                None => flows.add(Quantity::Goods(goods.class_of_column(c)), Cause::Edit, -(amount as i64)),
+            }
         }
     }
     flows
@@ -630,7 +637,7 @@ fn land(w: &World, cells: &[u32]) -> Result<(), String> {
 }
 
 /// Land moved between provinces (`(cell, from, to)`, after the map part): each province that gave
-/// land gives its people and food with it, in proportion to the farmland that moved.
+/// land gives its people and stored goods with it, in proportion to the farmland that moved.
 fn share_out(w: &mut World, moved: &[(u32, u32, u32)]) {
     /// Land one province gave another: (receiver, farmland, cells).
     type Gift = (u32, f64, u64);
@@ -660,10 +667,13 @@ fn share_out(w: &mut World, moved: &[(u32, u32, u32)]) {
         let farmland: Vec<u64> = std::iter::once(w.provinces.food_capacity[f]).chain(to.iter().map(|g| g.1.round() as u64)).collect();
         let weights = if farmland.iter().any(|&x| x > 0) { farmland } else { std::iter::once(w.provinces.cells[f] as u64).chain(to.iter().map(|g| g.2)).collect() };
 
-        let stock = split_proportional(w.food_stock[f], &weights, &ids);
-        w.food_stock[f] = stock[0];
-        for (g, &s) in to.iter().zip(&stock[1..]) {
-            w.food_stock[g.0 as usize] += s;
+        let goods = w.goods.clone();
+        for c in 0..goods.stride() {
+            let stock = split_proportional(w.stock[goods.index(f, c)], &weights, &ids);
+            w.stock[goods.index(f, c)] = stock[0];
+            for (g, &s) in to.iter().zip(&stock[1..]) {
+                w.stock[goods.index(g.0 as usize, c)] += s;
+            }
         }
         for k in pops_of.get(&from).cloned().unwrap_or_default() {
             let parts = split_proportional(w.pops.size[k], &weights, &ids);
@@ -753,6 +763,7 @@ impl MapChange {
             match id.def().tier {
                 crate::fields::Tier::Cell => out.extend(at.iter().map(|&c| w.provinces.of_cell[c as usize])),
                 crate::fields::Tier::Province => out.extend(at.iter().copied()),
+                crate::fields::Tier::ProvinceGood => out.extend(at.iter().map(|&e| w.goods.split(e as usize).0 as u32)),
                 crate::fields::Tier::Pop => {}
             }
             if id.def().name == "cell.province"

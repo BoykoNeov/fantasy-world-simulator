@@ -1,13 +1,14 @@
 //! Economics v0, "food vs population": each province's food store.
 //!
-//! The module owns `province.food_stock`. Once a month each province harvests its share of the
+//! The module owns `province.stock` and keeps one good in it: food, as a whole (the goods tree's
+//! "food" class). Once a month each province harvests its share of the
 //! year's food (seasonal away from the equator, better or worse by region each year) and some of
 //! the store spoils. Everyone else takes food by change request: at the end of the day the store is
 //! shared out, essential needs first, in proportion within a class when it runs short.
 
 use crate::calendar::Calendar;
 use crate::events::EventKind;
-use crate::fields::{known, Quantity};
+use crate::fields::{known, Goods, Quantity};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
 use crate::requests::{ration, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
@@ -40,18 +41,26 @@ pub struct Food {
     pub params: FoodParams,
 }
 
+/// Where the food store is in `province.stock`: (columns per province, the food column), and the
+/// quantity food is counted in.
+fn food_column(goods: &Goods) -> (usize, usize, Quantity) {
+    let c = goods.column("food").expect("Economics \"food\" keeps food");
+    (goods.stride(), c, Quantity::Goods(goods.class_of_column(c)))
+}
+
 static V0: Manifest = Manifest {
     slot: Slot::Economics,
     version: "food",
     tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
     reads: &["province.food_capacity", "province.center", "province.lat", "province.rain_shortfall"],
-    owns: &["province.food_stock"],
+    owns: &["province.stock"],
     requests: &[],
     requires: &[],
     emits: &[EventKind::Granted],
     handles: &[],
     state_schema: "none",
+    goods: &["food"],
 };
 
 impl Module for Food {
@@ -61,11 +70,16 @@ impl Module for Food {
 
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
         let per_day = |cap: u64| cap as f64 / cx.calendar.days_per_year() as f64;
-        w.food_stock = w.provinces.food_capacity.iter().map(|&c| (per_day(c) * self.params.initial_stock_days).round() as u64).collect();
+        let (k, food, _) = food_column(&w.goods);
+        w.stock = vec![0; w.provinces.count * k];
+        for (id, &c) in w.provinces.food_capacity.iter().enumerate() {
+            w.stock[id * k + food] = (per_day(c) * self.params.initial_stock_days).round() as u64;
+        }
     }
 
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         let (p, cal, day, seed) = (&self.params, cx.calendar, cx.day, cx.seed);
+        let (k, food, counted) = food_column(&w.goods);
         let prov = &w.provinces;
         let date = cal.date(day);
         let harvest_key = draw(seed, Rng::Economics, cal.year_start(date.year), 0, purpose("harvest year"));
@@ -81,9 +95,10 @@ impl Module for Food {
             let rain = 1.0 - w.rain_shortfall[id] as f64 / 1000.0;
             let expected = prov.food_capacity[id] as f64 * year_factor * share * rain;
             let harvest = round_stochastic(expected, seed, Rng::Economics, day, e, purpose("harvest"));
-            let stock = w.food_stock[id] + harvest;
+            let at = id * k + food;
+            let stock = w.stock[at] + harvest;
             let spoil = round_stochastic(stock as f64 * p.spoilage_per_year * month_part, seed, Rng::Economics, day, e, purpose("spoil")).min(stock);
-            w.food_stock[id] = stock - spoil;
+            w.stock[at] = stock - spoil;
             if cx.traced(id as u32) {
                 cx.note(format!(
                     "harvest {harvest} rations = {} a year in an average year × {year_factor:.2} for this year's luck × {:.3} of the year's crop due this month × {rain:.2} for the rain",
@@ -94,20 +109,21 @@ impl Module for Food {
             produced += harvest;
             spoiled += spoil;
         }
-        cx.flow(Quantity::Food, Cause::Harvest, produced as i64);
-        cx.flow(Quantity::Food, Cause::Spoilage, -(spoiled as i64));
+        cx.flow(counted, Cause::Harvest, produced as i64);
+        cx.flow(counted, Cause::Spoilage, -(spoiled as i64));
     }
 
     fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
-        let stock = known("province.food_stock");
-        // Requests arrive sorted by field and entity: take each province's run in turn.
+        let stock = known("province.stock");
+        // Requests arrive sorted by field and entity (a province's store of one good): take each
+        // store's run in turn.
         for run in requests.chunk_by(|a, b| (a.field, a.entity) == (b.field, b.entity)) {
             debug_assert_eq!(run[0].field, stock);
-            let id = run[0].entity as usize;
+            let at = run[0].entity as usize;
             let wants: Vec<_> = run.iter().map(|r| (r.priority, r.take, r.tag)).collect();
-            let grants = ration(w.food_stock[id], &wants);
+            let grants = ration(w.stock[at], &wants);
             for (r, g) in run.iter().zip(grants) {
-                w.food_stock[id] -= g;
+                w.stock[at] -= g;
                 cx.grant(r, g);
             }
         }

@@ -17,9 +17,9 @@
 use crate::calendar::Calendar;
 use crate::config::Config;
 use crate::events::{delivery_order, Event, EventKind, EventLog, Posted};
-use crate::fields::{quantity_total, FieldData, FieldId, QUANTITIES};
+use crate::fields::{quantity_total, FieldData, FieldId, Tier};
 use crate::edit::{Edit, MapChange};
-use crate::module::{plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
+use crate::module::{goods_kept, plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
 use crate::requests::{Cause, Request};
 use crate::world::{Fingerprint, World};
 use crate::fields::Quantity;
@@ -47,20 +47,25 @@ pub struct Ledger {
 }
 
 impl Ledger {
-    pub fn from_flows(f: &Flows) -> Ledger {
+    /// The year's totals from its flows. `food` is the quantity food is counted in; without one
+    /// (a goods tree with no food) the food totals are 0.
+    pub fn from_flows(f: &Flows, food: Option<Quantity>) -> Ledger {
         let pos = |q, c| f.get(q, c).max(0) as u64;
         let neg = |q, c| (-f.get(q, c)).max(0) as u64;
         let starved = neg(Quantity::People, Cause::Starvation);
+        let food_in = |c| food.map_or(0, |q| pos(q, c));
+        let food_out = |c| food.map_or(0, |q| neg(q, c));
+        let food_net = |c| food.map_or(0, |q| f.get(q, c));
         Ledger {
-            produced: pos(Quantity::Food, Cause::Harvest),
-            spoiled: neg(Quantity::Food, Cause::Spoilage),
-            eaten: neg(Quantity::Food, Cause::Eating),
+            produced: food_in(Cause::Harvest),
+            spoiled: food_out(Cause::Spoilage),
+            eaten: food_out(Cause::Eating),
             births: pos(Quantity::People, Cause::Births),
             deaths: neg(Quantity::People, Cause::Deaths) + starved,
             starved,
-            food_clamped: f.get(Quantity::Food, Cause::ContractClamp),
+            food_clamped: food_net(Cause::ContractClamp),
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
-            food_edited: f.get(Quantity::Food, Cause::Edit),
+            food_edited: food_net(Cause::Edit),
             people_edited: f.get(Quantity::People, Cause::Edit),
         }
     }
@@ -249,7 +254,12 @@ pub struct Sim {
 impl Sim {
     /// Check the configuration, generate the world and set up the running modules.
     pub fn new(config: &Config) -> Result<Sim, ConfigError> {
-        let mut sim = Sim::assemble(config)?;
+        Sim::new_with(config, config.modules.build())
+    }
+
+    /// [`Sim::new`] with modules of the caller's own instead of the configuration's (tests).
+    pub(crate) fn new_with(config: &Config, modules: Vec<Box<dyn Module>>) -> Result<Sim, ConfigError> {
+        let mut sim = Sim::assemble_with(config, modules)?;
         for &i in &sim.plan.generation.clone() {
             sim.stage(Stage::Generate, &[i], |s| {
                 s.modules[i].generate(&mut s.world);
@@ -268,13 +278,20 @@ impl Sim {
 
     /// Modules, plan and calendar for a configuration, with an empty world (shared with loading).
     pub(crate) fn assemble(config: &Config) -> Result<Sim, ConfigError> {
+        Sim::assemble_with(config, config.modules.build())
+    }
+
+    pub(crate) fn assemble_with(config: &Config, modules: Vec<Box<dyn Module>>) -> Result<Sim, ConfigError> {
         let calendar = Calendar::new(config.calendar.clone()).map_err(ConfigError)?;
-        let modules = config.modules.build();
         let manifests: Vec<&Manifest> = modules.iter().map(|m| m.manifest()).collect();
         let plan = plan(&manifests)?;
+        let tree = crate::taxonomy::Taxonomy::new(&config.goods).map_err(ConfigError)?;
+        let goods = goods_kept(&manifests, &plan, tree)?;
         let records = manifests.iter().map(|m| ModuleRecord::of(m)).collect();
+        let mut world = World::empty(&config.world);
+        world.goods = Arc::new(goods);
         Ok(Sim {
-            world: World::empty(&config.world),
+            world,
             calendar,
             config: config.clone(),
             modules,
@@ -642,7 +659,8 @@ impl Sim {
     /// and note what changed.
     fn apply_edit(&mut self, edit: &Edit) -> Result<(), String> {
         edit.check(&self.world)?;
-        let before: Vec<u64> = QUANTITIES.iter().map(|&q| quantity_total(&self.world, q)).collect();
+        let quantities = self.world.quantities();
+        let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();
         let running: Vec<FieldId> = self.running_fields().collect();
         let watched: Vec<(FieldId, FieldData)> = running.iter().map(|&id| (id, self.world.field(id))).collect();
         let map = edit.changes_map().then(|| {
@@ -669,7 +687,7 @@ impl Sim {
         });
         let flows = edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i]));
 
-        for (k, &q) in QUANTITIES.iter().enumerate() {
+        for (k, &q) in quantities.iter().enumerate() {
             let expected = before[k] as i128 + flows.net(q) as i128;
             let actual = quantity_total(&self.world, q);
             if expected != actual as i128 {
@@ -751,7 +769,8 @@ impl Sim {
         let mut out = Outbox::default();
         let slot = self.modules[i].manifest().slot;
         let trace = self.trace.as_ref().map(|t| t.province);
-        let mut cx = Ctx { day: self.day, seed: self.world.params.seed, calendar: &self.calendar, slot, out: &mut out, trace };
+        let goods = self.world.goods.clone();
+        let mut cx = Ctx { day: self.day, seed: self.world.params.seed, calendar: &self.calendar, goods: &goods, slot, out: &mut out, trace };
         f(self.modules[i].as_mut(), &mut self.world, &mut cx);
         out
     }
@@ -767,7 +786,8 @@ impl Sim {
         } else {
             Vec::new()
         };
-        let before: Vec<u64> = if conserve { QUANTITIES.iter().map(|&q| quantity_total(&self.world, q)).collect() } else { Vec::new() };
+        let quantities = if conserve { self.world.quantities() } else { Vec::new() };
+        let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();
         // Only the actors can change anything (strict mode checks it), so only their fields are watched.
         let watched: Vec<(FieldId, FieldData)> =
             if conserve { FieldId::all().filter(|&id| owned_by_actors(self, id)).map(|id| (id, self.world.field(id))).collect() } else { Vec::new() };
@@ -781,7 +801,7 @@ impl Sim {
             }
         }
         if conserve {
-            for (k, &q) in QUANTITIES.iter().enumerate() {
+            for (k, &q) in quantities.iter().enumerate() {
                 let net: i64 = outs.iter().map(|(_, o)| o.flows.net(q)).sum();
                 let expected = before[k] as i128 + net as i128;
                 let actual = quantity_total(&self.world, q);
@@ -803,7 +823,12 @@ impl Sim {
             let slot = self.modules[i].manifest().slot;
             if let Some(t) = &mut self.trace {
                 let p = t.province;
-                let about = |r: &Request| r.entity == p && r.field.def().tier == crate::fields::Tier::Province;
+                let goods = &self.world.goods;
+                let about = |r: &Request| match r.field.def().tier {
+                    Tier::Province => r.entity == p,
+                    Tier::ProvinceGood => goods.split(r.entity as usize).0 == p as usize,
+                    Tier::Cell | Tier::Pop => false,
+                };
                 let step = |what| TraceStep { stage: kind, module: Some(slot), what };
                 t.steps.extend(out.notes.into_iter().map(|n| step(Traced::Note(n))));
                 t.steps.extend(out.requests.iter().filter(|r| about(r)).map(|r| step(Traced::Requested(*r))));
@@ -831,9 +856,10 @@ impl Sim {
         }
         let Some(t) = &mut self.trace else { return };
         let mine = |e: u32| match id.def().tier {
-            crate::fields::Tier::Province => e == t.province,
-            crate::fields::Tier::Pop => self.world.pops.province.get(e as usize) == Some(&t.province),
-            crate::fields::Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
+            Tier::Province => e == t.province,
+            Tier::ProvinceGood => self.world.goods.split(e as usize).0 == t.province as usize,
+            Tier::Pop => self.world.pops.province.get(e as usize) == Some(&t.province),
+            Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
         };
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };
@@ -851,13 +877,17 @@ impl Sim {
             return;
         }
         let mut data = self.world.field(id);
-        let before = def.conserved.map(|_| data.total());
+        let goods = self.world.goods.clone();
+        let before = if def.conserved { goods.totals(id, &data) } else { Vec::new() };
         let moved = data.clamp(def.min, def.max);
         if moved.is_empty() {
             return;
         }
-        if let (Some(q), Some(b)) = (def.conserved, before) {
-            self.year_flows.add(q, Cause::ContractClamp, data.total() as i64 - b as i64);
+        // Each quantity the field holds (each class of goods) balances on its own.
+        if def.conserved {
+            for ((q, b), (_, a)) in before.into_iter().zip(goods.totals(id, &data)) {
+                self.year_flows.add(q, Cause::ContractClamp, a as i64 - b as i64);
+            }
         }
         self.world.set_field(id, data).expect("clamping keeps type and length");
         self.problems.contract_violations += moved.len() as u64;
@@ -881,13 +911,20 @@ impl Sim {
 
     /// Summary of the year that contains the last day run, as it stands now.
     pub fn year_so_far(&self) -> YearSummary {
+        let food = self.food();
         YearSummary {
             year: self.calendar.date(self.day.saturating_sub(1)).year,
             population: quantity_total(&self.world, Quantity::People),
-            food_stock: quantity_total(&self.world, Quantity::Food),
-            ledger: Ledger::from_flows(&self.year_flows),
+            food_stock: food.map_or(0, |q| quantity_total(&self.world, q)),
+            ledger: Ledger::from_flows(&self.year_flows, food),
             famine_provinces: self.world.starved_this_year.iter().filter(|&&s| s > 0).count(),
         }
+    }
+
+    /// The quantity food is counted in: the goods tree's "food" class, if it has one.
+    pub fn food(&self) -> Option<Quantity> {
+        let t = &self.world.goods.tree;
+        t.find("food").and_then(|n| t.class_of(n)).map(|c| Quantity::Goods(c as u8))
     }
 
     /// Bit-exact hash of the whole simulation state: every field, the day, everything in flight and
@@ -948,7 +985,7 @@ mod tests {
 
     #[test]
     fn food_from_nowhere_is_caught_and_blamed() {
-        let mut sim = with_rogue(|w| w.food_stock[0] += 1);
+        let mut sim = with_rogue(|w| w.stock[0] += 1);
         // Day 0 starts a month, so the rogue runs; the report is delivered (and logged) on day 1.
         sim.run_days(2);
         assert_eq!(sim.problems.conservation_breaks, 1);
@@ -956,7 +993,7 @@ mod tests {
             Event::ConservationBroken { quantity, expected, actual, by } => Some((*quantity, *actual - *expected, by.clone())),
             _ => None,
         });
-        assert_eq!(blamed, Some((Quantity::Food, 1, vec![Slot::Economics])));
+        assert_eq!(blamed, Some((Quantity::Goods(0), 1, vec![Slot::Economics])));
     }
 
     #[test]
@@ -982,14 +1019,14 @@ mod tests {
         assert!(sim.calendar.is_month_start(sim.day));
         let month = sim.calendar.def.months[sim.calendar.date(sim.day).month].days as u64;
         let wants: Vec<_> = tags.iter().map(|&k| (crate::requests::Priority::Essential, sim.world.pops.size[k] * month, k as u64)).collect();
-        sim.world.food_stock[p as usize] = 12_345;
+        sim.world.stock[p as usize] = 12_345;
         sim.step_day();
 
         // The harvest and spoilage ran that morning; what was left is shared by the rule and used up.
         let grants: Vec<(u64, u64)> = sim.applied_today.iter().filter(|(r, _)| r.entity == p).map(|(r, g)| (r.tag, *g)).collect();
         let shared: u64 = grants.iter().map(|g| g.1).sum();
         assert!(shared < wants.iter().map(|w| w.1).sum::<u64>(), "the store was not short");
-        assert_eq!(sim.world.food_stock[p as usize], 0);
+        assert_eq!(sim.world.stock[p as usize], 0);
         assert_eq!(grants.iter().map(|g| g.0).collect::<Vec<_>>(), tags.iter().map(|&k| k as u64).collect::<Vec<_>>());
         assert_eq!(grants.iter().map(|g| g.1).collect::<Vec<_>>(), crate::requests::ration(shared, &wants));
         assert_eq!(sim.problems, Problems::default());

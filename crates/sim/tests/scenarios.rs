@@ -90,6 +90,11 @@ fn expectations_hold_fail_with_the_value_and_are_written_again() {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/scenarios/drought_famine.toml")).unwrap();
     let mut t = Timelines::from_scenario_text(&text).unwrap();
     assert_eq!(t.list[1].expect.len(), 4);
+    // It was written before scenarios held the goods tree: it gets the shipped one, and keeps it
+    // when written again.
+    assert!(!text.contains("[config.goods"));
+    assert_eq!(t.list[0].sim.config.goods, sim::taxonomy::TreeDef::standard_goods());
+    assert!(t.scenario_text().contains("[config.goods.children]"));
     // Written again, the expectations are kept.
     let again = Timelines::from_scenario_text(&t.scenario_text()).unwrap();
     assert_eq!(again.list.iter().map(|t| t.expect.clone()).collect::<Vec<_>>(), t.list.iter().map(|t| t.expect.clone()).collect::<Vec<_>>());

@@ -30,7 +30,7 @@ fn an_edit_shows_at_once_and_balances_the_year() {
     sim.edit(Edit::AddPop { province: p, values: PopValues::people(777) }).unwrap();
     sim.edit(Edit::SetFoodStock { province: p, rations: 5 }).unwrap();
     assert_eq!(*sim.world.pops.size.last().unwrap(), 777);
-    assert_eq!(sim.world.food_stock[p as usize], 5);
+    assert_eq!(sim.world.stock[p as usize], 5);
     assert!(sim.edit(Edit::SetPop { pop: 99_999, to: PopValues::people(1) }).is_err());
     assert!(sim.edit(Edit::AddPop { province: 99_999, values: PopValues::people(1) }).is_err());
     assert_eq!(sim.commands.iter().filter(|c| matches!(c.kind, CommandKind::Edit { .. })).count(), 3);

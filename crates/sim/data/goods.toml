@@ -1,0 +1,16 @@
+# The goods tree (build step 6). Each line names a node's children, in order; the root's children
+# are the top-level classes, and conservation is checked per class. Economics versions choose which
+# nodes they keep stores of (Economics v0 keeps one store of "food"; v1 will keep the eight goods),
+# and readers ask the tree for what they need instead of naming goods in code.
+
+root = "goods"
+
+[children]
+goods = ["food", "raw", "manufactured"]
+food = ["grain", "fish", "livestock"]
+raw = ["timber", "stone", "ore"]
+manufactured = ["cloth", "tools"]
+
+# What a good is counted in. A node without one uses its parent's.
+[units]
+food = "rations"

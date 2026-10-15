@@ -24,12 +24,13 @@ What exists:
   are served in order and the class that runs short shares by the largest-remainder rule. Grants
   reach the requester the next day.
 - **Events** (`events.rs`): sent on day N, delivered on day N+1, in a documented priority order.
-- **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and food
-  changed only by what was reported, and clamps values that leave their bounds; both kinds of
+- **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and each
+  class of goods changed only by what was reported, and clamps values that leave their bounds; both kinds of
   problem are counted and sent out as events. In strict mode (tests) a module that writes a field
   it doesn't own stops the run.
 - **Saves** (`save.rs`): configuration, module versions and state schemas, the command log, and a
-  snapshot with every field by name and everything in flight. Loads refuse other format versions,
+  snapshot with every field by name (a per-good field also names the goods it holds) and
+  everything in flight. Format 6 (step 6) added the goods tree and the per-good store. Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -38,12 +39,20 @@ What exists:
   | Terrain | `noise` (default), `null`: smooth landmasses, same for every seed | at generation |
   | Climate | `latitude` (default), `null`: 15 °C and 800 mm everywhere | at generation |
   | Biomes, Rivers, Fertility, Provinces | one each | at generation |
-  | Economics | `food`: monthly harvest and spoilage, owns the food stores; or off | monthly |
+  | Economics | `food`: monthly harvest and spoilage, keeps one store per province of the "food" class; or off | monthly |
   | Population | `basic`: asks for a month's food, then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop.
-- **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
+- **Goods** (`taxonomy.rs`, `data/goods.toml`, `fields.rs`): the goods tree is data: food (grain,
+  fish, livestock), raw (timber, stone, ore) and manufactured (cloth, tools). It is part of the
+  configuration, so saves and scenarios carry it; a scenario without one gets the shipped tree.
+  Stored goods are one field, `province.stock`, with a value per province *per good kept*. The
+  economics version chooses which nodes of the tree it keeps (Economics v0 keeps one: "food" as a
+  whole); with no economics, readers find each class, empty. People and each top-level class of
+  goods are counted separately and must balance on their own, so goods can't turn into other goods
+  unannounced. A clamp is booked to the class it hit. Economics v0 gives exactly the same worlds as
+  before goods had a tree (same fingerprints).- **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world
@@ -56,9 +65,9 @@ What exists:
   giving exactly the world that never had it. `Sim::reinstate` gives it again. An edit that no
   longer fits when its day comes (it changed a pop that a withdrawn edit had added) is left out and
   listed in `Sim::skipped_edits`.
-- **Reshaping provinces** (`edit.rs`): when land changes province, its people and food go with it,
-  in proportion to the farmland that moved (by area where there is no farmland), in whole people
-  and rations by the largest-remainder rule; people join a pop of their own kind there or make one.
+- **Reshaping provinces** (`edit.rs`): when land changes province, its people and every good it
+  stores go with it, in proportion to the farmland that moved (by area where there is no
+  farmland), in whole people and units by the largest-remainder rule; people join a pop of their own kind there or make one.
   Province numbers never change: a province merged away stays as an empty placeholder that keeps
   its centre, and a split's new province is numbered after the last. Pops are only ever added, so
   food on its way to a pop still finds it.
@@ -68,8 +77,8 @@ What exists:
   lake at sea level is painted this way. Afterwards climate, biomes, rivers and farmland are worked
   out again by the world's own module versions; provinces are not regrown. Land that sinks leaves
   its province; new land joins the province next to it, spreading from the old coast; a new island
-  that touches no province becomes one. A province whose land all sinks sends its people and food to
-  the nearest province with land. Only the downstream links of the rivers are stored now, not the
+  that touches no province becomes one. A province whose land all sinks sends its people and goods
+  to the nearest province with land. Only the downstream links of the rivers are stored now, not the
   order water is added up in (format 4).
 - **Painting climate and biomes** (`edit.rs`): an override stroke sets the temperature or the rain
   (blended in at the brush's soft edge) or a land biome. They are stored as map layers the climate

@@ -27,7 +27,7 @@ fn half_of_biggest(sim: &Sim) -> (u32, Vec<u32>) {
 }
 
 fn totals(sim: &Sim) -> (u64, u64) {
-    (quantity_total(&sim.world, Quantity::People), quantity_total(&sim.world, Quantity::Food))
+    (quantity_total(&sim.world, Quantity::People), quantity_total(&sim.world, Quantity::Goods(0)))
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn a_split_shares_people_and_food_by_farmland_and_keeps_every_one() {
     sim.run_days(400);
     let (p, half) = half_of_biggest(&sim);
     let count = sim.world.provinces.count;
-    let (people, food) = (people_in(&sim, p), sim.world.food_stock[p as usize]);
+    let (people, food) = (people_in(&sim, p), sim.world.stock[p as usize]);
     let capacity = sim.world.provinces.food_capacity[p as usize];
     let before = totals(&sim);
 
@@ -46,13 +46,13 @@ fn a_split_shares_people_and_food_by_farmland_and_keeps_every_one() {
     assert!(half.iter().all(|&c| sim.world.provinces.of_cell[c as usize] == new));
     assert_eq!(totals(&sim), before, "a split makes and loses nobody");
     assert_eq!(people_in(&sim, p) + people_in(&sim, new), people);
-    assert_eq!(sim.world.food_stock[p as usize] + sim.world.food_stock[new as usize], food);
+    assert_eq!(sim.world.stock[p as usize] + sim.world.stock[new as usize], food);
     // The new province took about its share of the farmland's people (to within rounding).
     let share = sim.world.provinces.food_capacity[new as usize] as f64 / capacity as f64;
     let took = people_in(&sim, new) as f64 / people as f64;
     assert!((took - share).abs() < 0.01, "took {took:.3} of the people for {share:.3} of the farmland");
     // Every running province value has an entry for it; it can be run, saved and loaded.
-    assert_eq!(sim.world.food_stock.len(), count + 1);
+    assert_eq!(sim.world.stock.len(), count + 1);
     assert_eq!(sim.world.rain_shortfall.len(), count + 1);
     sim.run_days(400);
     let loaded = Sim::load(&sim.save()).unwrap();
@@ -76,7 +76,7 @@ fn a_merge_leaves_an_empty_placeholder_and_a_border_can_be_redrawn() {
     sim.edit(Edit::Merge { from: q, into: p }).unwrap();
     assert_eq!(sim.world.provinces.count, count, "numbers don't change");
     assert_eq!(sim.world.provinces.cells[q as usize], 0);
-    assert_eq!((people_in(&sim, q), sim.world.food_stock[q as usize]), (0, 0));
+    assert_eq!((people_in(&sim, q), sim.world.stock[q as usize]), (0, 0));
     assert_eq!(people_in(&sim, p), pp + qp);
     assert!(sim.world.provinces.center[q as usize].iter().all(|x| x.is_finite()), "the placeholder keeps a centre");
     assert!(sim.edit(Edit::Merge { from: q, into: p }).is_err(), "nothing left to merge");

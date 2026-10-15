@@ -9,6 +9,7 @@ use crate::hydrology::Rivers;
 use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
 use crate::provinces::ProvinceGrowth;
+use crate::taxonomy::TreeDef;
 use crate::terrain::{NoiseTerrain, NullTerrain};
 use crate::weather::Droughts;
 use crate::world::{Fertility, WorldParams};
@@ -164,11 +165,14 @@ pub struct Config {
     pub world: WorldParams,
     pub modules: ModuleConfig,
     pub calendar: CalendarDef,
+    /// The goods tree. Scenario files written before it was saved get the shipped one.
+    #[serde(default)]
+    pub goods: TreeDef,
 }
 
 impl Config {
     /// Default modules and the standard calendar.
     pub fn new(world: WorldParams) -> Config {
-        Config { world, modules: ModuleConfig::default(), calendar: Calendar::standard().def }
+        Config { world, modules: ModuleConfig::default(), calendar: Calendar::standard().def, goods: TreeDef::standard_goods() }
     }
 }

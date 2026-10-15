@@ -4,6 +4,7 @@
 //! Modules declare fields by name in their manifests. The engine uses this table to validate a
 //! configuration, check field contracts, check conservation, fingerprint the world and save it.
 
+use crate::taxonomy::{NodeId, Taxonomy};
 use crate::world::{Fingerprint, World};
 use serde::{Deserialize, Serialize};
 
@@ -11,19 +12,181 @@ use serde::{Deserialize, Serialize};
 pub enum Tier {
     Cell,
     Province,
+    /// One entry per province per good the world keeps (see [`Goods`]): province `p`'s value of
+    /// column `c` is entity `p * columns + c`.
+    ProvinceGood,
     /// One entry per pop.
     Pop,
 }
 
 /// Quantities that are stored as whole numbers and must balance exactly every day.
+///
+/// Saved as one number, 0 for people and 1 + the class's place for goods, so food (the shipped
+/// tree's first class) keeps the number it had before goods had classes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "u16", try_from = "u16")]
 pub enum Quantity {
     People,
-    /// Rations: one feeds one person for one day.
-    Food,
+    /// Goods of one top-level class of the goods tree, by its place among the classes. Food is
+    /// counted in rations: one feeds one person for one day.
+    Goods(u8),
 }
 
-pub const QUANTITIES: [Quantity; 2] = [Quantity::People, Quantity::Food];
+impl From<Quantity> for u16 {
+    fn from(q: Quantity) -> u16 {
+        match q {
+            Quantity::People => 0,
+            Quantity::Goods(c) => 1 + c as u16,
+        }
+    }
+}
+
+impl TryFrom<u16> for Quantity {
+    type Error = String;
+    fn try_from(n: u16) -> Result<Quantity, String> {
+        match n {
+            0 => Ok(Quantity::People),
+            n => u8::try_from(n - 1).map(Quantity::Goods).map_err(|_| format!("no quantity {n}")),
+        }
+    }
+}
+
+impl Quantity {
+    /// The field that holds it.
+    pub fn field(self) -> FieldId {
+        match self {
+            Quantity::People => known("pop.size"),
+            Quantity::Goods(_) => known("province.stock"),
+        }
+    }
+
+    /// "people", "food".
+    pub fn name(self, goods: &Goods) -> String {
+        match self {
+            Quantity::People => "people".into(),
+            Quantity::Goods(c) => goods.tree.classes().get(c as usize).map_or_else(|| format!("goods class {c}"), |&n| goods.tree.name(n).into()),
+        }
+    }
+}
+
+/// Which goods a world keeps values of, in its [`Tier::ProvinceGood`] fields: one column per node
+/// kept, province by province. The owner of those fields chooses the nodes (its manifest's
+/// `goods`); when nobody owns them they are the top-level classes. All such fields share the
+/// columns. Fixed for the world's life, like its module versions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Goods {
+    pub tree: Taxonomy,
+    pub columns: Vec<NodeId>,
+    /// Each column's class, as its place among the tree's classes.
+    class: Vec<u8>,
+}
+
+impl Goods {
+    /// Keep the nodes named `kept`, in that order. Refuses names not in the tree, the root, and a
+    /// node kept together with one above or below it (it would be counted twice).
+    pub fn new(tree: Taxonomy, kept: &[&str]) -> Result<Goods, String> {
+        let mut columns: Vec<NodeId> = Vec::new();
+        for name in kept {
+            let n = tree.find(name).ok_or_else(|| format!("the goods tree has no {name}"))?;
+            if n == 0 {
+                return Err(format!("{name} is the whole tree; keep its classes or goods instead"));
+            }
+            if let Some(&o) = columns.iter().find(|&&o| tree.is_under(n, o) || tree.is_under(o, n)) {
+                return Err(format!("{name} and {} overlap: one is part of the other", tree.name(o)));
+            }
+            columns.push(n);
+        }
+        if columns.is_empty() {
+            return Err("no goods kept".into());
+        }
+        let class = columns.iter().map(|&n| tree.class_of(n).expect("not the root") as u8).collect();
+        Ok(Goods { tree, columns, class })
+    }
+
+    /// The top-level classes of `tree`: what readers find when nobody keeps goods.
+    pub fn classes(tree: Taxonomy) -> Goods {
+        let names: Vec<String> = tree.classes().iter().map(|&n| tree.name(n).to_string()).collect();
+        Goods::new(tree, &names.iter().map(String::as_str).collect::<Vec<_>>()).expect("classes never overlap")
+    }
+
+    /// Columns per province.
+    pub fn stride(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// The column that keeps the node named `name`, if one does.
+    pub fn column(&self, name: &str) -> Option<usize> {
+        let n = self.tree.find(name)?;
+        self.columns.iter().position(|&c| c == n)
+    }
+
+    pub fn class_of_column(&self, c: usize) -> u8 {
+        self.class[c]
+    }
+
+    /// Entity of province `p`'s value of column `c`.
+    pub fn index(&self, p: usize, c: usize) -> usize {
+        p * self.columns.len() + c
+    }
+
+    /// Province and column of an entity.
+    pub fn split(&self, entity: usize) -> (usize, usize) {
+        (entity / self.columns.len(), entity % self.columns.len())
+    }
+
+    /// The deepest column's depth, as saves record it.
+    pub fn depth(&self) -> u8 {
+        self.columns.iter().map(|&n| self.tree.depth(n)).max().unwrap_or(0)
+    }
+
+    pub fn names(&self) -> Vec<String> {
+        self.columns.iter().map(|&n| self.tree.name(n).to_string()).collect()
+    }
+
+    /// The conserved quantities goods are counted in: each class with at least one column.
+    pub fn quantities(&self) -> Vec<Quantity> {
+        let mut q: Vec<u8> = self.class.clone();
+        q.sort_unstable();
+        q.dedup();
+        q.into_iter().map(Quantity::Goods).collect()
+    }
+
+    /// The quantity an entity of a conserved field is counted in.
+    pub fn quantity_at(&self, id: FieldId, entity: u32) -> Option<Quantity> {
+        let def = id.def();
+        if !def.conserved {
+            return None;
+        }
+        Some(match def.tier {
+            Tier::ProvinceGood => Quantity::Goods(self.class[entity as usize % self.columns.len()]),
+            _ => Quantity::People,
+        })
+    }
+
+    /// Exact totals of a conserved field's values, per quantity it holds.
+    pub fn totals(&self, id: FieldId, data: &FieldData) -> Vec<(Quantity, u64)> {
+        let FieldData::U64(v) = data else { panic!("conserved fields are u64") };
+        match id.def().tier {
+            Tier::ProvinceGood => self.quantities().into_iter().map(|q| (q, self.sum_class(v, q))).collect(),
+            _ => vec![(Quantity::People, v.iter().sum())],
+        }
+    }
+
+    fn sum_class(&self, v: &[u64], q: Quantity) -> u64 {
+        let Quantity::Goods(class) = q else { return 0 };
+        if self.class.iter().all(|&c| c == class) {
+            return v.iter().sum();
+        }
+        let cols: Vec<usize> = (0..self.stride()).filter(|&c| self.class[c] == class).collect();
+        v.chunks_exact(self.stride()).map(|row| cols.iter().map(|&c| row[c]).sum::<u64>()).sum()
+    }
+}
+
+impl std::default::Default for Goods {
+    fn default() -> Self {
+        Goods::classes(Taxonomy::standard_goods())
+    }
+}
 
 /// What readers find in a field that no active module owns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,15 +210,13 @@ pub struct FieldDef {
     /// Field contract: values outside `[min, max]` are clamped and reported.
     pub min: f64,
     pub max: f64,
-    pub conserved: Option<Quantity>,
+    /// Whether the values are a conserved quantity: people, or goods (counted per class).
+    pub conserved: bool,
     pub default: Default,
-    /// Taxonomy depth the values are stored at: 0 is the top of the tree. Every field is flat for
-    /// now; saves record the depth so a later version change can convert between depths.
-    pub depth: u8,
 }
 
 const fn def(name: &'static str, tier: Tier, unit: &'static str, min: f64, max: f64) -> FieldDef {
-    FieldDef { name, tier, unit, min, max, conserved: None, default: Default::Required, depth: 0 }
+    FieldDef { name, tier, unit, min, max, conserved: false, default: Default::Required }
 }
 
 const UNBOUNDED: f64 = f64::INFINITY;
@@ -77,14 +238,16 @@ pub const FIELDS: &[FieldDef] = &[
     def("province.center", Tier::Province, "unit vector", -1.0, 1.0),
     def("province.lat", Tier::Province, "radians", -1.6, 1.6),
     def("province.food_capacity", Tier::Province, "rations a year", 0.0, UNBOUNDED),
-    FieldDef { conserved: Some(Quantity::Food), default: Default::Zero, ..def("province.food_stock", Tier::Province, "rations", 0.0, COUNT_MAX) },
+    // Stored goods, per good the world keeps (see `Goods`); food in rations. It took the place of
+    // the step-3 food store, which held the same values for food alone.
+    FieldDef { conserved: true, default: Default::Zero, ..def("province.stock", Tier::ProvinceGood, "of the good", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Zero, ..def("province.starved_this_year", Tier::Province, "people", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Empty, ..def("pop.province", Tier::Pop, "province id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("pop.species", Tier::Pop, "species id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("pop.culture", Tier::Pop, "culture id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("pop.religion", Tier::Pop, "religion id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("pop.class", Tier::Pop, "class id", -UNBOUNDED, UNBOUNDED) },
-    FieldDef { conserved: Some(Quantity::People), default: Default::Empty, ..def("pop.size", Tier::Pop, "people", 0.0, COUNT_MAX) },
+    FieldDef { conserved: true, default: Default::Empty, ..def("pop.size", Tier::Pop, "people", 0.0, COUNT_MAX) },
     // Appended after the step-3 fields: saved events refer to fields by position.
     FieldDef { default: Default::Zero, ..def("province.rain_shortfall", Tier::Province, "‰ of normal rain missing", 0.0, 1000.0) },
     // Overrides painted by the editor, which the climate and biome modules respect (step 5).
@@ -239,20 +402,13 @@ impl FieldData {
         }
     }
 
-    /// Sum of a conserved field. Only whole-number fields can be conserved.
-    pub fn total(&self) -> u64 {
-        match self {
-            FieldData::U64(v) => v.iter().sum(),
-            other => panic!("conserved fields are u64, found {:?}", std::mem::discriminant(other)),
-        }
-    }
 }
 
 /// Exact total of a conserved quantity, read from the field that holds it.
 pub fn quantity_total(world: &World, q: Quantity) -> u64 {
     match q {
         Quantity::People => world.pops.size.iter().sum(),
-        Quantity::Food => world.food_stock.iter().sum(),
+        Quantity::Goods(_) => world.goods.sum_class(&world.stock, q),
     }
 }
 
@@ -266,10 +422,34 @@ mod tests {
             assert_eq!(id(f.name), Some(FieldId(i as u16)), "{} is listed twice", f.name);
             assert!(f.min <= f.max, "{}", f.name);
         }
-        let conserved: Vec<_> = FIELDS.iter().filter_map(|f| f.conserved).collect();
-        for q in QUANTITIES {
-            assert_eq!(conserved.iter().filter(|&&c| c == q).count(), 1, "{q:?} needs exactly one field");
-        }
+        // Each conserved field is the field of a quantity, and holds it.
+        let conserved: Vec<FieldId> = FieldId::all().filter(|id| id.def().conserved).collect();
+        assert_eq!(conserved, vec![Quantity::Goods(0).field(), Quantity::People.field()]);
+        let goods = Goods::default();
+        assert_eq!(goods.quantity_at(Quantity::Goods(0).field(), 4), Some(Quantity::Goods(1)));
+        assert_eq!(goods.quantity_at(Quantity::People.field(), 4), Some(Quantity::People));
+    }
+
+    #[test]
+    fn food_keeps_its_saved_number_and_goods_count_per_class() {
+        // Before goods had classes, food was saved as 1.
+        assert_eq!(postcard::to_stdvec(&Quantity::Goods(0)).unwrap(), postcard::to_stdvec(&1u16).unwrap());
+        assert_eq!(postcard::from_bytes::<Quantity>(&[0]).unwrap(), Quantity::People);
+        assert!(postcard::from_bytes::<Quantity>(&postcard::to_stdvec(&300u16).unwrap()).is_err());
+
+        let tree = Taxonomy::standard_goods();
+        let g = Goods::new(tree.clone(), &["fish", "ore", "grain"]).unwrap();
+        assert_eq!((g.stride(), g.column("grain"), g.column("food"), g.depth()), (3, Some(2), None, 2));
+        assert_eq!(g.quantities(), vec![Quantity::Goods(0), Quantity::Goods(1)]);
+        // Two provinces: fish, ore, grain each.
+        let data = FieldData::U64(vec![1, 10, 100, 2, 20, 200]);
+        assert_eq!(g.totals(Quantity::Goods(0).field(), &data), vec![(Quantity::Goods(0), 303), (Quantity::Goods(1), 30)]);
+        assert_eq!(g.split(4), (1, 1));
+        assert_eq!(Quantity::Goods(1).name(&g), "raw");
+
+        assert!(Goods::new(tree.clone(), &["food", "fish"]).unwrap_err().contains("overlap"));
+        assert!(Goods::new(tree.clone(), &["goods"]).unwrap_err().contains("whole tree"));
+        assert!(Goods::new(tree, &["spice"]).unwrap_err().contains("no spice"));
     }
 
     #[test]

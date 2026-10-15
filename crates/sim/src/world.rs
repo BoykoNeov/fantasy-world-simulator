@@ -2,12 +2,12 @@
 //!
 //! Generation modules fill the cell and province fields once, in the order their manifests give
 //! (by default: terrain → climate → biomes → rivers → farmland → provinces). Runtime modules then
-//! own the food stores and the pops. Every field can also be read and written by name, as
+//! own the stores of goods and the pops. Every field can also be read and written by name, as
 //! [`FieldData`], for contracts, fingerprints and saves.
 
 use crate::biome::{self, Biome};
 use crate::config::ModuleConfig;
-use crate::fields::{FieldData, FieldId, Tier, FIELDS};
+use crate::fields::{FieldData, FieldId, Goods, Quantity, Tier, FIELDS};
 use crate::grid::Grid;
 use crate::module::{plan, Manifest, Module, Slot};
 use crate::pops::Pops;
@@ -98,8 +98,11 @@ pub struct World {
     /// Food a cell yields in an average year, rations (field `cell.food_yield`).
     pub food_per_cell: Vec<f64>,
     pub provinces: Provinces,
-    /// Stored food per province, rations.
-    pub food_stock: Vec<u64>,
+    /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
+    pub stock: Vec<u64>,
+    /// The goods tree, and which of its goods the per-good fields keep. Set from the configuration
+    /// when the world is made; it never changes.
+    pub goods: Arc<Goods>,
     /// People who starved in each province since the last year start.
     pub starved_this_year: Vec<u64>,
     pub pops: Pops,
@@ -129,7 +132,8 @@ impl World {
             river_flow: Vec::new(),
             food_per_cell: Vec::new(),
             provinces: Provinces::default(),
-            food_stock: Vec::new(),
+            stock: Vec::new(),
+            goods: Arc::new(Goods::default()),
             starved_this_year: Vec::new(),
             pops: Pops::default(),
             rain_shortfall: Vec::new(),
@@ -178,7 +182,7 @@ impl World {
             "province.center" => Dir(p.center.clone()),
             "province.lat" => F32(p.lat.clone()),
             "province.food_capacity" => U64(p.food_capacity.clone()),
-            "province.food_stock" => U64(self.food_stock.clone()),
+            "province.stock" => U64(self.stock.clone()),
             "province.starved_this_year" => U64(self.starved_this_year.clone()),
             "pop.province" => U32(self.pops.province.clone()),
             "pop.species" => U16(self.pops.species.clone()),
@@ -203,6 +207,13 @@ impl World {
             Tier::Cell => Some(self.grid.cells()),
             // The province count is set by the province fields themselves; pops vary.
             Tier::Province | Tier::Pop => None,
+            Tier::ProvinceGood => {
+                let k = self.goods.stride();
+                if !data.len().is_multiple_of(k) {
+                    return Err(format!("{}: {} values, not a whole number of provinces of {k} goods", def.name, data.len()));
+                }
+                None
+            }
         };
         if let Some(n) = expect.filter(|&n| n != data.len()) {
             return Err(format!("{}: {} values for {n} cells", def.name, data.len()));
@@ -228,7 +239,7 @@ impl World {
             ("province.center", Dir(v)) => p.center = v,
             ("province.lat", F32(v)) => p.lat = v,
             ("province.food_capacity", U64(v)) => p.food_capacity = v,
-            ("province.food_stock", U64(v)) => self.food_stock = v,
+            ("province.stock", U64(v)) => self.stock = v,
             ("province.starved_this_year", U64(v)) => self.starved_this_year = v,
             ("pop.province", U32(v)) => self.pops.province = v,
             ("pop.species", U16(v)) => self.pops.species = v,
@@ -275,7 +286,7 @@ impl World {
             ("province.center", Dir(x)) => put(&mut p.center, at, x),
             ("province.lat", F32(x)) => put(&mut p.lat, at, x),
             ("province.food_capacity", U64(x)) => put(&mut p.food_capacity, at, x),
-            ("province.food_stock", U64(x)) => put(&mut self.food_stock, at, x),
+            ("province.stock", U64(x)) => put(&mut self.stock, at, x),
             ("province.starved_this_year", U64(x)) => put(&mut self.starved_this_year, at, x),
             ("pop.province", U32(x)) => put(&mut pops.province, at, x),
             ("pop.species", U16(x)) => put(&mut pops.species, at, x),
@@ -297,11 +308,25 @@ impl World {
     /// here.)
     pub fn grow_province_fields(&mut self) {
         let n = self.provinces.count;
-        for v in [&mut self.food_stock, &mut self.starved_this_year, &mut self.rain_shortfall] {
+        for v in [&mut self.starved_this_year, &mut self.rain_shortfall] {
             if v.len() < n {
                 v.resize(n, 0);
             }
         }
+        let goods = n * self.goods.stride();
+        if self.stock.len() < goods {
+            self.stock.resize(goods, 0);
+        }
+    }
+
+    /// The conserved quantities this world counts: people, and each class of goods it keeps.
+    pub fn quantities(&self) -> Vec<Quantity> {
+        std::iter::once(Quantity::People).chain(self.goods.quantities()).collect()
+    }
+
+    /// Province `p`'s stored amount of the good named `name`, if the world keeps that good on its own.
+    pub fn stock_of(&self, p: usize, name: &str) -> Option<u64> {
+        self.goods.column(name).and_then(|c| self.stock.get(self.goods.index(p, c)).copied())
     }
 
     /// Check that province and pop fields agree on their lengths (after a load).
@@ -312,6 +337,7 @@ impl World {
             let (def, len) = (id.def(), self.field(id).len());
             let want = match def.tier {
                 Tier::Province => n,
+                Tier::ProvinceGood => n * self.goods.stride(),
                 Tier::Pop => pops,
                 Tier::Cell => continue,
             };
@@ -336,8 +362,9 @@ impl World {
                 continue;
             }
             let id = FieldId(k as u16);
+            let per_province = if def.tier == Tier::ProvinceGood { self.goods.stride() } else { 1 };
             let data = match (def.default, self.field(id)) {
-                (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; self.provinces.count]),
+                (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; self.provinces.count * per_province]),
                 (crate::fields::Default::Empty, d) => match d {
                     FieldData::U64(_) => FieldData::U64(Vec::new()),
                     FieldData::U32(_) => FieldData::U32(Vec::new()),

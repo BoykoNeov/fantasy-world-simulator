@@ -3,7 +3,7 @@
 
 use sim::calendar::Calendar;
 use sim::events::{Event, Posted};
-use sim::fields::{FieldData, FieldId};
+use sim::fields::{FieldData, FieldId, Goods};
 use sim::module::Slot;
 use sim::requests::{Cause, Request};
 use sim::fields::Tier;
@@ -22,14 +22,15 @@ pub fn group(n: u64) -> String {
     out
 }
 
-/// The last day any of `fields` changed for `province` or one of its pops (`pop_province` gives
-/// each pop's province), from the engine's last-changed stamps.
-pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = FieldId>, pop_province: &[u32], province: u32) -> Option<u64> {
+/// The last day any of `fields` changed for `province`, one of its goods or one of its pops
+/// (`pop_province` gives each pop's province), from the engine's last-changed stamps.
+pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = FieldId>, pop_province: &[u32], goods: &Goods, province: u32) -> Option<u64> {
     fields
         .flat_map(|id| {
             let stamps = &last_change[id.0 as usize];
             let mine: Vec<usize> = match id.def().tier {
                 Tier::Province => vec![province as usize],
+                Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
                 Tier::Cell => Vec::new(),
             };
@@ -39,10 +40,41 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
         .max()
 }
 
-/// A field's name for people: "province.food_stock" -> "food stock".
+/// A field's name for people: "province.rain_shortfall" -> "rain shortfall".
 pub fn field_name(id: FieldId) -> String {
     let name = id.def().name;
     name.split_once('.').map_or(name, |(_, n)| n).replace('_', " ")
+}
+
+/// The name of one value of a field: "food stock" for a per-good field's food column, the field's
+/// name otherwise.
+pub fn value_name(id: FieldId, entity: u32, goods: &Goods) -> String {
+    match id.def().tier {
+        Tier::ProvinceGood => format!("{} {}", good_name(goods, goods.split(entity as usize).1), field_name(id)),
+        _ => field_name(id),
+    }
+}
+
+/// The name of column `c` of the per-good fields.
+pub fn good_name(goods: &Goods, c: usize) -> &str {
+    goods.tree.name(goods.columns[c])
+}
+
+/// The province one value of a field belongs to, for province and per-good fields.
+pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
+    match id.def().tier {
+        Tier::Province => Some(entity),
+        Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
+        Tier::Cell | Tier::Pop => None,
+    }
+}
+
+/// One value of a per-good field, in its good's unit: "1,234 rations".
+pub fn good_value(goods: &Goods, c: usize, amount: u64) -> String {
+    match goods.tree.unit(goods.columns[c]) {
+        Some(unit) => format!("{} {unit}", group(amount)),
+        None => group(amount),
+    }
 }
 
 /// One value of a field, with its unit.
@@ -94,25 +126,26 @@ fn cause(c: Cause) -> &'static str {
     }
 }
 
-/// "Population asked for 12,000 rations from the food stock, for eating".
-pub fn request(r: &Request) -> String {
-    format!("{} asked for {} from the {}, for {}", slot_name(r.requester), group(r.take), field_name(r.field), cause(r.cause))
+/// "Population asked for 12,000 from the food stock, for eating".
+pub fn request(r: &Request, goods: &Goods) -> String {
+    format!("{} asked for {} from the {}, for {}", slot_name(r.requester), group(r.take), value_name(r.field, r.entity, goods), cause(r.cause))
 }
 
-pub fn grant(r: &Request, granted: u64) -> String {
+pub fn grant(r: &Request, granted: u64, goods: &Goods) -> String {
     let share = if r.take == 0 { 100.0 } else { 100.0 * granted as f64 / r.take as f64 };
-    format!("{} was given {} of {} asked from the {} ({share:.0}%), for {}", slot_name(r.requester), group(granted), group(r.take), field_name(r.field), cause(r.cause))
+    let from = value_name(r.field, r.entity, goods);
+    format!("{} was given {} of {} asked from the {from} ({share:.0}%), for {}", slot_name(r.requester), group(granted), group(r.take), cause(r.cause))
 }
 
-pub fn event(e: &Event, cal: &Calendar) -> String {
+pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
     match e {
-        Event::Granted { request, granted } => grant(request, *granted),
+        Event::Granted { request, granted } => grant(request, *granted, goods),
         Event::Famine { starved, .. } => format!("famine: {} people starved", group(*starved)),
         Event::ContractViolated { field, entity, value, clamped_to, .. } => {
-            format!("{} of entity {entity} was {value}, out of bounds; set to {clamped_to}", field_name(*field))
+            format!("{} of entity {entity} was {value}, out of bounds; set to {clamped_to}", value_name(*field, *entity, goods))
         }
         Event::ConservationBroken { quantity, expected, actual, by } => {
-            format!("{quantity:?} total is {} but should be {} (during {:?})", group(*actual), group(*expected), by)
+            format!("{} total is {} but should be {} (during {:?})", quantity.name(goods), group(*actual), group(*expected), by)
         }
         Event::Drought { lon, lat, radius_km, shortfall, days } => format!(
             "a drought begins around {}, {:.0} km across: {:.0}% of the rain missing for {}",
@@ -175,29 +208,29 @@ pub enum Logged {
 }
 
 impl LogEntry {
-    pub fn of_event(p: &Posted) -> LogEntry {
+    pub fn of_event(p: &Posted, goods: &Goods) -> LogEntry {
         let source = match (p.emitter, &p.event) {
             (Some(s), _) => Source::Module(s),
             (None, Event::Drought { .. }) => Source::Player,
             (None, _) => Source::Engine,
         };
         let province = p.event.province().or(match &p.event {
-            Event::ContractViolated { field, entity, .. } if field.def().tier == sim::fields::Tier::Province => Some(*entity),
+            Event::ContractViolated { field, entity, .. } => province_of(*field, *entity, goods),
             _ => None,
         });
         LogEntry { day: p.day + 1, source, province, what: Logged::Event(p.event.clone()) }
     }
 
     /// A change request applied on `day` that got less than it asked for.
-    pub fn rationed(day: u64, owner: Slot, r: &Request, granted: u64) -> LogEntry {
-        let province = (r.field.def().tier == sim::fields::Tier::Province).then_some(r.entity);
+    pub fn rationed(day: u64, owner: Slot, r: &Request, granted: u64, goods: &Goods) -> LogEntry {
+        let province = province_of(r.field, r.entity, goods);
         LogEntry { day, source: Source::Module(owner), province, what: Logged::Rationed(*r, granted) }
     }
 
-    pub fn text(&self, cal: &Calendar) -> String {
+    pub fn text(&self, cal: &Calendar, goods: &Goods) -> String {
         match &self.what {
-            Logged::Event(e) => event(e, cal),
-            Logged::Rationed(r, g) => format!("not enough food: {}", grant(r, *g)),
+            Logged::Event(e) => event(e, cal, goods),
+            Logged::Rationed(r, g) => format!("not enough to go round: {}", grant(r, *g, goods)),
         }
     }
 }
@@ -214,21 +247,21 @@ pub fn stage(s: Stage) -> &'static str {
 }
 
 /// One step of a trace, in words.
-pub fn trace_step(s: &TraceStep, cal: &Calendar) -> String {
+pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods) -> String {
     let who = s.module.map_or("the engine", slot_name);
     match &s.what {
         Traced::Note(n) => format!("{who}: {n}"),
         Traced::Changed { field, entity, before, after } => {
-            let name = field_name(*field);
+            let name = value_name(*field, *entity, goods);
             let fmt = |v: f64| if v.fract() == 0.0 && v.abs() < 1e18 { group(v.abs() as u64) } else { format!("{v:.2}") };
             let of = if field.def().tier == sim::fields::Tier::Pop { format!(" of pop {entity}") } else { String::new() };
             let delta = after - before;
             let sign = if delta >= 0.0 { "+" } else { "-" };
             format!("{name}{of}: {} to {} ({sign}{}), set by {who}", fmt(*before), fmt(*after), fmt(delta.abs()))
         }
-        Traced::Requested(r) => format!("{}; settled tonight", request(r)),
-        Traced::Granted(r, g) => format!("{who} settled it: {}", grant(r, *g)),
-        Traced::Delivered(e) => format!("arrived: {}", event(e, cal)),
-        Traced::Sent(e) => format!("{who} announced: {} (arrives tomorrow)", event(e, cal)),
+        Traced::Requested(r) => format!("{}; settled tonight", request(r, goods)),
+        Traced::Granted(r, g) => format!("{who} settled it: {}", grant(r, *g, goods)),
+        Traced::Delivered(e) => format!("arrived: {}", event(e, cal, goods)),
+        Traced::Sent(e) => format!("{who} announced: {} (arrives tomorrow)", event(e, cal, goods)),
     }
 }

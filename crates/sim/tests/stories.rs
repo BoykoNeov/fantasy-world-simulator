@@ -46,7 +46,7 @@ fn run(poke: Option<&Event>, region: &[usize]) -> Run {
             }
         }
         if year < DROUGHT_YEARS {
-            lowest_store = lowest_store.min(region.iter().map(|&i| sim.world.food_stock[i]).sum());
+            lowest_store = lowest_store.min(region.iter().map(|&i| sim.world.stock[i]).sum());
         }
     }
     Run { sim, starved, lowest_store }
@@ -108,7 +108,7 @@ fn story_1_a_drought_in_the_breadbasket_brings_famine() {
     // moves food or people between provinces.
     let (a, b) = (dry.sim.world.province_population(), normal.sim.world.province_population());
     for i in (0..p.count).filter(|i| !region.contains(i)) {
-        assert_eq!((a[i], dry.sim.world.food_stock[i]), (b[i], normal.sim.world.food_stock[i]), "province {i}, outside the drought");
+        assert_eq!((a[i], dry.sim.world.stock[i]), (b[i], normal.sim.world.stock[i]), "province {i}, outside the drought");
     }
     assert_eq!(dry.sim.problems, Default::default());
 }

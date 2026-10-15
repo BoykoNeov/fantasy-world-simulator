@@ -16,7 +16,7 @@ fn world(seed: u64) -> Sim {
 }
 
 fn totals(sim: &Sim) -> (u64, u64) {
-    (quantity_total(&sim.world, Quantity::People), quantity_total(&sim.world, Quantity::Food))
+    (quantity_total(&sim.world, Quantity::People), quantity_total(&sim.world, Quantity::Goods(0)))
 }
 
 /// Longitude and latitude (degrees) of a cell's centre.
@@ -104,7 +104,7 @@ fn new_land_joins_a_neighbour_or_becomes_a_province_of_its_own() {
     assert!(sim.world.elevation[far] > 0.0);
     assert_eq!(sim.world.provinces.of_cell[far], count as u32, "an island of its own");
     assert_eq!(sim.world.provinces.count, count + 1);
-    assert_eq!(sim.world.food_stock.len(), count + 1);
+    assert_eq!(sim.world.stock.len(), count + 1);
     assert_eq!(sim.world.province_population()[count], 0);
 
     // Raising a coast joins the new land to the province next to it.

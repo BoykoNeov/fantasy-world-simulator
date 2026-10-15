@@ -15,6 +15,8 @@ pub mod edit;
 pub mod events;
 pub mod export;
 pub mod fields;
+#[cfg(test)]
+mod goods_tests;
 pub mod grid;
 pub mod hydrology;
 pub mod module;
@@ -25,6 +27,7 @@ pub mod rng;
 pub mod save;
 pub mod scenario;
 pub mod sim;
+pub mod taxonomy;
 pub mod terrain;
 pub mod weather;
 pub mod world;
