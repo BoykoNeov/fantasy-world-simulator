@@ -22,7 +22,8 @@ pub const TABLE_FILL: usize = 0;
 pub const TABLE_POPULATION: usize = 1;
 pub const TABLE_FAMINE: usize = 2;
 pub const TABLE_DROUGHT: usize = 3;
-pub const TABLE_LAYERS: usize = 4;
+pub const TABLE_PRICE: usize = 4;
+pub const TABLE_LAYERS: usize = 5;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -49,6 +50,31 @@ impl ProvinceView {
         let mix = |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(x, y)| x + (y - x) * t).collect();
         ProvinceView { people: mix(&a.people, &b.people), starved: mix(&a.starved, &b.starved), drought: mix(&a.drought, &b.drought) }
     }
+}
+
+/// The economy as the map shows it, per province (empty: nothing to show).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MarketView {
+    /// How dear the chosen good is to trade against the middle province, -1 (a quarter of its
+    /// price or less) to 1 (four times or more); NaN where nobody trades.
+    pub price: Vec<f32>,
+}
+
+/// Where good column `c` is cheap or dear to trade, for [`MarketView::price`]: each inhabited
+/// province's price (`price`, the per-good field, `stride` goods a province) times its money level
+/// (1 for all when `levels` is `None`), against the median of them.
+pub fn relative_prices(price: &[u64], stride: usize, c: usize, people: &[u64], levels: Option<&[f64]>) -> Vec<f32> {
+    let at = |p: usize| -> Option<f64> {
+        let x = *price.get(p * stride + c)? as f64;
+        (people[p] > 0 && x > 0.0).then(|| x * levels.and_then(|l| l.get(p)).copied().unwrap_or(1.0))
+    };
+    let mut known: Vec<f64> = (0..people.len()).filter_map(at).collect();
+    if known.is_empty() {
+        return vec![f32::NAN; people.len()];
+    }
+    known.sort_by(f64::total_cmp);
+    let middle = known[known.len() / 2];
+    (0..people.len()).map(|p| at(p).map_or(f32::NAN, |x| ((x / middle).ln() / 4f64.ln()).clamp(-1.0, 1.0) as f32)).collect()
 }
 
 /// People starved per province in the last 12 months, from the famines delivered in that time.
@@ -182,7 +208,7 @@ pub fn table_rows(count: usize) -> usize {
 /// Province tables, layer after layer, each `TABLE_WIDTH` × `table_rows` texels. Alpha scales how
 /// strongly the colour covers the map (famine and drought are clear where there is none). `world`
 /// gives the provinces' areas and the seed for their colours; `v` the values shown.
-pub fn province_tables(world: &World, v: &ProvinceView) -> Vec<Rgba> {
+pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> Vec<Rgba> {
     let count = world.provinces.count;
     let size = TABLE_WIDTH * table_rows(count);
     let mut out = vec![[0u8; 4]; size * TABLE_LAYERS];
@@ -208,13 +234,20 @@ pub fn province_tables(world: &World, v: &ProvinceView) -> Vec<Rgba> {
         let d = v.drought[p].clamp(0.0, 1.0);
         let [r, g, b] = ramp(&[[214, 186, 120], [170, 110, 50], [110, 60, 25]], d);
         out[TABLE_DROUGHT * size + p] = [r, g, b, (255.0 * (d * 1.6).min(1.0)).round() as u8];
+
+        // Cheap in purples, dear in burnt oranges, the middle in pale parchment (purples, not blues,
+        // so cheap land doesn't read as sea); clear where nobody trades.
+        if let Some(&x) = market.price.get(p).filter(|x| !x.is_nan()) {
+            let [r, g, b] = ramp(&[[90, 60, 140], [170, 150, 200], [240, 230, 200], [225, 140, 70], [150, 50, 20]], (x as f64 + 1.0) / 2.0);
+            out[TABLE_PRICE * size + p] = [r, g, b, 255];
+        }
     }
     out
 }
 
 /// The tables for the world as it stands.
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
-    province_tables(&sim.world, &ProvinceView::now(sim))
+    province_tables(&sim.world, &ProvinceView::now(sim), &MarketView::default())
 }
 
 fn biome_color(b: Biome) -> [u8; 3] {
@@ -271,6 +304,23 @@ fn ramp(stops: &[[u8; 3]], t: f64) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prices_are_against_the_middle_province_with_the_money_level() {
+        // Two goods a province; column 1. Province 2 has nobody, province 3 no price.
+        let price = [0, 100, 0, 200, 0, 400, 0, 0, 0, 50];
+        let people = [10, 10, 0, 10, 10];
+        let x = relative_prices(&price, 2, 1, &people, None);
+        // Known: 100, 200, 50; the middle is 100.
+        assert_eq!(x[0], 0.0);
+        assert!((x[1] - 0.5).abs() < 1e-6, "twice the middle is half way to dear");
+        assert!(x[2].is_nan() && x[3].is_nan());
+        assert!((x[4] + 0.5).abs() < 1e-6);
+        // Rich province 0 is dearer to trade with: 100 × 4 = 400, which moves the middle to 200.
+        let y = relative_prices(&price, 2, 1, &people, Some(&[4.0, 1.0, 1.0, 1.0, 1.0]));
+        assert!((y[0] - 0.5).abs() < 1e-6);
+        assert_eq!(y[1], 0.0);
+    }
     use sim::grid::{face_dir, uv_to_ab};
 
     /// Each border texel shows the cell found by stepping just past the face edge on the sphere.

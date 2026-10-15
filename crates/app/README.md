@@ -18,7 +18,11 @@ What exists:
   with the points where three regions meet held fixed, so neighbours never get gaps or double lines.
 - **Parchment look**: paper tint, grain, a vignette, and a double ink rule around the map's edge.
 - **Panel**: layer sliders (terrain, temperature, rainfall, population, famine in the past year,
-  drought, province colours), line toggles, and a hover inspector.
+  drought, province colours, prices), line toggles, and a hover inspector.
+- **Price map** (step 6, where some module prices goods): pick a good, and each province shows
+  what it costs to trade there (its local price times the money level) against the middle
+  province: purple cheap, orange dear, from a quarter to four times; clear where nobody lives.
+  Worked out again only when the day's values or the good change (prices move once a month).
 - **Playback** (`playback.rs`): the simulation runs on its own thread, up to 120 days ahead of the day
   shown, and sends one frame per day. Days on which nothing ran share their data with the day before.
   The time bar plays at a day, a week, a month or a year a second, or as fast as the simulation goes;
@@ -104,7 +108,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
+  `drought`, `provinces`, `prices` (0..1), and `coasts`, `rivers`, `borders`, `graticule` (0 or 1).
+- `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--paint LON,LAT,RADIUS_KM,METRES`, `--split best|P`, `--undo`: once the window is open, in the
   order given, raise land along a short stroke, split half a province off (and select the new one),

@@ -35,6 +35,8 @@ pub struct LayerSettings {
     pub famine: f32,
     pub provinces: f32,
     pub drought: f32,
+    /// Where a good is cheap or dear to trade (the good is picked in the window).
+    pub prices: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
@@ -51,6 +53,7 @@ impl Default for LayerSettings {
             famine: 0.0,
             provinces: 0.0,
             drought: 0.0,
+            prices: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
@@ -70,7 +73,7 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         proj: [cam.projection.index() as f32, cam.visible_copies(w).0 as f32, ppp as f32, 0.0],
         layers0: [l.terrain, l.temperature, l.rainfall, l.population],
         layers1: [l.famine, l.provinces, on(l.coasts), on(l.rivers)],
-        layers2: [border_alpha, on(l.graticule), l.drought, 0.0],
+        layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
         ids: [hover_province, selected_province, 0, 0],
     }
 }
@@ -109,7 +112,7 @@ impl MapData {
             fields: layers::spread(&halo, &layers::fields(w)),
             province_ids: layers::spread(&halo, &w.provinces.of_cell),
             warp,
-            tables: layers::province_tables(w, view),
+            tables: layers::province_tables(w, view, &layers::MarketView::default()),
             lines,
             line_ranges,
         }

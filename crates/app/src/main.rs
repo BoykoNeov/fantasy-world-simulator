@@ -3,12 +3,12 @@
 //! fantasymap [--size small|medium|large|huge] [--seed S] [--n FACE] [--provinces N] [--years Y]
 //!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--days D] [--select best|P] [--explain]
 //!            [--speed DAYS_PER_SECOND|max]
-//!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
+//!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--modules SLOT=VERSION,...] [--bench --out DIR --tag NAME]
 //!
-//! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
-//! coasts, rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet
+//! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices (0..1), and
+//! coasts, rivers, borders, graticule (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
@@ -79,6 +79,8 @@ struct Options {
     projection: Projection,
     view: Option<(f64, f64, f64)>,
     layers: LayerSettings,
+    /// The good the price layer shows.
+    good: Option<String>,
     screenshot: Option<String>,
     /// A world to open instead of making one.
     open: Option<String>,
@@ -108,6 +110,7 @@ impl Options {
             projection: Projection::EqualEarth,
             view: None,
             layers: LayerSettings::default(),
+            good: None,
             screenshot: None,
             open: None,
             live_edits: Vec::new(),
@@ -185,6 +188,7 @@ impl Options {
                         "population" => l.population = x,
                         "famine" => l.famine = x,
                         "drought" => l.drought = x,
+                        "prices" => l.prices = x,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
                         "rivers" => l.rivers = x > 0.5,
@@ -193,6 +197,7 @@ impl Options {
                         other => panic!("unknown layer {other}"),
                     }
                 }
+                "--good" => o.good = Some(value(&mut i)),
                 "--screenshot" => o.screenshot = Some(value(&mut i)),
                 "--open" => o.open = Some(value(&mut i)),
                 "--paint" => {
@@ -318,6 +323,11 @@ struct MapApp {
     stock_edit: Option<u64>,
     /// The columns of the per-good fields that hold coins.
     coin_columns: Vec<usize>,
+    /// The good the price layer shows (its column).
+    price_good: usize,
+    /// What the economy layers show, and the day state and good they were worked out for.
+    market: layers::MarketView,
+    market_for: Option<(usize, usize)>,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -429,6 +439,10 @@ impl MapApp {
         let modules = ModulesInfo { versions, verdict: table.map(|t| t.verdict_for(mc)), tested_on };
         let goods = &sim.world.goods;
         let coin_columns = mc.markets.as_ref().and_then(|m| goods.columns_under(goods.tree.find(&m.money)?)).unwrap_or_default();
+        let price_good = match &opts.good {
+            Some(name) => goods.column(name).filter(|c| !coin_columns.contains(c)).unwrap_or_else(|| panic!("--good {name}: this world doesn't price it")),
+            None => (0..goods.stride()).find(|c| !coin_columns.contains(c)).unwrap_or(0),
+        };
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -468,6 +482,9 @@ impl MapApp {
             stock_good: 0,
             stock_edit: None,
             coin_columns,
+            price_good,
+            market: layers::MarketView::default(),
+            market_for: None,
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
@@ -588,6 +605,20 @@ impl MapApp {
         // Days on different maps (an edit between them) aren't blended: their provinces differ.
         let next = self.frames.get(1).filter(|n| n.day == front.day + 1 && t > 0.0 && Arc::ptr_eq(&n.state.map, &front.state.map));
         let key = (front.day, next.map_or(0, |_| t.to_bits()), Arc::as_ptr(&front.state) as u64 ^ self.epoch);
+        // Prices change once a month: worked out again only for a new day state or another good.
+        let market_key = (Arc::as_ptr(&self.shown_state) as usize, self.price_good);
+        if self.market_for != Some(market_key) {
+            let price = sim::fields::known("province.price");
+            let state = &self.shown_state;
+            self.market = layers::MarketView {
+                price: match state.fields.iter().any(|f| f.0 == price) {
+                    true => layers::relative_prices(&self.geo.price, self.geo.goods.stride(), self.price_good, &self.geo.province_population(), state.money_levels.as_deref()),
+                    false => Vec::new(),
+                },
+            };
+            self.market_for = Some(market_key);
+            self.tables_for = None;
+        }
         if self.tables_for != Some(key) {
             self.view = match next {
                 Some(n) => ProvinceView::blend(&front.state.view, &n.state.view, t),
@@ -595,7 +626,7 @@ impl MapApp {
             };
             // Until a changed map's picture is ready, the GPU's tables have the old map's size.
             if self.geo.provinces.count == self.gpu_provinces {
-                self.pending_tables = Some(layers::province_tables(&self.geo, &self.view));
+                self.pending_tables = Some(layers::province_tables(&self.geo, &self.view, &self.market));
                 self.tables_for = Some(key);
             }
         }
@@ -914,6 +945,21 @@ impl MapApp {
         ui.add(egui::Slider::new(&mut l.famine, 0.0..=1.0).text("famine, past year"));
         ui.add(egui::Slider::new(&mut l.drought, 0.0..=1.0).text("drought"));
         ui.add(egui::Slider::new(&mut l.provinces, 0.0..=1.0).text("province colours"));
+        // Only where some module prices goods.
+        if !self.market.price.is_empty() {
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut l.prices, 0.0..=1.0).text("prices of"))
+                    .on_hover_text("what the good costs to trade (its local price times the money level) against the middle province: purple cheap, orange dear, from a quarter to four times; clear where nobody lives");
+                let goods = &self.geo.goods;
+                let mut c = self.price_good;
+                egui::ComboBox::from_id_salt("price layer good").selected_text(inspector::good_name(goods, c)).show_ui(ui, |ui| {
+                    for k in (0..goods.stride()).filter(|k| !self.coin_columns.contains(k)) {
+                        ui.selectable_value(&mut c, k, inspector::good_name(goods, k));
+                    }
+                });
+                self.price_good = c;
+            });
+        }
         ui.checkbox(&mut l.coasts, "coastlines");
         ui.checkbox(&mut l.rivers, "rivers");
         ui.checkbox(&mut l.borders, "province borders (zoom in)");
@@ -981,6 +1027,13 @@ impl MapApp {
             ui.label(format!("province {p}: {} people, {:.1} per km²", group(people.round() as u64), people / w.provinces.area_km2[p]));
             if let Some(food) = w.stock_under(p, "food") {
                 ui.label(format!("food stock {} rations", group(food)));
+            }
+            if self.layers.prices > 0.0
+                && let Some(&x) = self.market.price.get(p).filter(|x| !x.is_nan())
+            {
+                let times = 4f64.powf(x as f64);
+                let name = inspector::good_name(&w.goods, self.price_good);
+                ui.label(if times >= 1.0 { format!("{name}: {times:.2}× the middle province's price to trade") } else { format!("{name}: {:.2}× the middle province's price to trade (cheaper)", times) });
             }
             if self.view.drought[p] > 0.0 {
                 ui.label(format!("drought: {:.0}% of the rain missing", 100.0 * self.view.drought[p]));
