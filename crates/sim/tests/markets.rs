@@ -92,6 +92,17 @@ fn a_markets_world_makes_uses_and_prices_every_good() {
     }
     let all: u64 = people.iter().sum();
     assert!(working * 10 > all * 3 && working * 10 < all * 6, "{working} working of {all}");
+    // Asked why a province changed on a month's first day, markets explains each good's making.
+    let p = biggest(&sim);
+    let day = (0..sim.day).rev().find(|&d| sim.calendar.is_month_start(d)).unwrap();
+    let t = sim.trace(day, p as u32).unwrap();
+    let notes: Vec<&String> = t.steps.iter().filter(|s| s.module == Some(Slot::Economics)).filter_map(|s| match &s.what {
+        sim::sim::Traced::Note(n) => Some(n),
+        _ => None,
+    }).collect();
+    for good in goods.names().iter().filter(|n| *n != "coin") {
+        assert!(notes.iter().any(|n| n.starts_with(&format!("{good}: ")) && n.contains("workers made")), "{good}: {notes:?}");
+    }
     // Most work is feeding people.
     let farming: u64 = (0..people.len()).map(|p| ["grain", "fish", "livestock"].iter().map(|g| workers(&sim, p, g)).sum::<u64>()).sum();
     assert!(farming * 2 > working, "{farming} of {working} work on food");

@@ -236,7 +236,7 @@ Tests (a few seconds; the story test runs a world twice for four years):
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim
 ```
 
-The combination tester (about 25 s on all cores; run it at below-normal priority). `--write` saves
+The combination tester (about 25–30 s on all cores for its 48 mixes; run it at below-normal priority). `--write` saves
 the table, `--check` runs again what the table lists and fails if anything came out differently,
 `--only economics=off,population=off` runs one mix, and `--out DIR` writes, for each run that
 wasn't green, a scenario that replays it up to just after its first problem. Replays are not
@@ -295,6 +295,12 @@ since the replay starts from that year's first day:
 | Rewind to a year's last day | 46 ms | 242 ms |
 | One yearly checkpoint | 0.58 MB (0.22 values + 0.36 last-changed stamps) | 2.3 MB |
 | Checkpoints kept for a century / a millennium | 58 MB / 0.58 GB | 0.23 GB / 2.3 GB |
+
+With Economics "markets" (Oct 15, counted, not measured) a province keeps 27 running per-good
+values instead of 1 (stores, prices and workers for 9 goods), each with its 8-byte stamp: about
+2.7 MB a yearly checkpoint on the large world instead of 0.58 MB, so roughly 0.27 GB a century and,
+on a huge world, about 11 GB a millennium. A known cost, to trim with the stamps when long runs
+need it.
 
 That is fast enough that checkpoints more often than yearly aren't needed. Memory is the cost:
 checkpoints are never dropped, so a 1,000-year run on a huge world holds about 2.3 GB of them.

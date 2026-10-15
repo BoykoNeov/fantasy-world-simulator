@@ -91,6 +91,16 @@ pub fn good_value(goods: &Goods, c: usize, amount: u64) -> String {
     }
 }
 
+/// One value of a per-good field for column `c`, with its unit: a store in the good's own unit, a
+/// price in coins, workers as people.
+pub fn per_good_value(id: FieldId, goods: &Goods, c: usize, amount: u64) -> String {
+    match id.def().name {
+        "province.price" => format!("{:.3} coins", amount as f64 / sim::markets::PRICE_SCALE),
+        "province.workers" => format!("{} people", group(amount)),
+        _ => good_value(goods, c, amount),
+    }
+}
+
 /// One value of a field, with its unit.
 pub fn value(id: FieldId, data: &FieldData, i: usize) -> String {
     let def = id.def();
@@ -281,5 +291,19 @@ pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods) -> String {
         Traced::Granted(r, g) => format!("{who} settled it: {}", grant(r, *g, goods)),
         Traced::Delivered(e) => format!("arrived: {}", event(e, cal, goods)),
         Traced::Sent(e) => format!("{who} announced: {} (arrives tomorrow)", event(e, cal, goods)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn per_good_values_have_their_own_units() {
+        let goods = Goods::default();
+        let id = sim::fields::known;
+        assert_eq!(per_good_value(id("province.price"), &goods, 0, 62), "0.062 coins");
+        assert_eq!(per_good_value(id("province.workers"), &goods, 0, 1500), format!("{} people", group(1500)));
+        assert_eq!(per_good_value(id("province.stock"), &goods, 0, 1500), format!("{} rations", group(1500)));
     }
 }

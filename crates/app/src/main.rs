@@ -1041,7 +1041,7 @@ impl MapApp {
                         for c in 0..goods.stride() {
                             let i = goods.index(pi, c);
                             ui.label(inspector::value_name(id, i as u32, goods));
-                            ui.label(data.is_empty().then(String::new).unwrap_or_else(|| inspector::good_value(goods, c, data.value(i) as u64)));
+                            ui.label(data.is_empty().then(String::new).unwrap_or_else(|| inspector::per_good_value(id, goods, c, data.value(i) as u64)));
                             ui.label(&self.owners[id.0 as usize].0);
                             when(ui, id, i);
                             ui.end_row();

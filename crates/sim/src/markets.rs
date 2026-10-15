@@ -468,8 +468,8 @@ impl Module for Markets {
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         let r = self.resolved(&w.goods);
         let k = w.goods.stride();
-        // Provinces an edit added start with no prices and no work: they are worked out afresh.
-        w.grow_province_fields();
+        // Provinces an edit added start with no prices and no work (the edit gave them empty rows):
+        // they are worked out afresh.
         let date = cx.calendar.date(cx.day);
         let month = Month {
             p: &self.params,
