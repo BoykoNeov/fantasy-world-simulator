@@ -2,7 +2,8 @@
 //! keeps a local price per good.
 //!
 //! The module owns `province.stock` (the eight goods and the coins), `province.price` and
-//! `province.workers`. Once a month, in each province:
+//! `province.workers`, and the realms' stores (`realm.stock`, whose coins are their treasuries:
+//! realms tax and spend by asking it to move coins). Once a month, in each province:
 //!
 //! 1. **Prices** move toward what the stores call for: a good held short of the stores wanted gets
 //!    dearer, one held in plenty cheaper (`price = base × (wanted / held) ^ response`, within a
@@ -35,7 +36,7 @@ use crate::economy::month_share;
 use crate::events::EventKind;
 use crate::fields::{known, FieldData, FieldId, Goods, Quantity, Tier};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::requests::{serve_goods, split_proportional, Cause, Request};
+use crate::requests::{serve_goods_into, split_proportional, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
 use crate::routes::Link;
 use crate::terrain::fbm;
@@ -251,7 +252,9 @@ static V1: Manifest = Manifest {
         "pop.province",
         "pop.size",
     ],
-    owns: &["province.stock", "province.price", "province.workers"],
+    // Realms' stores too: their coins are the treasuries, and coins keep one keeper, so a realm's
+    // taxes and spending are moves between two stores this module keeps.
+    owns: &["province.stock", "province.price", "province.workers", "realm.stock"],
     requests: &[],
     asks: &[],
     moves: &[],
@@ -632,9 +635,15 @@ impl Module for Markets {
     }
 
     /// Food is asked for as food: it is served from every food good kept, in proportion to each store.
+    /// Taxes move a province's coins into its realm's treasury, and spending moves them back.
     fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
-        debug_assert!(requests.iter().all(|r| r.field == known("province.stock")));
-        serve_goods(&mut w.stock, requests, cx);
+        let stock = known("province.stock");
+        // The queue comes sorted by field: the provinces' stores first.
+        let split = requests.partition_point(|r| r.field == stock);
+        let (from_provinces, from_realms) = requests.split_at(split);
+        debug_assert!(from_realms.iter().all(|r| r.field == known("realm.stock")));
+        serve_goods_into(&mut w.stock, Some(&mut w.realm_stock), from_provinces, cx);
+        serve_goods_into(&mut w.realm_stock, Some(&mut w.stock), from_realms, cx);
     }
 }
 

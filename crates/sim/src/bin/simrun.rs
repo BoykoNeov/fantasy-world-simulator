@@ -4,7 +4,7 @@
 //! simrun [--size small|medium|large|huge] [--n FACE] [--provinces N] [--seed S] [--years Y]
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
-//!        [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
+//!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
@@ -12,7 +12,8 @@
 //! the ways to start weighted as given (`--realms settled=1` is the default way). `--rulers` gives
 //! every realm a ruler and heir (and turns realms on the default way if `--realms` isn't given).
 //! `--wars` keeps wars and truces between realms (started and ended only by pokes, from a scenario
-//! file, for now), turning realms on in the same way.
+//! file, for now), turning realms on in the same way. Under `--economics markets`, realms tax and
+//! spend coins, and the realms line says where the coins sit.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -49,6 +50,9 @@ fn main() {
     }
     if let Some(v) = get("--climate") {
         config.modules.climate = v.parse().unwrap_or_else(|e| panic!("{e}"));
+    }
+    if let Some(v) = get("--economics") {
+        config.modules.set_choice(sim::module::Slot::Economics, &v).unwrap_or_else(|e| panic!("--economics: {e}"));
     }
     if let Some(v) = get("--realms") {
         let mut r = sim::realms::RealmParams { settled: 0.0, ..Default::default() };
@@ -198,6 +202,7 @@ fn print_realms(sim: &Sim) {
         names[biggest as usize],
         w.realms.capital[biggest as usize]
     );
+    print_treasuries(sim, &alive, biggest, &names[biggest as usize]);
     print_rulers(sim, biggest, &names[biggest as usize]);
     let wars = &w.wars;
     if wars.count() > 0 {
@@ -205,6 +210,58 @@ fn print_realms(sim: &Sim) {
         let won = (0..wars.count()).filter(|&k| wars.winner[k] != sim::grid::NONE).count();
         println!("wars: {} declared, {on} going on, {won} won, {} ended with nobody winning", wars.count(), wars.count() - on - won);
     }
+}
+
+/// In a world with coins: the treasuries' share of all coins, the largest realm's treasury against
+/// its land's coins, and its capital's coins a person against the world's.
+fn print_treasuries(sim: &Sim, alive: &[u32], biggest: u32, realm: &str) {
+    let w = &sim.world;
+    let g = &w.goods;
+    let Some(coins) = g.tree.find("money").and_then(|m| g.columns_under(m)).filter(|c| !c.is_empty()) else { return };
+    let held = |values: &[u64], row: usize| coins.iter().map(|&c| values.get(g.index(row, c)).copied().unwrap_or(0)).sum::<u64>() as f64;
+    let in_provinces: f64 = (0..w.provinces.count).map(|p| held(&w.stock, p)).sum();
+    let in_treasuries: f64 = (0..w.realms.count()).map(|r| held(&w.realm_stock, r)).sum();
+    if in_provinces + in_treasuries <= 0.0 {
+        return;
+    }
+    let dead: f64 = (0..w.realms.count()).filter(|&r| !alive.contains(&(r as u32))).map(|r| held(&w.realm_stock, r)).sum();
+    let people = w.province_population();
+    let land: f64 = (0..w.provinces.count).filter(|&p| w.owner[p] == biggest).map(|p| held(&w.stock, p)).sum();
+    let all_people: u64 = people.iter().sum();
+    let world_each = in_provinces / all_people.max(1) as f64;
+    // Each capital's coins a person against the world's.
+    let mut rich: Vec<(f64, u32)> = alive
+        .iter()
+        .filter(|&&r| people[w.realms.capital[r as usize] as usize] > 0)
+        .map(|&r| {
+            let c = w.realms.capital[r as usize] as usize;
+            (held(&w.stock, c) / people[c] as f64 / world_each.max(1e-9), r)
+        })
+        .collect();
+    rich.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (middle, most) = (rich.get(rich.len() / 2).map_or(0.0, |x| x.0), rich.last().map_or(0.0, |x| x.0));
+    if let Some(&(_, r)) = rich.last() {
+        let land = land_of(w, r);
+        let c = w.realms.capital[r as usize] as usize;
+        let realm_people: u64 = land.iter().map(|&p| people[p]).sum();
+        println!(
+            "richest capital: province {c} of realm {r} ({} provinces, {} people), with {} people and {} coins",
+            land.len(),
+            group(realm_people),
+            group(people[c]),
+            group(held(&w.stock, c) as u64)
+        );
+    }
+    println!(
+        "treasuries: {:.1}% of all coins ({} in dissolved realms); {realm}'s holds {:.1}% of what its provinces hold; capitals have {middle:.2} times the world's coins a person in the middle, {most:.2} at most (the world: {world_each:.2} a person)",
+        100.0 * in_treasuries / (in_provinces + in_treasuries),
+        group(dead as u64),
+        100.0 * held(&w.realm_stock, biggest as usize) / land.max(1.0),
+    );
+}
+
+fn land_of(w: &sim::world::World, r: u32) -> Vec<usize> {
+    (0..w.provinces.count).filter(|&p| w.owner[p] == r).collect()
 }
 
 /// How rulers came to the throne so far, how long the reigns that ended lasted, and the largest

@@ -336,10 +336,43 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
     back by event. So the realms module can't read the wars, and peace changes land by an event
     (a test builds this order). Later pieces will need a way to read the day before's values without
     an order between the modules: trade will read the wars, while realms choosing war will read
-    trade's stores and prices.
+    trade's stores and prices. Taxes already have realms reading markets' stores; the loop closes
+    when markets reads owners and wars (trade and realms).
   - With no pokes, worlds with wars on hold the same values as without (a test). Wars cost nothing
     measurable per day. `simrun` prints how many wars were declared, go on, were won and ended with
     nobody winning.
+- **Treasury and taxes** (step 7; Realms "basic" with markets, `realms.rs`, tests in
+  `treasury_tests.rs`). Under markets, realms tax coins; under Economics v0 there are none, and
+  treasuries stay empty.
+  - **Who keeps the coins.** Markets keeps the realms' stores (`realm.stock`; their coins are the
+    treasuries) as well as the provinces', so coins keep one keeper. Realms ask it for moves:
+    a province's coins into its realm's treasury (cause "taxes"), and a treasury's coins into a
+    province (cause "spent"). Nothing is made or lost, and no flow is booked.
+  - **Two manifests, one version.** The configuration builds the realms module to ask for coins
+    only when the world keeps them (`Founding::new`, by whether markets is chosen); the other asks for
+    nothing, since a manifest asking for coins in a world without them is refused. Both have the
+    same version name and private state, so saves and scenario files don't depend on it.
+  - **Each month** (`TaxParams`), every province a realm holds pays 1% of its coins (rounded by
+    chance, so small provinces pay their share on average). The realm then spends 10% of its
+    treasury as it stood that morning. The spending goes to its provinces by their people, with the
+    capital's counted 3 times. Taxes are moved first, so the spending is always there. A treasury
+    settles at about a tenth of its land's coins (1% ÷ 10%).
+  - **Why the capital is counted by its people, not given a fixed share of the spending.** Taxes go
+    by coins and spending by people, so the capital settles near 3 times its realm's coins a person
+    before trade evens it out. A fixed half of the spending would settle the capital at half its
+    realm's coins, however small it is; tried on the large world, one capital reached 28 times the
+    world's coins a person in 50 years and was still climbing. Now, after 50 years, the middle
+    capital has 1.2 times the world's coins a person and the richest 4.6 times, and treasuries hold
+    9–10% of their land's coins.
+  - A province an enemy occupies pays nobody and gets nothing, a capital too. A dissolved realm's
+    treasury goes, at the next month's start, into the province that was last its capital (whoever
+    holds it then taxes it), or the nearest with land if it sank. The realms module keeps each
+    realm's last capital as private state (schema `capitals-1`).
+  - Paying the provinces that raise troops waits for the troops piece.
+  - Speed: on one core the large world's day costs about 0.3 ms more than markets alone (about 15%),
+    for the roughly 10,000 coin moves a month and their replies. `simrun --economics markets --realms
+    settled=1` prints the treasuries' share of all coins, the largest realm's treasury against its
+    land's coins, and how rich capitals are against the world (the richest named).
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -464,7 +497,8 @@ cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p s
 ```
 
 Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (map width in pixels),
-`--terrain null|noise`, `--climate null|latitude`, `--realms settled=1,city=1,frontier=1` (realms on,
+`--terrain null|noise`, `--climate null|latitude`, `--economics food|markets|off`,
+`--realms settled=1,city=1,frontier=1` (realms on,
 with the ways to start weighted as given), `--rulers` (rulers on, and realms the default way if
 `--realms` isn't given), `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)

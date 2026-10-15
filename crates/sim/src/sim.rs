@@ -781,7 +781,8 @@ impl Sim {
         let mut queue = std::mem::take(&mut self.queue);
         let owner = |r: &Request| self.plan.owner[r.field.0 as usize].expect("validated: requested fields have owners");
         let owner_rank = |r: &Request| self.plan.runtime.iter().position(|&i| i == owner(r));
-        queue.sort_by_key(|r| (owner_rank(r), r.order_key(self.rank(r.requester))));
+        // Each key once per request, not once per comparison: working out a rank walks the modules.
+        queue.sort_by_cached_key(|r| (owner_rank(r), r.order_key(self.rank(r.requester))));
         let runs: Vec<(usize, Vec<Request>)> =
             queue.chunk_by(|a, b| owner(a) == owner(b)).map(|run| (owner(&run[0]), run.to_vec())).collect();
         for (i, run) in runs {

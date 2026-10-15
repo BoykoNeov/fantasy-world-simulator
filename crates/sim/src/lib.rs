@@ -42,6 +42,8 @@ pub mod scenario;
 pub mod sim;
 pub mod taxonomy;
 pub mod terrain;
+#[cfg(test)]
+mod treasury_tests;
 pub mod warfare;
 pub mod weather;
 pub mod world;

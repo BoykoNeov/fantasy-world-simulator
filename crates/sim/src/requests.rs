@@ -65,6 +65,9 @@ pub enum Cause {
     /// Soldiers who left an army for home (disbanded, deserted, survivors of a lost army): booked
     /// out by the army's owner and in by the pops' when they arrive, the next day.
     Returned,
+    /// Coins a realm pays out of its treasury into a province: its spending, or what a dissolved
+    /// realm leaves to the land (step 7).
+    Spent,
 }
 
 /// Where a request's grant goes when it is moved rather than used up: one value of a field the

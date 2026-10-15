@@ -31,11 +31,25 @@
 //! [`Event::Occupied`], from whoever takes provinces (warfare), which sends it only between realms
 //! at war: realms can't read the wars, since the wars are kept by a module that reads realms.
 //! A realm left with no land is dissolved.
+//!
+//! Under an economy with coins (markets), realms tax and spend ([`TaxParams`]): each month a realm
+//! takes a share of each of its provinces' coins into its treasury, and spends a share of the
+//! treasury back into its provinces by their people, the capital's counted several times over, so
+//! the treasury settles where the two meet. Taxes go by coins and spending by people, so within a
+//! realm coins drift toward where people live, and the capital settles a few times richer a person
+//! than the rest, not ever richer (a fixed share of the spending would heap half the realm's coins
+//! on the capital: found at this piece's check). A province an enemy occupies pays nobody and is paid
+//! nothing. A dissolved realm's coins go to the land it last had as its capital. The coins are
+//! kept by the economics module (coins keep one keeper), so all of it is asked of that module by
+//! moves; the realms module is built with a manifest that asks for coins only when the world keeps
+//! them ([`Founding::new`]). Under Economics v0 there are no coins, and treasuries stay empty.
 
 use crate::events::{Event, EventKind};
+use crate::fields::known;
 use crate::grid::{dot, NONE, V3};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::rng::{draw, purpose, unit, Module as Rng};
+use crate::requests::{split_proportional, Cause, Dest, Priority};
+use crate::rng::{draw, purpose, round_stochastic, unit, Module as Rng};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -76,11 +90,36 @@ pub struct RealmParams {
     pub unclaimed_share: f64,
     /// Each month, the chance that a settled province nobody owns is claimed by a realm next to it.
     pub claim_per_month: f64,
+    /// Taxes and spending, in a world that keeps coins. Scenario files written before taxes get
+    /// the defaults.
+    #[serde(default)]
+    pub taxes: TaxParams,
 }
 
 impl Default for RealmParams {
     fn default() -> Self {
-        RealmParams { settled: 1.0, city_states: 0.0, frontier: 0.0, provinces_per_realm: 25.0, unclaimed_share: 0.6, claim_per_month: 0.005 }
+        RealmParams { settled: 1.0, city_states: 0.0, frontier: 0.0, provinces_per_realm: 25.0, unclaimed_share: 0.6, claim_per_month: 0.005, taxes: TaxParams::default() }
+    }
+}
+
+/// A realm's taxes and spending, under an economy with coins. Its treasury settles at about
+/// `per_month / spent_per_month` of its provinces' coins, and gets there in a few times
+/// `1 / spent_per_month` months.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TaxParams {
+    /// Share of a province's coins taken into its realm's treasury each month.
+    pub per_month: f64,
+    /// Share of the treasury a realm spends each month.
+    pub spent_per_month: f64,
+    /// The spending goes to a realm's provinces by their people, the capital's counted this many
+    /// times. With taxes alone moving coins, the capital would settle at about this many times the
+    /// coins a person of the rest of the realm.
+    pub capital_weight: f64,
+}
+
+impl Default for TaxParams {
+    fn default() -> Self {
+        TaxParams { per_month: 0.01, spent_per_month: 0.1, capital_weight: 3.0 }
     }
 }
 
@@ -94,6 +133,20 @@ const FRONTIER: u8 = 2;
 
 pub struct Founding {
     pub params: RealmParams,
+    /// Whether realms tax coins: only where the world keeps them (markets).
+    taxes: bool,
+    /// Each realm's capital as last seen alive, so a dissolved realm's coins know where to go.
+    last_capital: Vec<u32>,
+}
+
+impl Founding {
+    /// Realms that tax coins if `taxes` (the world keeps coins), and run on people otherwise. The
+    /// two differ only in their manifests (one asks for coins, the other doesn't), with the same
+    /// version name and private state, so saves and scenario files don't depend on which it is;
+    /// the configuration picks by the economics chosen.
+    pub fn new(params: RealmParams, taxes: bool) -> Founding {
+        Founding { params, taxes, last_capital: Vec::new() }
+    }
 }
 
 static V1: Manifest = Manifest {
@@ -110,13 +163,23 @@ static V1: Manifest = Manifest {
     requires: &["pop.size"],
     emits: &[],
     handles: &[EventKind::Occupied, EventKind::Peace],
-    state_schema: "none",
+    state_schema: "capitals-1",
     goods: &[],
+};
+
+/// The same version where the world keeps coins: it reads the coins and asks for taxes and
+/// spending to be moved between the provinces' stores and the treasuries.
+static V1_TAXES: Manifest = Manifest {
+    reads: &["pop.province", "pop.size", "province.cells", "province.center", "province.stock", "realm.stock"],
+    requests: &["province.stock", "realm.stock"],
+    asks: &["money"],
+    moves: &[("province.stock", "realm.stock"), ("realm.stock", "province.stock")],
+    ..V1
 };
 
 impl Module for Founding {
     fn manifest(&self) -> &'static Manifest {
-        &V1
+        if self.taxes { &V1_TAXES } else { &V1 }
     }
 
     fn check(&self, _goods: &crate::fields::Goods) -> Result<(), String> {
@@ -134,6 +197,13 @@ impl Module for Founding {
         if !(0.0..=1.0).contains(&p.claim_per_month) {
             return Err("the chance to claim goes from 0 to 1".into());
         }
+        let t = &p.taxes;
+        if ![t.per_month, t.spent_per_month].iter().all(|x| (0.0..=1.0).contains(x)) {
+            return Err("taxes: the share taxed and the share spent go from 0 to 1".into());
+        }
+        if !(t.capital_weight.is_finite() && t.capital_weight >= 1.0 && t.capital_weight <= 1000.0) {
+            return Err("taxes: the capital counts from 1 to 1000 times its people".into());
+        }
         Ok(())
     }
 
@@ -142,21 +212,59 @@ impl Module for Founding {
         w.occupier = vec![NONE; owner.len()];
         w.owner = owner;
         w.realms.capital = capital;
+        self.remember(w);
     }
 
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         match *e {
             Event::Occupied { province, by } => occupy(w, cx, province, by),
-            Event::Peace { war, attacker, defender, winner } => peace(w, cx, war, attacker, defender, winner),
+            Event::Peace { war, attacker, defender, winner } => {
+                // The peace may dissolve a realm: its capital is kept first.
+                self.remember(w);
+                peace(w, cx, war, attacker, defender, winner);
+            }
             _ => {}
+        }
+    }
+
+    /// Claims, then taxes and spending.
+    fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
+        if w.realms.count() == 0 {
+            return;
+        }
+        self.remember(w);
+        self.claim(w, cx);
+        if self.taxes {
+            self.tax(w, cx);
+        }
+    }
+
+    fn save_state(&self) -> Vec<u8> {
+        crate::sim::to_bytes(&self.last_capital)
+    }
+
+    fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.last_capital = postcard::from_bytes(bytes).map_err(|e| format!("Realms state: {e}"))?;
+        Ok(())
+    }
+}
+
+impl Founding {
+    /// Keep each living realm's capital (see `last_capital`).
+    fn remember(&mut self, w: &World) {
+        self.last_capital.resize(w.realms.count(), NONE);
+        for (last, &c) in self.last_capital.iter_mut().zip(&w.realms.capital) {
+            if c != NONE {
+                *last = c;
+            }
         }
     }
 
     /// Settled land nobody owns may be claimed by a realm next to it: by the one nearest in days,
     /// as the owners stood at the start of the month (a claim doesn't open the way to another in
     /// the same month).
-    fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
-        if w.realms.count() == 0 || self.params.claim_per_month <= 0.0 {
+    fn claim(&self, w: &mut World, cx: &mut Ctx) {
+        if self.params.claim_per_month <= 0.0 {
             return;
         }
         let people = w.province_population();
@@ -184,6 +292,97 @@ impl Module for Founding {
             }
         }
     }
+
+    /// Taxes and spending, asked of the keeper of the coins and moved tonight, the taxes first.
+    /// Every province a realm holds and no enemy occupies pays a share of its coins into the
+    /// treasury. Every realm spends a share of its treasury as it stood this morning (so it always
+    /// has it) over those provinces by their people, the capital's (if it holds it) counted
+    /// several times. A dissolved realm's coins all go to the land it last had as its capital.
+    fn tax(&self, w: &World, cx: &mut Ctx) {
+        let t = &self.params.taxes;
+        let goods = cx.goods;
+        let money = goods.tree.find("money").expect("checked at configuration: realms that tax ask for money");
+        let coins = goods.columns_under(money).expect("checked at configuration: money is kept");
+        let held = |values: &[u64], row: usize| coins.iter().map(|&c| values[goods.index(row, c)]).sum::<u64>();
+        let (stock, treasury) = (known("province.stock"), known("realm.stock"));
+        let (seed, day) = (cx.seed, cx.day);
+
+        let mut paying: Vec<Vec<u32>> = vec![Vec::new(); w.realms.count()];
+        for p in 0..w.provinces.count {
+            let r = w.owner[p];
+            let occupied = w.occupier.get(p).is_some_and(|&o| o != NONE);
+            if r == NONE || !w.realms.alive(r) || occupied || w.provinces.cells[p] == 0 {
+                continue;
+            }
+            paying[r as usize].push(p as u32);
+            let has = held(&w.stock, p);
+            let due = round_stochastic(has as f64 * t.per_month, seed, Rng::Realms, day, p as u64, purpose("tax"));
+            if due > 0 {
+                cx.ask_move(stock, p as u32, Some(money), due, Dest { field: treasury, entity: r }, Priority::Normal, Cause::Taxes, p as u64);
+            }
+            if cx.traced(p as u32) {
+                cx.note(format!("taxes: {due} of its {has} coins ({}%) asked into the treasury of realm {r}", 100.0 * t.per_month));
+            }
+        }
+
+        let people = w.province_population();
+        for r in 0..w.realms.count() {
+            let has = held(&w.realm_stock, r);
+            if has == 0 {
+                continue;
+            }
+            let alive = w.realms.alive(r as u32);
+            let paid: Vec<(u32, u64)> = if alive {
+                let spend = round_stochastic(has as f64 * t.spent_per_month, seed, Rng::Realms, day, r as u64, purpose("spend"));
+                spending(&paying[r], w.realms.capital[r], spend, t.capital_weight, &people)
+            } else {
+                left_to(w, self.last_capital.get(r).copied().unwrap_or(NONE)).map(|p| (p, has)).into_iter().collect()
+            };
+            for (p, amount) in paid {
+                cx.ask_move(treasury, r as u32, Some(money), amount, Dest { field: stock, entity: p }, Priority::Normal, Cause::Spent, p as u64);
+                if cx.traced(p) {
+                    let whose = if alive { "spending" } else { "coins, left by the dissolved realm," };
+                    cx.note(format!("{amount} coins of realm {r}'s {whose} asked into this province, out of its treasury of {has}"));
+                }
+            }
+        }
+    }
+}
+
+/// `spend` coins shared out over `paying`, a realm's provinces, by their people, the capital's
+/// (if it is among them) counted `capital_weight` times; evenly if nobody lives in any. Each
+/// province at most once, none given nothing; the parts add up to `spend`.
+pub(crate) fn spending(paying: &[u32], capital: u32, spend: u64, capital_weight: f64, people: &[u64]) -> Vec<(u32, u64)> {
+    if paying.is_empty() || spend == 0 {
+        return Vec::new();
+    }
+    // In thousandths of a person, so the capital's weight needn't be whole.
+    let mut weights: Vec<u64> =
+        paying.iter().map(|&p| (people[p as usize] as f64 * if p == capital { capital_weight } else { 1.0 } * 1000.0).round() as u64).collect();
+    if weights.iter().all(|&x| x == 0) {
+        weights.iter_mut().for_each(|x| *x = 1);
+    }
+    let ids: Vec<u64> = paying.iter().map(|&p| p as u64).collect();
+    paying.iter().copied().zip(split_proportional(spend, &weights, &ids)).filter(|&(_, x)| x > 0).collect()
+}
+
+/// Where a dissolved realm's coins go: `capital`, the province it last had as its capital, or, if
+/// that has no land left, the nearest that has (as the people and goods of sunk land go, see the
+/// edits). `None` with no land anywhere.
+fn left_to(w: &World, capital: u32) -> Option<u32> {
+    let c = capital as usize;
+    if c >= w.provinces.count {
+        return None;
+    }
+    if w.provinces.cells[c] > 0 {
+        return Some(capital);
+    }
+    let at = w.provinces.center[c];
+    let center = |p: usize| w.provinces.center[p];
+    (0..w.provinces.count)
+        .filter(|&p| w.provinces.cells[p] > 0)
+        .max_by(|&a, &b| dot(at, center(a)).total_cmp(&dot(at, center(b))).then(b.cmp(&a)))
+        .map(|p| p as u32)
 }
 
 /// One realm being made: where it starts, which way it was made in, and how many settled

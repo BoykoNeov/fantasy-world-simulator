@@ -51,7 +51,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// fields, each realm's ruler and heir, and the succession event.
 /// Format 16 (step 7): Diplomacy "wars": its parameters in the configuration, the war fields,
 /// occupation, and the events of war and peace.
-pub const FORMAT_VERSION: u32 = 16;
+/// Format 17 (step 7): taxes in the realms parameters, the realms module's private state (each
+/// realm's last capital), the cause of a realm's spending, and markets keeping the realms' stores.
+pub const FORMAT_VERSION: u32 = 17;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

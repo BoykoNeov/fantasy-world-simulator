@@ -152,7 +152,8 @@ pub struct Posted {
 /// Sort a day's events into delivery order. `rank` gives each emitting slot's place in the run
 /// order.
 pub fn delivery_order(events: &mut [Posted], rank: impl Fn(Slot) -> usize) {
-    events.sort_by_key(|p| (p.event.kind().priority(), p.emitter.map_or(usize::MAX, &rank), p.event.entity(), p.seq));
+    // Each key once per event, not once per comparison: working out a rank walks the modules.
+    events.sort_by_cached_key(|p| (p.event.kind().priority(), p.emitter.map_or(usize::MAX, &rank), p.event.entity(), p.seq));
 }
 
 /// Delivered events, kept for the chronicle and the inspector's history. It is not part of a

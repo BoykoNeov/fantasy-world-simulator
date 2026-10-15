@@ -136,7 +136,8 @@ impl ModuleConfig {
             out.push(Box::new(Droughts::default()));
         }
         if let Some(params) = &self.realms {
-            out.push(Box::new(Founding { params: params.clone() }));
+            // Realms tax coins only where the world keeps them.
+            out.push(Box::new(Founding::new(params.clone(), self.markets.is_some())));
         }
         if let Some(params) = &self.characters {
             out.push(Box::new(Rulers { params: params.clone() }));
