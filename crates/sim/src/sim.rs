@@ -539,7 +539,6 @@ impl Sim {
     /// Put the world back as it was at `c`. The event log keeps only what was delivered before
     /// that day; commands and checkpoints are left as they are.
     pub fn restore(&mut self, c: &Checkpoint) {
-        let map_at = self.map_at;
         while self.map_at > c.map_at {
             self.map_at -= 1;
             self.map_changes[self.map_at].undo(&mut self.world);
@@ -547,9 +546,6 @@ impl Sim {
         while self.map_at < c.map_at {
             self.map_changes[self.map_at].redo(&mut self.world);
             self.map_at += 1;
-        }
-        if self.map_at != map_at {
-            self.world.rebuild_routes();
         }
         for (id, data) in &c.fields {
             self.world.set_field(*id, data.clone()).expect("a checkpoint of this world");
@@ -694,11 +690,10 @@ impl Sim {
                         }
                     };
                     edit.change_map(&mut self.world, &mut regenerate);
-                    self.map_changes.push(Arc::new(MapChange::between(edit.clone(), old, &self.world)));
+                    self.map_changes.push(Arc::new(MapChange::between(edit.clone(), old, &mut self.world)));
                 }
             }
             self.map_at += 1;
-            self.world.rebuild_routes();
             self.map_at - 1
         });
         let flows = edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i]));

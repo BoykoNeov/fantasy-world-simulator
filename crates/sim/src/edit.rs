@@ -31,6 +31,7 @@ use crate::grid::{dot, lonlat_to_dir, Grid, NONE, V3};
 use crate::module::Flows;
 use crate::pops::{Pops, HUMAN};
 use crate::requests::{split_proportional, Cause};
+use crate::routes::{Routes, RoutesChange};
 use crate::rng::{draw, mix, purpose, Module as Rng};
 use crate::terrain::fbm;
 use crate::world::World;
@@ -743,6 +744,9 @@ pub struct MapChange {
     /// The edit that made it. A replay that reaches the same point with the same edit reuses it.
     pub edit: Edit,
     fields: Vec<(FieldId, Change)>,
+    /// What it did to the province neighbours, worked out once when the change is made: making
+    /// the change again, or undoing it, needn't work them out again.
+    routes: RoutesChange,
 }
 
 #[derive(Clone, Debug)]
@@ -753,7 +757,8 @@ enum Change {
 
 impl MapChange {
     /// The change from `before` (each field's values before the edit) to the world as it is now.
-    pub(crate) fn between(edit: Edit, before: Vec<(FieldId, FieldData)>, w: &World) -> MapChange {
+    /// Works out the province neighbours of the new map and gives them to the world.
+    pub(crate) fn between(edit: Edit, before: Vec<(FieldId, FieldData)>, w: &mut World) -> MapChange {
         let fields = before
             .into_iter()
             .filter_map(|(id, old)| {
@@ -765,7 +770,10 @@ impl MapChange {
                 (!at.is_empty()).then(|| (id, Change::Sparse { old: old.gather(&at), new: new.gather(&at), at }))
             })
             .collect();
-        MapChange { edit, fields }
+        let routes = Routes::build(w);
+        let change = RoutesChange::between(&w.routes, &routes);
+        w.routes = std::sync::Arc::new(routes);
+        MapChange { edit, fields, routes: change }
     }
 
     /// Make the change again.
@@ -787,6 +795,7 @@ impl MapChange {
             }
             .expect("a change of this world");
         }
+        std::sync::Arc::make_mut(&mut w.routes).apply(&self.routes, back);
     }
 
     /// Land that changed province: `(cell, from, to)`, in cell order. Land that was sea before, or
@@ -855,6 +864,7 @@ impl MapChange {
                 Change::Sparse { at, old, new } => at.len() * 4 + size(old) + size(new),
                 Change::Whole { old, new } => size(old) + size(new),
             })
-            .sum()
+            .sum::<usize>()
+            + self.routes.bytes()
     }
 }

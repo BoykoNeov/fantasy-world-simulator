@@ -1,7 +1,11 @@
 //! Province neighbours on big worlds: how long working them out takes, how many each province
-//! has, how long the ways are, and which provinces have none.
+//! has, how long the ways are, and which provinces have none. Then the sea rises 250 m, cutting
+//! many provinces into islands, and they are worked out again.
 //! `cargo run --release -p sim --example route_stats -- [small|medium|large|huge]`
+use sim::config::Config;
+use sim::edit::Edit;
 use sim::routes::Routes;
+use sim::sim::Sim;
 use sim::world::{Size, World, WorldParams};
 use std::time::Instant;
 
@@ -45,4 +49,38 @@ fn main() {
             alone.iter().map(|&q| p.cells[q as usize]).max().unwrap_or(0),
         );
     }
+    let mut sim = Sim::new(&Config::new(WorldParams::preset(size, 7))).unwrap();
+    let t = Instant::now();
+    sim.edit(Edit::SeaLevel { rise_m: 250.0 }).unwrap();
+    let edit = t.elapsed().as_secs_f64() * 1000.0;
+    let w = &sim.world;
+    let t = Instant::now();
+    let r = Routes::build(w);
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    // Provinces whose land is now in more than one piece.
+    let g = &w.grid;
+    let mut pieces = vec![0u32; w.provinces.count];
+    let mut seen = vec![false; g.cells()];
+    for start in 0..g.cells() {
+        let p = w.provinces.of_cell[start];
+        if p == sim::grid::NONE || seen[start] {
+            continue;
+        }
+        pieces[p as usize] += 1;
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(c) = stack.pop() {
+            for &m in &g.neighbors[c] {
+                if w.provinces.of_cell[m as usize] == p && !seen[m as usize] {
+                    seen[m as usize] = true;
+                    stack.push(m as usize);
+                }
+            }
+        }
+    }
+    println!(
+        "{size:?} seed 7 after the sea rose 250 m: the edit took {edit:.0} ms; {} provinces in pieces; neighbours worked out in {ms:.0} ms, {} links",
+        pieces.iter().filter(|&&n| n > 1).count(),
+        r.links.len()
+    );
 }

@@ -93,14 +93,18 @@ What exists:
   big river costs half a day (so crossing one costs a day). The best crossing of the shared border
   counts. By sea, a ship covers 100 km a day, plus a day in port at each end. Each way costs the
   same in both directions. Roads are fixed by the land for now. The list is worked out from the
-  map, not saved, whenever the map changes: at world creation, after a map edit, when going back
-  or forward passes a map edit, and after a load. A timeline copy shares it. If an edit cuts a
-  province in two, the way to its far piece goes over the neighbours' land at half speed. Only a
-  one-province island far out at sea has no neighbour. Nothing reads it yet: trade, a later
-  piece, will. Working it out takes about 0.11 s on a large world (on all cores), once per
-  map edit, never per day; there a province has six neighbours at the median, and the median trip
-  is about 7 days by land and 9 by sea (`examples/route_stats.rs`). Worlds are the same as before:
-  same fingerprints, same tester table, same save format.
+  map, not saved: at world creation, after a load, and when a map edit is first made. Each map
+  change keeps what it did to the list (the links it changed and the seats that moved), as it
+  keeps the values it changed, so going back or forward past it, undoing it or replaying it
+  doesn't work the list out again. A timeline copy shares it. If an edit cuts a province in two,
+  the way to its far piece goes over the neighbours' land at half speed (a piece left on another
+  island has none). Only a one-province island far out at sea has no neighbour. Nothing reads it
+  yet: trade, a later piece, will. Working it out takes 0.11–0.23 s on a large world (on all
+  cores, depending on how busy the machine is), once per new map edit, never per day; there a
+  province has six neighbours at the median, and the median trip is about 7 days by land and 9 by
+  sea. After the sea rises 250 m, 310 provinces are in pieces and it takes 0.35 s
+  (`examples/route_stats.rs`). Worlds are the same as before: same fingerprints, same tester
+  table, same save format.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -270,6 +274,22 @@ changed (a first version copied whole layers: 226 ms to take the split back). Pa
 as the window does it (go back to the day shown, take the stroke, run 120 days ahead), costs the
 same at the 200th stroke of a day as at the 50th: a stroke 168–174 ms, taking it back 35–38 ms,
 explaining the day 51–56 ms. The 200 strokes kept 1.9 MB of map changes.
+
+Re-measured Oct 15 after province neighbours (step 6, piece 5), with the machine busier than on
+Oct 14, so the run before the change was repeated alongside it:
+
+| | Before | After |
+| --- | --- | --- |
+| Brush stroke / sea rises 50 m / split | 374 / 376 / 53 ms | 400 / 346 / 162 ms |
+| Painting while paused, stroke 1 → 200: taking it back | 47 → 108 ms | 33 → 64 ms |
+| Same, explaining the day | 70 → 139 ms | 49 → 93 ms |
+| Go back 250 days past all three | 31 ms | 22 ms |
+| Map changes kept (200 strokes, the sea, the split) | 44.8 MB | 45.2 MB |
+
+A new map edit now also works out the neighbours (about 0.1 s); going back and replaying reuse
+what each change kept. A first version worked them out again at every replayed map edit: taking
+back the 50th stroke of a paused day took 17 s. Keeping a whole copy with each change instead cost
+0.56 MB per stroke.
 
 Step 1 measured 2.5 s a century. The rest goes to the request and event passes and the checks
 after every stage. There's still very little simulation, so these figures are a floor, not a

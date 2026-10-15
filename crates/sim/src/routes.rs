@@ -92,6 +92,59 @@ impl Routes {
         self.of[from..to].iter().map(|&k| &self.links[k as usize])
     }
 
+    /// Make a change again (`back`: undo it). The neighbours must be those it started from (or, to
+    /// undo, those it gave).
+    pub fn apply(&mut self, c: &RoutesChange, back: bool) {
+        let (take, put) = if back { (&c.new, &c.old) } else { (&c.old, &c.new) };
+        let key = |l: &Link| (l.a, l.b);
+        let (before, after) = c.provinces;
+        if before == after && take.len() == put.len() && take.iter().zip(put).all(|(x, y)| key(x) == key(y)) {
+            // The same neighbours, only the ways changed (most brush strokes): in place.
+            for l in put {
+                let k = self.links.binary_search_by_key(&key(l), key).expect("the neighbours it started from");
+                self.links[k] = *l;
+            }
+            for &(p, before, after) in &c.seats {
+                self.seat[p as usize] = if back { before } else { after };
+            }
+            return;
+        }
+        self.links.retain(|l| take.binary_search_by_key(&key(l), key).is_err());
+        self.links.extend_from_slice(put);
+        self.links.sort_unstable_by_key(key);
+        let count = if back { c.provinces.0 } else { c.provinces.1 };
+        self.seat.resize(self.seat.len().max(count), NONE);
+        for &(p, before, after) in &c.seats {
+            self.seat[p as usize] = if back { before } else { after };
+        }
+        self.seat.truncate(count);
+        self.index();
+    }
+
+    /// Make each province's list of links from `links`.
+    fn index(&mut self) {
+        let count = self.seat.len();
+        let mut first = vec![0u32; count + 1];
+        for l in &self.links {
+            first[l.a as usize + 1] += 1;
+            first[l.b as usize + 1] += 1;
+        }
+        for p in 0..count {
+            first[p + 1] += first[p];
+        }
+        let mut at: Vec<u32> = first.clone();
+        let mut of = vec![0u32; first[count] as usize];
+        // Links run in (a, b) order, so each province's list comes out by the other's number: the
+        // lower neighbours (where it is `b`) all come before the higher ones.
+        for (k, l) in self.links.iter().enumerate() {
+            for p in [l.a, l.b] {
+                of[at[p as usize] as usize] = k as u32;
+                at[p as usize] += 1;
+            }
+        }
+        (self.first, self.of) = (first, of);
+    }
+
     /// The link between two provinces, if they have one.
     pub fn between(&self, p: u32, q: u32) -> Option<&Link> {
         let (a, b) = (p.min(q), p.max(q));
@@ -216,26 +269,9 @@ impl Routes {
             }
         }
 
-        let links: Vec<Link> = found.into_values().collect();
-        let mut first = vec![0u32; count + 1];
-        for l in &links {
-            first[l.a as usize + 1] += 1;
-            first[l.b as usize + 1] += 1;
-        }
-        for p in 0..count {
-            first[p + 1] += first[p];
-        }
-        let mut at: Vec<u32> = first.clone();
-        let mut of = vec![0u32; first[count] as usize];
-        // Links run in (a, b) order, so each province's list comes out by the other's number: the
-        // lower neighbours (where it is `b`) all come before the higher ones.
-        for (k, l) in links.iter().enumerate() {
-            for p in [l.a, l.b] {
-                of[at[p as usize] as usize] = k as u32;
-                at[p as usize] += 1;
-            }
-        }
-        Routes { links, seat, first, of }
+        let mut routes = Routes { links: found.into_values().collect(), seat, first: Vec::new(), of: Vec::new() };
+        routes.index();
+        routes
     }
 }
 
@@ -243,6 +279,7 @@ impl Routes {
 /// a piece of a province on land its seat isn't on).
 fn land_days(steps: &Steps, of_cell: &[u32], cells_of: &[Vec<u32>], seat: &[u32]) -> Vec<f64> {
     // Provinces don't share cells, so each works out its own, all at once.
+    let masses = std::sync::OnceLock::new();
     let each: Vec<Vec<f64>> = cells_of
         .par_iter()
         .enumerate()
@@ -253,7 +290,11 @@ fn land_days(steps: &Steps, of_cell: &[u32], cells_of: &[Vec<u32>], seat: &[u32]
             let mut days = steps.spread(seat[p] as usize, own);
             if days.iter().any(|d| d.is_infinite()) {
                 // An edit cut the province in pieces: reach the rest over other land, more slowly.
-                for (c, d) in steps.detour(seat[p] as usize, p as u32, of_cell, own) {
+                // Pieces on other landmasses can't be reached that way.
+                let mass = masses.get_or_init(|| landmasses(steps, of_cell));
+                let home = mass[seat[p] as usize];
+                let reachable: Vec<u32> = own.iter().copied().filter(|&c| mass[c as usize] == home).collect();
+                for (c, d) in steps.detour(seat[p] as usize, p as u32, of_cell, &reachable) {
                     let k = own.binary_search(&(c as u32)).expect("one of its own cells");
                     if days[k].is_infinite() {
                         days[k] = d;
@@ -270,6 +311,83 @@ fn land_days(steps: &Steps, of_cell: &[u32], cells_of: &[Vec<u32>], seat: &[u32]
         }
     }
     land
+}
+
+/// Which landmass each province cell is on, as a number (the lowest cell on it); [`NONE`] at sea.
+/// Land is joined as ways over it go.
+fn landmasses(steps: &Steps, of_cell: &[u32]) -> Vec<u32> {
+    let mut mass = vec![NONE; of_cell.len()];
+    let mut stack = Vec::new();
+    for start in 0..of_cell.len() {
+        if of_cell[start] == NONE || mass[start] != NONE {
+            continue;
+        }
+        mass[start] = start as u32;
+        stack.push(start);
+        while let Some(c) = stack.pop() {
+            for nb in steps.grid.neighbors8(c) {
+                if of_cell[nb] != NONE && mass[nb] == NONE && steps.passable(c, nb, false) {
+                    mass[nb] = start as u32;
+                    stack.push(nb);
+                }
+            }
+        }
+    }
+    mass
+}
+
+/// What a map change did to the neighbours: the links it took away or changed (as they were), the
+/// links it added or changed (as they are), and the seats that moved. Kept with each map change,
+/// like the values it changed, so undoing and redoing it costs what changed, not the planet.
+#[derive(Clone, Debug, Default)]
+pub struct RoutesChange {
+    old: Vec<Link>,
+    new: Vec<Link>,
+    /// `(province, seat before, seat after)`; [`NONE`] for a province that didn't exist.
+    seats: Vec<(u32, u32, u32)>,
+    provinces: (usize, usize),
+}
+
+impl RoutesChange {
+    pub fn between(before: &Routes, after: &Routes) -> RoutesChange {
+        let key = |l: &Link| (l.a, l.b);
+        let (mut old, mut new) = (Vec::new(), Vec::new());
+        let (mut i, mut j) = (0, 0);
+        while i < before.links.len() || j < after.links.len() {
+            match (before.links.get(i), after.links.get(j)) {
+                (Some(x), Some(y)) if key(x) == key(y) => {
+                    if x != y {
+                        old.push(*x);
+                        new.push(*y);
+                    }
+                    i += 1;
+                    j += 1;
+                }
+                (Some(x), Some(y)) if key(x) < key(y) => {
+                    old.push(*x);
+                    i += 1;
+                }
+                (Some(x), None) => {
+                    old.push(*x);
+                    i += 1;
+                }
+                (_, Some(y)) => {
+                    new.push(*y);
+                    j += 1;
+                }
+                (None, None) => unreachable!(),
+            }
+        }
+        let seat = |r: &Routes, p: usize| r.seat.get(p).copied().unwrap_or(NONE);
+        let n = before.seat.len().max(after.seat.len());
+        let seats = (0..n).filter(|&p| seat(before, p) != seat(after, p)).map(|p| (p as u32, seat(before, p), seat(after, p))).collect();
+        RoutesChange { old, new, seats, provinces: (before.seat.len(), after.seat.len()) }
+    }
+
+    /// Roughly how many bytes it holds.
+    pub fn bytes(&self) -> usize {
+        (self.old.len() + self.new.len()) * std::mem::size_of::<Link>() + self.seats.len() * 12
+    }
 }
 
 /// The cost of single steps between neighbouring cells.
