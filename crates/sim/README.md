@@ -130,15 +130,17 @@ What exists:
   money. The level is set at the start of the month's trade and holds through it, since it
   follows wealth over months, not one month's buying (a starving province paying for food doesn't
   want food less). Stored prices leave it out (inside a province everything scales with it, so
-  nothing there changes); `markets::money_level` gives it, for the window to show.
+  nothing there changes); the window piece is to show it beside them, worked out the way trade
+  works it out (`markets::money_level`, against the average over inhabited provinces).
 
   Over a century on the large world (seed 7): starved per 1,000 people a year 9.44 without trade,
   9.18 with trade alone, 8.86 with prices following money; on average 129.5, 133.4 and 135.9
   million people. At year 100, 209 provinces are under a coin a person (2,770 without the money
   effect) and the richest tenth hold 37% of the coins (65%); trade keeps its volume. The first 15
-  years starve 24.0, 19.2 and 19.9 million. On the small world (seed 1): 9.05, 8.45 and 8.15 per
-  1,000 a year; 28.2, 18.5 and 18.4 million in the first 15 years. Stronger responses (2) did
-  worse; 1 with a wider range (5) about the same. Two provinces alike but for coins even them out
+  years starve 24.0, 19.2 and 19.9 million (the large world was run on one seed). On the small
+  world the order is the same on seeds 1, 2 and 3: 9.05, 8.45, 8.15; 9.13, 8.47, 7.88; 9.26, 8.89,
+  8.12 per 1,000 a year, with the most people under the money effect each time. On seed 1 a
+  stronger response (2) did a little worse, and a wider range (5) about the same. Two provinces alike but for coins even them out
   month by month, never overshooting, with each good going one way only (a unit test).
   `examples/market_stats.rs` prints a run year by year, with what was traded and where the coins
   are (`--no-trade` turns trade off, `--money 1,3` sets the response and range).
