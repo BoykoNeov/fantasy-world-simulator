@@ -66,6 +66,10 @@ What exists:
   save that opens at once; open the same world again. The timeline played is saved on the day
   shown.
 
+- **Modules** (step 6): the module versions running, and what the combination tester found for
+  that mix (`crates/sim/data/compatibility.toml`): works together, known quirks, or unstable, with
+  each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs.
+
 Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
 
 ## Running
@@ -78,6 +82,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 
 - `--size small|medium|large|huge`, `--seed S`, `--n FACE`, `--provinces N`: the world (default: large, seed 7).
 - `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
+- `--modules SLOT=VERSION,...`: any module versions, e.g. `economics=off,population=off` or
+  `weather=off` (slots: terrain, climate, economics, population, weather).
 - `--years Y`: how long to run before showing it (default 20).
 - `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
   on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).

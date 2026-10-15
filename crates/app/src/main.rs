@@ -5,7 +5,7 @@
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]...
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
-//!            [--open FILE] [--bench --out DIR --tag NAME]
+//!            [--open FILE] [--modules SLOT=VERSION,...] [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces (0..1), and
 //! coasts, rivers, borders, graticule (0 or 1). `--view` takes degrees and a zoom (1 = planet
@@ -16,7 +16,9 @@
 //! the order given, as a player would (raise land along a short stroke; split half a province off
 //! and select the new one; take back the last change), for scripted screenshots of an edited map.
 //! `--open` shows a saved world instead of making one: a scenario (`.toml`) or a save of its
-//! timelines (world options, `--years`, `--drought` and `--days` are then ignored).
+//! timelines (world options, `--years`, `--drought` and `--days` are then ignored). `--modules`
+//! picks module versions, e.g. `economics=off,population=off` (see `sim::config::CHOICES`); the
+//! Modules section shows what the combination tester found for the mix running.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
@@ -31,7 +33,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use sim::branch::Timelines;
 use sim::calendar::Calendar;
-use sim::config::Config;
+use sim::combos::{Table, Verdict};
+use sim::config::{Config, CHOICES};
 use sim::edit::{Edit, PopValues};
 use sim::events::Event;
 use sim::fields::{FieldId, Tier};
@@ -139,6 +142,7 @@ impl Options {
                 "--years" => o.years = value(&mut i).parse().expect("--years"),
                 "--terrain" => o.config.modules.terrain = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
                 "--climate" => o.config.modules.climate = value(&mut i).parse().unwrap_or_else(|e| panic!("{e}")),
+                "--modules" => sim::combos::choose(&mut o.config.modules, &value(&mut i)).unwrap_or_else(|e| panic!("{e}")),
                 "--drought" => {
                     let v = value(&mut i);
                     o.drought = Some(if v == "best" {
@@ -251,6 +255,13 @@ struct DroughtTool {
     years: f64,
 }
 
+/// The versions running, and what the combination tester's table says about that mix (`None`: not
+/// in it). A world keeps its versions, so this is worked out once.
+struct ModulesInfo {
+    versions: Vec<(String, &'static str)>,
+    verdict: Result<Option<(Verdict, Vec<String>)>, String>,
+}
+
 struct MapApp {
     opts: Options,
     /// The world on screen: cells and provinces as generated, and the running values of the day
@@ -259,6 +270,7 @@ struct MapApp {
     calendar: Calendar,
     /// Per field: which module sets it, in words, and the owning slot.
     owners: Vec<(String, Option<Slot>)>,
+    modules: ModulesInfo,
     worker: Worker,
     /// The day shown first, then the days computed after it.
     frames: VecDeque<Frame>,
@@ -395,6 +407,9 @@ impl MapApp {
                 None => ("nobody (a default)".into(), None),
             })
             .collect();
+        let mc = &sim.config.modules;
+        let versions = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
+        let modules = ModulesInfo { versions, verdict: Table::shipped().map(|t| t.verdict_for(mc)) };
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -409,6 +424,7 @@ impl MapApp {
             geo: sim.world.clone(),
             calendar: sim.calendar.clone(),
             owners,
+            modules,
             clock: Clock { speed: opts.speed, ..Clock::new(sim.day) },
             run_to_year: sim.calendar.date(sim.day).year + 5,
             log: sim.event_log.entries.iter().map(LogEntry::of_event).collect(),
@@ -821,6 +837,9 @@ impl MapApp {
         ui.label(format!("{} people", group(self.view.people.iter().sum::<f64>().round() as u64)));
         ui.separator();
 
+        self.modules_section(ui);
+        ui.separator();
+
         ui.label("Edit");
         let edge = self.at_the_edge();
         ui.horizontal(|ui| {
@@ -890,6 +909,39 @@ impl MapApp {
         ui.small(format!("world built and run in {:.1} s", self.gen_s));
         ui.small(format!("frame {:.1} ms", self.last_dt_ms));
         ui.small(format!("GPU: {}", self.adapter));
+    }
+
+    /// The versions running, and the combination tester's verdict on them.
+    fn modules_section(&self, ui: &mut egui::Ui) {
+        let ModulesInfo { versions, verdict } = &self.modules;
+        ui.label("Modules");
+        let line: Vec<String> = versions.iter().map(|(slot, v)| format!("{slot} {v}")).collect();
+        ui.small(line.join(" · "));
+        let tested = "the combination tester ran this mix of versions for 20 years on small worlds, three seeds";
+        match verdict {
+            Ok(Some((v, notes))) => {
+                let (color, words) = match v {
+                    Verdict::Green => (egui::Color32::from_rgb(70, 130, 60), "tested: works together"),
+                    Verdict::Yellow => (egui::Color32::from_rgb(170, 130, 30), "tested: known quirks"),
+                    Verdict::Red => (egui::Color32::from_rgb(180, 50, 40), "tested: unstable"),
+                    Verdict::Refused => (egui::Color32::from_rgb(180, 50, 40), "refused: these can't run together"),
+                };
+                ui.colored_label(color, words).on_hover_text(tested);
+                if !notes.is_empty() {
+                    egui::CollapsingHeader::new(format!("what the tester found ({})", notes.len())).show(ui, |ui| {
+                        for n in notes {
+                            ui.small(n);
+                        }
+                    });
+                }
+            }
+            Ok(None) => {
+                ui.small("not in the combination tester's table yet");
+            }
+            Err(e) => {
+                ui.small(format!("the combination tester's table can't be read: {e}"));
+            }
+        }
     }
 
     fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {

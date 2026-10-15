@@ -57,15 +57,11 @@ impl Mix {
         Mix(CHOICES.iter().map(|c| modules.choice(c.0).expect("every slot in CHOICES has a choice")).collect())
     }
 
-    /// The defaults, changed by `slot=version` pairs separated by commas or spaces.
+    /// The defaults, changed by `slot=version` pairs (see [`choose`]).
     pub fn parse(text: &str) -> Result<Mix, String> {
-        let mut m = Mix::defaults();
-        for part in text.split([',', ' ']).filter(|p| !p.is_empty()) {
-            let (slot, version) = part.split_once('=').ok_or_else(|| format!("{part}: expected slot=version"))?;
-            let k = (0..CHOICES.len()).find(|&k| slot_name(k) == slot).ok_or_else(|| format!("no slot {slot} with a choice"))?;
-            m.0[k] = CHOICES[k].1.iter().find(|v| **v == version).ok_or_else(|| format!("{slot} has no version {version}"))?;
-        }
-        Ok(m)
+        let mut m = ModuleConfig::default();
+        choose(&mut m, text)?;
+        Ok(Mix::of(&m))
     }
 
     /// `terrain=noise climate=latitude ...`
@@ -92,6 +88,17 @@ impl Mix {
         let n = self.0.len();
         (0..n).flat_map(move |i| ((i + 1)..n).map(move |j| Pair { a: (i, self.0[i]), b: (j, self.0[j]) }))
     }
+}
+
+/// Choose versions by `slot=version` pairs separated by commas or spaces, e.g.
+/// `economics=off,population=off`; slots not named keep their version.
+pub fn choose(modules: &mut ModuleConfig, text: &str) -> Result<(), String> {
+    for part in text.split([',', ' ']).filter(|p| !p.is_empty()) {
+        let (slot, version) = part.split_once('=').ok_or_else(|| format!("{part}: expected slot=version"))?;
+        let k = (0..CHOICES.len()).find(|&k| slot_name(k) == slot).ok_or_else(|| format!("no slot {slot} with a choice"))?;
+        modules.set_choice(CHOICES[k].0, version).map_err(|_| format!("{slot} has no version {version}"))?;
+    }
+    Ok(())
 }
 
 /// Two slots' versions together.
@@ -822,6 +829,34 @@ mod tests {
         // The same world with its real modules is clean.
         let r = run(&Mix::defaults(), 11, &Settings { n: 24, provinces: 40, years: 7, seeds: vec![11] });
         assert_eq!(r.findings, Vec::new());
+    }
+
+    #[test]
+    fn the_table_answers_for_a_mix_or_else_for_its_pairs() {
+        let settings = Settings { n: 24, provinces: 40, years: 1, seeds: vec![1] };
+        let result = |m: &str, findings: Vec<Finding>| RunResult {
+            mix: Mix::parse(m).unwrap(),
+            seed: 1,
+            refused: None,
+            findings,
+            days: 0,
+            ms_per_day: 0.0,
+            poke: None,
+        };
+        let clamp = Finding { problem: Problem::ContractViolated, day: 40, what: "pop.size of 2".into(), known: None };
+        let runs = vec![result("", vec![]), result("weather=off", vec![clamp])];
+        let table = Table::parse(&Table::new(&settings, &runs, Vec::new()).text()).unwrap();
+
+        let (v, notes) = table.verdict_for(&Mix::parse("weather=off").unwrap().modules()).unwrap();
+        assert_eq!(v, Verdict::Red);
+        assert_eq!(notes, vec!["seed 1, day 40: ContractViolated: pop.size of 2".to_string()]);
+        assert_eq!(table.verdict_for(&ModuleConfig::default()), Some((Verdict::Green, Vec::new())));
+        // Not run: the worst of its pairs. Economics off with weather off was never tried.
+        let (v, notes) = table.verdict_for(&Mix::parse("terrain=null,weather=off").unwrap().modules()).unwrap();
+        assert_eq!(v, Verdict::Red);
+        assert!(notes.iter().any(|n| n.starts_with("climate=latitude with weather=off: Red, e.g. ")), "{notes:?}");
+        // The shipped table reads, and has every mix.
+        assert_eq!(Table::shipped().unwrap().mix.len(), all_mixes().len());
     }
 
     #[test]
