@@ -17,8 +17,8 @@
 //!
 //! Pops are only ever added, never removed or reordered: a grant on its way finds its pop by
 //! position. A pop emptied by an edit keeps its place with nobody in it. Province numbers never
-//! change either: a province merged away stays as an empty placeholder, and a new one is numbered
-//! after the last.
+//! change either: a province merged away stays as an empty placeholder (owned by no realm; see
+//! [`crate::realms::repair`]), and a new one is numbered after the last.
 //!
 //! When land changes province, its people and stored goods go with it, in proportion to the
 //! farmland that moved: a province that gives away a third of its farmland gives away a third of
@@ -293,11 +293,13 @@ impl Edit {
                     }
                 }
                 share_out(w, &moved);
+                crate::realms::repair(w);
             }
             Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => {
                 w.grow_province_fields();
                 let emptied = map.expect("a height edit changes the map").emptied_provinces();
                 flows = rehouse(w, &emptied);
+                crate::realms::repair(w);
             }
         }
         flows

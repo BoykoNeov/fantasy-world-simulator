@@ -4,10 +4,12 @@
 //! simrun [--size small|medium|large|huge] [--n FACE] [--provinces N] [--seed S] [--years Y]
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
+//!        [--realms settled=W,city=W,frontier=W]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
-//! and `--write-scenario` writes the world at the end as one.
+//! and `--write-scenario` writes the world at the end as one. `--realms` switches realms on, with
+//! the ways to start weighted as given (`--realms settled=1` is the default way).
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -45,6 +47,20 @@ fn main() {
     if let Some(v) = get("--climate") {
         config.modules.climate = v.parse().unwrap_or_else(|e| panic!("{e}"));
     }
+    if let Some(v) = get("--realms") {
+        let mut r = sim::realms::RealmParams { settled: 0.0, ..Default::default() };
+        for part in v.split(',') {
+            let (way, weight) = part.split_once('=').unwrap_or_else(|| panic!("--realms: {part}: expected way=weight"));
+            let weight: f64 = weight.parse().expect("--realms weight");
+            match way {
+                "settled" => r.settled = weight,
+                "city" => r.city_states = weight,
+                "frontier" => r.frontier = weight,
+                _ => panic!("--realms: no way {way}; expected settled, city or frontier"),
+            }
+        }
+        config.modules.realms = Some(r);
+    }
 
     let t = Instant::now();
     let mut sim = match (get("--load"), get("--scenario")) {
@@ -78,6 +94,7 @@ fn main() {
         rivers,
         group(quantity_total(w, Quantity::People))
     );
+    print_realms(&sim);
     if let Some(dir) = &out {
         let t = Instant::now();
         let files = sim::export::write_all(&sim, dir, "start_", width).expect("write PNGs");
@@ -136,10 +153,40 @@ fn main() {
         println!("wrote scenario {file}");
     }
 
+    print_realms(&sim);
     if let Some(dir) = &out {
         let files = sim::export::write_all(&sim, dir, "end_", width).expect("write PNGs");
         println!("wrote {} maps to {}", files.len(), dir.display());
     }
+}
+
+/// How many realms, how big, and how much settled land nobody owns.
+fn print_realms(sim: &Sim) {
+    let w = &sim.world;
+    let alive: Vec<u32> = (0..w.realms.count() as u32).filter(|&r| w.realms.alive(r)).collect();
+    if alive.is_empty() {
+        return;
+    }
+    let people = w.province_population();
+    let mut size = vec![0usize; w.realms.count()];
+    for &r in w.owner.iter().filter(|&&r| r != sim::grid::NONE) {
+        size[r as usize] += 1;
+    }
+    let mut sizes: Vec<usize> = alive.iter().map(|&r| size[r as usize]).collect();
+    sizes.sort_unstable();
+    let settled = (0..w.provinces.count).filter(|&p| people[p] > 0).count();
+    let unowned = (0..w.provinces.count).filter(|&p| people[p] > 0 && w.owner[p] == sim::grid::NONE).count();
+    let names = sim::realms::names(w.params.seed, w.realms.count());
+    let biggest = alive.iter().max_by_key(|&&r| (size[r as usize], std::cmp::Reverse(r))).copied().expect("not empty");
+    println!(
+        "realms: {} (provinces each: smallest {}, middle {}, largest {}); settled provinces nobody owns: {unowned} of {settled}; largest: {}, capital province {}",
+        alive.len(),
+        sizes[0],
+        sizes[sizes.len() / 2],
+        sizes[sizes.len() - 1],
+        names[biggest as usize],
+        w.realms.capital[biggest as usize]
+    );
 }
 
 /// 1234567 -> "1,234,567".

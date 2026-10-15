@@ -10,6 +10,7 @@ use crate::markets::{MarketParams, Markets};
 use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
 use crate::provinces::ProvinceGrowth;
+use crate::realms::{Founding, RealmParams};
 use crate::taxonomy::TreeDef;
 use crate::terrain::{NoiseTerrain, NullTerrain};
 use crate::weather::Droughts;
@@ -70,6 +71,11 @@ pub struct ModuleConfig {
     /// set). Scenario files written before it existed have neither key and get none.
     #[serde(default)]
     pub markets: Option<MarketParams>,
+    /// Realms v1, "basic": the starting realms and their claims (step 7). Off by default until
+    /// step 7's checks; scenario files written before it existed have no key and get none. Not in
+    /// [`CHOICES`] yet, so the tester's table stays as it is until then.
+    #[serde(default)]
+    pub realms: Option<RealmParams>,
 }
 
 impl Default for ModuleConfig {
@@ -81,6 +87,7 @@ impl Default for ModuleConfig {
             population: Some(PopParams::default()),
             weather: true,
             markets: None,
+            realms: None,
         }
     }
 }
@@ -115,6 +122,9 @@ impl ModuleConfig {
         }
         if self.weather {
             out.push(Box::new(Droughts::default()));
+        }
+        if let Some(params) = &self.realms {
+            out.push(Box::new(Founding { params: params.clone() }));
         }
         out
     }

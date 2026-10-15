@@ -25,6 +25,9 @@ pub enum Layer {
     Famine,
     Temperature,
     Rainfall,
+    /// Realm fills over the terrain, realm borders, and a dark mark on each capital. Written only
+    /// for worlds with realms.
+    Realms,
 }
 
 pub const ALL_LAYERS: [Layer; 6] =
@@ -39,6 +42,7 @@ impl Layer {
             Layer::Famine => "famine",
             Layer::Temperature => "temperature",
             Layer::Rainfall => "rainfall",
+            Layer::Realms => "realms",
         }
     }
 }
@@ -107,9 +111,27 @@ pub fn render(sim: &Sim, layer: Layer, width: u32, pixels: &[u32]) -> Vec<u8> {
                 ramp(&[[220, 195, 140], [150, 190, 90], [50, 140, 80], [30, 80, 150]], t)
             })
             .collect(),
+        Layer::Realms => {
+            let seats: std::collections::HashSet<u32> =
+                w.realms.capital.iter().filter(|&&c| c != NONE).map(|&c| w.routes.seat[c as usize]).collect();
+            (0..w.grid.cells())
+                .map(|c| match w.provinces.of_cell[c] {
+                    _ if seats.contains(&(c as u32)) => [20, 15, 15],
+                    NONE => terrain[c],
+                    p => match w.owner[p as usize] {
+                        NONE => mix(terrain[c], [235, 230, 220], 0.35),
+                        r => mix(terrain[c], province_color(r, w.params.seed ^ 0x5EA1), 0.7),
+                    },
+                })
+                .collect()
+        }
     };
 
     let draw_borders = matches!(layer, Layer::Provinces | Layer::Population | Layer::Famine);
+    let owner_of = |c: usize| match w.provinces.of_cell[c] {
+        NONE => NONE,
+        p => w.owner.get(p as usize).copied().unwrap_or(NONE),
+    };
     let mut out = vec![0u8; (width * height * 3) as usize];
     out.par_chunks_mut((width * 3) as usize).enumerate().for_each(|(y, row)| {
         for x in 0..width as usize {
@@ -121,6 +143,14 @@ pub fn render(sim: &Sim, layer: Layer, width: u32, pixels: &[u32]) -> Vec<u8> {
                 let p = w.provinces.of_cell[c];
                 if p != NONE && (w.provinces.of_cell[right] != p || w.provinces.of_cell[below] != p) {
                     col = mix(col, [40, 30, 30], 0.7);
+                }
+            }
+            if layer == Layer::Realms {
+                let right = pixels[y * width as usize + (x + 1) % width as usize] as usize;
+                let below = pixels[(y + 1).min(height as usize - 1) * width as usize + x] as usize;
+                let r = owner_of(c);
+                if w.provinces.of_cell[c] != NONE && (owner_of(right) != r || owner_of(below) != r) {
+                    col = mix(col, [25, 20, 20], 0.8);
                 }
             }
             row[x * 3..x * 3 + 3].copy_from_slice(&col);
@@ -144,7 +174,8 @@ pub fn write_all(sim: &Sim, dir: &Path, prefix: &str, width: u32) -> std::io::Re
     std::fs::create_dir_all(dir)?;
     let pixels = pixel_cells(&sim.world.grid, width);
     let mut written = Vec::new();
-    for layer in ALL_LAYERS {
+    let realms = (sim.world.realms.count() > 0).then_some(Layer::Realms);
+    for layer in ALL_LAYERS.into_iter().chain(realms) {
         let rgb = render(sim, layer, width, &pixels);
         let path = dir.join(format!("{prefix}{}.png", layer.name()));
         write_png(&path, width, width / 2, &rgb)?;

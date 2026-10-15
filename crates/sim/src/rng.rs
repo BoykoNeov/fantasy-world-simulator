@@ -17,6 +17,8 @@ pub enum Module {
     Economics = 5,
     /// The player's edits (the bumps a roughening brush adds).
     Editor = 6,
+    /// Realms: where they start, their names, their claims.
+    Realms = 7,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

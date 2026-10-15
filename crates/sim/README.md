@@ -40,7 +40,8 @@ What exists:
   into other goods, used up, worn out); format 11 trade (its parameters, and the causes trade in and
   trade out); format 12 trade's prices following the money; format 13 the step-7 groundwork (who
 owns each province, realms and their stores, armies, four new slots, requests that move what they
-take, and the causes and event that come with them). Loads refuse other format versions,
+take, and the causes and event that come with them); format 14 the realms module's parameters in
+the configuration. Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -52,6 +53,7 @@ take, and the causes and event that come with them). Loads refuse other format v
   | Economics | `food` (default): monthly harvest and spoilage, keeps one store per province of the "food" class; `markets`: the eight goods and coins, made by workers from the land, used up and priced (see below); or off | monthly |
   | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
+  | Realms | `basic`: makes the starting realms and claims unowned settled land (see below); or off (the default until step 7's checks) | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -225,6 +227,39 @@ take, and the causes and event that come with them). Loads refuse other format v
   - Worlds without these modules are unchanged: no province has an owner and there are no realms
     or armies. Old scenario files make the same worlds value for value; fingerprints differ only
     because the new fields are hashed.
+- **Realms at world creation** (step 7; Realms "basic", `realms.rs`, tests in
+  `realm_start_tests.rs`). Off by default, and not among the tester's choices yet, so its table is
+  unchanged; a configuration (`ModuleConfig::realms`), a scenario file or `simrun --realms` turns it
+  on. Realms are made once the people are placed, over settled land (provinces with people), and
+  need Population (refused without it).
+  - **Three ways to start, mixable** (`RealmParams`, a weight for each): realms over settled land
+    (the default; about one realm per 25 provinces, every settled province owned), city-states (one
+    to three settled provinces each, every settled province owned), and a frontier (realms the same
+    size but holding only the 40% of their settled land nearest their capital, the rest unclaimed).
+    A mix goes by region: a large smooth pattern over the planet (the terrain's noise) splits the
+    settled land into areas of each way in the shares asked for, so a coast of city-states can lie
+    beside a kingdom's plains.
+  - **How the land is shared out.** Starting provinces are spread out (the most populous first,
+    then each time the one farthest from those chosen, favouring the more populous, shuffled a
+    little), and realms grow from them by travel time along the province ways, by land and short
+    sea crossings, within their own way's area; mountains and open sea become borders. Settled land
+    no realm reached (a far island) starts a realm of its own. A realm holds empty land only as far
+    out as its farthest settled province, so deserts and ice beyond the settled land are nobody's.
+    Each realm starts in one piece. Its capital is its most populous province.
+  - **Claims.** Each month a settled province nobody owns is claimed, with a chance of 0.5%, by the
+    neighbouring realm nearest it in days (by the owners at the month's start). On the large world a
+    frontier is about two-thirds claimed after 10 years and over 90% after 30.
+  - **Names** come from the world's seed and the realm's number alone (`realms::names`): two or three
+    syllables, sometimes with an ending ("Draetith", "Keitraemark"); no two alike. Nothing is stored,
+    so realms made later (a rebellion) get names the same way.
+  - **Edits.** After any edit that changes the map, `realms::repair` puts realms right: a province
+    with no land left (merged away, all its land moved out, or sunk) belongs to nobody; a capital the
+    realm no longer holds moves to its most populous province; a realm left with no land is
+    dissolved (its number kept, with no capital). A rising sea can cut a realm in two; it stays one
+    realm. Worlds without realms are untouched.
+  - Speed: making the realms adds about 0.3 s to making a large world (5,069 provinces); a day costs
+    the same as without realms. `simrun` prints the realms (count, sizes, unowned settled land) and,
+    with `--out`, draws a realms map (realm colours, realm borders, a dark mark on each capital).
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -349,7 +384,8 @@ cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p s
 ```
 
 Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (map width in pixels),
-`--terrain null|noise`, `--climate null|latitude`, `--save FILE`, `--load FILE` (continue a saved
+`--terrain null|noise`, `--climate null|latitude`, `--realms settled=1,city=1,frontier=1` (realms on,
+with the ways to start weighted as given), `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
 and `--write-scenario FILE`.
 

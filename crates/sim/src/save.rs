@@ -46,7 +46,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 13 (step 7): province owners, realms and their stores, armies; four new slots; requests
 /// that move what they take (`Request::to`); the causes taxes, raised and returned; the event of
 /// people arriving.
-pub const FORMAT_VERSION: u32 = 13;
+/// Format 14 (step 7): Realms "basic": its parameters in the configuration.
+pub const FORMAT_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

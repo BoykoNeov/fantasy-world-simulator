@@ -26,6 +26,8 @@ pub mod provinces;
 pub mod realms;
 #[cfg(test)]
 mod realm_tests;
+#[cfg(test)]
+mod realm_start_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;
