@@ -27,6 +27,9 @@ pub enum Tier {
     RealmGood,
     /// One entry per army (step 7); numbers are never reused, a disbanded army stays empty.
     Army,
+    /// One entry per character: rulers and heirs (step 7). Numbers are never reused: the dead keep
+    /// their entries, with the day they died.
+    Character,
 }
 
 impl Tier {
@@ -231,7 +234,8 @@ pub enum Default {
     Zero,
     /// No entries (pop fields: no pops).
     Empty,
-    /// [`crate::grid::NONE`] for every province: nobody (a province no realm owns).
+    /// [`crate::grid::NONE`] for every entry: nobody (a province no realm owns, a realm with no
+    /// ruler).
     NoOne,
 }
 
@@ -306,11 +310,25 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("realm.capital", Tier::Realm, "province id, none for a dissolved realm", -UNBOUNDED, UNBOUNDED) },
     // A realm's stores per good kept; its coins are its treasury. Kept by the economics module, so
     // coins have one owner. It always has a row per realm: the engine adds rows of nothing as
-    // realms appear (`World::fit_realm_stores`).
+    // realms appear (`World::fit_realm_rows`).
     FieldDef { conserved: true, default: Default::Zero, ..def("realm.stock", Tier::RealmGood, "of the good", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Empty, ..def("army.realm", Tier::Army, "realm id", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("army.province", Tier::Army, "province id where it stands", -UNBOUNDED, UNBOUNDED) },
     FieldDef { conserved: true, default: Default::Empty, ..def("army.size", Tier::Army, "soldiers", 0.0, COUNT_MAX) },
+    // Rulers and heirs (step 7, Characters "rulers"). Rulers are not extra people: none of these
+    // is counted in the people total.
+    FieldDef { default: Default::NoOne, ..def("realm.ruler", Tier::Realm, "character id, none while the throne is empty", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::NoOne, ..def("realm.heir", Tier::Realm, "character id, none while there is no heir", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.realm", Tier::Character, "realm id they rule, are heir to, or last served", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.parent", Tier::Character, "character id, none if not known", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.name", Tier::Character, "name number (a child may share a forebear's)", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.born", Tier::Character, "day born, below 0 before the world's first day", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.died", Tier::Character, "day died, none while alive", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.crowned", Tier::Character, "day they became ruler, none if never", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("character.succession", Tier::Character, "how they came to the throne (see `Succession`)", 0.0, 4.0) },
+    FieldDef { default: Default::Empty, ..def("character.martial", Tier::Character, "0 cautious to 100 warlike", 0.0, 100.0) },
+    FieldDef { default: Default::Empty, ..def("character.greed", Tier::Character, "0 open-handed to 100 greedy", 0.0, 100.0) },
+    FieldDef { default: Default::Empty, ..def("character.ability", Tier::Character, "0 inept to 100 able", 0.0, 100.0) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

@@ -3,6 +3,7 @@
 
 use crate::biome::Biomes;
 use crate::calendar::{Calendar, CalendarDef};
+use crate::characters::{RulerParams, Rulers};
 use crate::climate::{LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::Rivers;
@@ -76,6 +77,10 @@ pub struct ModuleConfig {
     /// [`CHOICES`] yet, so the tester's table stays as it is until then.
     #[serde(default)]
     pub realms: Option<RealmParams>,
+    /// Characters v1, "rulers": every realm's ruler and heir (step 7). Needs realms. Off by default
+    /// and out of [`CHOICES`] until step 7's checks, as realms are.
+    #[serde(default)]
+    pub characters: Option<RulerParams>,
 }
 
 impl Default for ModuleConfig {
@@ -88,6 +93,7 @@ impl Default for ModuleConfig {
             weather: true,
             markets: None,
             realms: None,
+            characters: None,
         }
     }
 }
@@ -125,6 +131,9 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.realms {
             out.push(Box::new(Founding { params: params.clone() }));
+        }
+        if let Some(params) = &self.characters {
+            out.push(Box::new(Rulers { params: params.clone() }));
         }
         out
     }

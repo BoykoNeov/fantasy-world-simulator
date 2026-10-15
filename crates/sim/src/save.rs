@@ -47,7 +47,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// that move what they take (`Request::to`); the causes taxes, raised and returned; the event of
 /// people arriving.
 /// Format 14 (step 7): Realms "basic": its parameters in the configuration.
-pub const FORMAT_VERSION: u32 = 14;
+/// Format 15 (step 7): Characters "rulers": its parameters in the configuration, the character
+/// fields, each realm's ruler and heir, and the succession event.
+pub const FORMAT_VERSION: u32 = 15;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

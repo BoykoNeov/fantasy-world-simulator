@@ -829,7 +829,7 @@ impl MapChange {
                 crate::fields::Tier::Province => out.extend(at.iter().copied()),
                 crate::fields::Tier::ProvinceGood => out.extend(at.iter().map(|&e| w.goods.split(e as usize).0 as u32)),
                 crate::fields::Tier::Army => out.extend(at.iter().filter_map(|&a| w.armies.province.get(a as usize).copied())),
-                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood => {}
+                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood | crate::fields::Tier::Character => {}
             }
             if id.def().name == "cell.province"
                 && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)

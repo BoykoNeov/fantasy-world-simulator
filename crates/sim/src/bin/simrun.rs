@@ -4,12 +4,13 @@
 //! simrun [--size small|medium|large|huge] [--n FACE] [--provinces N] [--seed S] [--years Y]
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
-//!        [--realms settled=W,city=W,frontier=W]
+//!        [--realms settled=W,city=W,frontier=W] [--rulers]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
 //! and `--write-scenario` writes the world at the end as one. `--realms` switches realms on, with
-//! the ways to start weighted as given (`--realms settled=1` is the default way).
+//! the ways to start weighted as given (`--realms settled=1` is the default way). `--rulers` gives
+//! every realm a ruler and heir (and turns realms on the default way if `--realms` isn't given).
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -60,6 +61,10 @@ fn main() {
             }
         }
         config.modules.realms = Some(r);
+    }
+    if args.iter().any(|a| a == "--rulers") {
+        config.modules.realms.get_or_insert_with(Default::default);
+        config.modules.characters = Some(Default::default());
     }
 
     let t = Instant::now();
@@ -187,6 +192,53 @@ fn print_realms(sim: &Sim) {
         names[biggest as usize],
         w.realms.capital[biggest as usize]
     );
+    print_rulers(sim, biggest, &names[biggest as usize]);
+}
+
+/// How rulers came to the throne so far, how long the reigns that ended lasted, and the largest
+/// realm's ruler and heir.
+fn print_rulers(sim: &Sim, biggest: u32, realm: &str) {
+    use sim::characters::{title, traits_in_words, Succession, NEVER};
+    let w = &sim.world;
+    let ch = &w.characters;
+    if ch.count() == 0 {
+        return;
+    }
+    let year = sim.calendar.days_per_year();
+    let mut kinds = [0usize; 5];
+    let (mut reigns, mut deaths) = (Vec::new(), Vec::new());
+    for c in 0..ch.count() {
+        if ch.crowned[c] == NEVER {
+            continue;
+        }
+        kinds[ch.succession[c] as usize] += 1;
+        if ch.died[c] != NEVER {
+            reigns.push((ch.died[c] - ch.crowned[c]) as f64 / year as f64);
+            deaths.push(ch.age(c as u32, sim.day, year));
+        }
+    }
+    let mean = |v: &[f64]| if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 };
+    println!(
+        "rulers: {} characters; came to the throne by founding {}, as a grown heir {}, as a child heir {}, as a claimant {}; {} reigns ended, lasting {:.1} years on average, the ruler dying at {:.1}",
+        ch.count(),
+        kinds[Succession::Founded as usize],
+        kinds[Succession::Heir as usize],
+        kinds[Succession::Child as usize],
+        kinds[Succession::Claimant as usize],
+        reigns.len(),
+        mean(&reigns),
+        mean(&deaths)
+    );
+    let describe = |c: u32| {
+        let traits = traits_in_words(w, c);
+        let traits = if traits.is_empty() { String::new() } else { format!(", {}", traits.join(", ")) };
+        format!("{}, aged {:.0}{traits}", title(w, c), ch.age(c, sim.day, year))
+    };
+    let (ruler, heir) = (w.realms.ruler[biggest as usize], w.realms.heir[biggest as usize]);
+    if ruler != sim::grid::NONE {
+        let heir = if heir == sim::grid::NONE { "no heir".to_string() } else { format!("heir {}", describe(heir)) };
+        println!("{realm} is ruled by {} ({}); {heir}", describe(ruler), Succession::from_u8(ch.succession[ruler as usize]).describe());
+    }
 }
 
 /// 1234567 -> "1,234,567".

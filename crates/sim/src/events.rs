@@ -27,6 +27,9 @@ pub enum Event {
     /// People come to live in a province from outside the pops: soldiers home from an army. Their
     /// sender has already booked them out (with `cause`); the pops' owner books them in on delivery.
     Arrived { province: u32, people: u64, cause: crate::requests::Cause },
+    /// Character `ruler` takes realm `realm`'s throne (its capital then was `capital`): after a
+    /// ruler's death, or as a new realm's first ruler. Not sent for the rulers a world starts with.
+    Succession { realm: u32, capital: u32, ruler: u32, how: crate::characters::Succession },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -37,6 +40,7 @@ pub enum EventKind {
     ConservationBroken,
     Drought,
     Arrived,
+    Succession,
 }
 
 impl EventKind {
@@ -45,13 +49,13 @@ impl EventKind {
     ///
     /// | class | value | kinds |
     /// | --- | --- | --- |
-    /// | destruction and death | 0 | Famine, Drought |
+    /// | destruction and death | 0 | Famine, Drought, Succession |
     /// | agreements | 1 | (none yet) |
     /// | routine changes | 2 | Granted, Arrived |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
-            EventKind::Famine | EventKind::Drought => 0,
+            EventKind::Famine | EventKind::Drought | EventKind::Succession => 0,
             EventKind::Granted | EventKind::Arrived => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
@@ -67,6 +71,7 @@ impl Event {
             Event::ConservationBroken { .. } => EventKind::ConservationBroken,
             Event::Drought { .. } => EventKind::Drought,
             Event::Arrived { .. } => EventKind::Arrived,
+            Event::Succession { .. } => EventKind::Succession,
         }
     }
 
@@ -77,6 +82,7 @@ impl Event {
             Event::Famine { province, .. } | Event::Arrived { province, .. } => *province as u64,
             Event::ContractViolated { entity, .. } => *entity as u64,
             Event::ConservationBroken { .. } | Event::Drought { .. } => 0,
+            Event::Succession { realm, .. } => *realm as u64,
         }
     }
 
@@ -84,6 +90,7 @@ impl Event {
     pub fn province(&self) -> Option<u32> {
         match self {
             Event::Famine { province, .. } | Event::Arrived { province, .. } => Some(*province),
+            Event::Succession { capital, .. } => Some(*capital),
             _ => None,
         }
     }

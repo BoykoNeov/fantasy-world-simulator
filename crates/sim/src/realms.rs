@@ -38,6 +38,10 @@ use std::collections::{BinaryHeap, HashSet};
 pub struct Realms {
     /// The realm's capital province (field `realm.capital`); [`NONE`] for a dissolved realm.
     pub capital: Vec<u32>,
+    /// Its ruler and heir, as character numbers (fields `realm.ruler`, `realm.heir`, kept by the
+    /// characters module); [`NONE`] for none.
+    pub ruler: Vec<u32>,
+    pub heir: Vec<u32>,
 }
 
 impl Realms {

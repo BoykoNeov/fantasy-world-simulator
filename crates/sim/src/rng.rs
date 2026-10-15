@@ -19,6 +19,8 @@ pub enum Module {
     Editor = 6,
     /// Realms: where they start, their names, their claims.
     Realms = 7,
+    /// Characters: rulers' and heirs' births, deaths, traits and names.
+    Characters = 8,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

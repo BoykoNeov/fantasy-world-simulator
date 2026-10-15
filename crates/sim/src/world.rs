@@ -6,6 +6,7 @@
 //! [`FieldData`], for contracts, fingerprints and saves.
 
 use crate::biome::{self, Biome};
+use crate::characters::Characters;
 use crate::config::ModuleConfig;
 use crate::fields::{FieldData, FieldId, Goods, Quantity, Tier, FIELDS};
 use crate::grid::Grid;
@@ -135,6 +136,8 @@ pub struct World {
     /// Each realm's stores, per good kept (field `realm.stock`; its coins are the treasury).
     pub realm_stock: Vec<u64>,
     pub armies: Armies,
+    /// Rulers and heirs, living and dead.
+    pub characters: Characters,
 }
 
 impl World {
@@ -168,6 +171,7 @@ impl World {
             realms: Realms::default(),
             realm_stock: Vec::new(),
             armies: Armies::default(),
+            characters: Characters::default(),
         }
     }
 
@@ -242,6 +246,18 @@ impl World {
             "army.realm" => U32(self.armies.realm.clone()),
             "army.province" => U32(self.armies.province.clone()),
             "army.size" => U64(self.armies.size.clone()),
+            "realm.ruler" => U32(self.realms.ruler.clone()),
+            "realm.heir" => U32(self.realms.heir.clone()),
+            "character.realm" => U32(self.characters.realm.clone()),
+            "character.parent" => U32(self.characters.parent.clone()),
+            "character.name" => U32(self.characters.name.clone()),
+            "character.born" => F64(self.characters.born.clone()),
+            "character.died" => U64(self.characters.died.clone()),
+            "character.crowned" => U64(self.characters.crowned.clone()),
+            "character.succession" => U8(self.characters.succession.clone()),
+            "character.martial" => U8(self.characters.martial.clone()),
+            "character.greed" => U8(self.characters.greed.clone()),
+            "character.ability" => U8(self.characters.ability.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -252,9 +268,9 @@ impl World {
         let def = id.def();
         let expect = match def.tier {
             Tier::Cell => Some(self.grid.cells()),
-            // The province count is set by the province fields themselves; pops, realms and armies
-            // vary.
-            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army => None,
+            // The province count is set by the province fields themselves; pops, realms, armies
+            // and characters vary.
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character => None,
             Tier::ProvinceGood | Tier::RealmGood => {
                 let k = self.goods.stride();
                 if !data.len().is_multiple_of(k) {
@@ -314,6 +330,18 @@ impl World {
             ("army.realm", U32(v)) => self.armies.realm = v,
             ("army.province", U32(v)) => self.armies.province = v,
             ("army.size", U64(v)) => self.armies.size = v,
+            ("realm.ruler", U32(v)) => self.realms.ruler = v,
+            ("realm.heir", U32(v)) => self.realms.heir = v,
+            ("character.realm", U32(v)) => self.characters.realm = v,
+            ("character.parent", U32(v)) => self.characters.parent = v,
+            ("character.name", U32(v)) => self.characters.name = v,
+            ("character.born", F64(v)) => self.characters.born = v,
+            ("character.died", U64(v)) => self.characters.died = v,
+            ("character.crowned", U64(v)) => self.characters.crowned = v,
+            ("character.succession", U8(v)) => self.characters.succession = v,
+            ("character.martial", U8(v)) => self.characters.martial = v,
+            ("character.greed", U8(v)) => self.characters.greed = v,
+            ("character.ability", U8(v)) => self.characters.ability = v,
             _ => return wrong(),
         }
         Ok(())
@@ -332,6 +360,7 @@ impl World {
         let p = &mut self.provinces;
         let pops = &mut self.pops;
         let armies = &mut self.armies;
+        let people = &mut self.characters;
         match (id.def().name, values) {
             ("cell.elevation", F32(x)) => put(&mut self.elevation, at, x),
             ("cell.temperature", F32(x)) => put(&mut self.temperature, at, x),
@@ -376,6 +405,18 @@ impl World {
             ("army.realm", U32(x)) => put(&mut armies.realm, at, x),
             ("army.province", U32(x)) => put(&mut armies.province, at, x),
             ("army.size", U64(x)) => put(&mut armies.size, at, x),
+            ("realm.ruler", U32(x)) => put(&mut self.realms.ruler, at, x),
+            ("realm.heir", U32(x)) => put(&mut self.realms.heir, at, x),
+            ("character.realm", U32(x)) => put(&mut people.realm, at, x),
+            ("character.parent", U32(x)) => put(&mut people.parent, at, x),
+            ("character.name", U32(x)) => put(&mut people.name, at, x),
+            ("character.born", F64(x)) => put(&mut people.born, at, x),
+            ("character.died", U64(x)) => put(&mut people.died, at, x),
+            ("character.crowned", U64(x)) => put(&mut people.crowned, at, x),
+            ("character.succession", U8(x)) => put(&mut people.succession, at, x),
+            ("character.martial", U8(x)) => put(&mut people.martial, at, x),
+            ("character.greed", U8(x)) => put(&mut people.greed, at, x),
+            ("character.ability", U8(x)) => put(&mut people.ability, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -402,12 +443,20 @@ impl World {
         }
     }
 
-    /// Give every realm a row of stores, empty for a realm that has none yet. The engine calls it
-    /// after every stage and edit, so whoever adds a realm needn't own its stores.
-    pub fn fit_realm_stores(&mut self) {
-        let want = self.realms.count() * self.goods.stride();
+    /// Give every realm the values other modules than the one that makes realms keep for it: a
+    /// row of stores (empty), a ruler and an heir (nobody). The engine calls it after every stage
+    /// and edit, so whoever adds a realm needn't own those, and they are there with their owners
+    /// off.
+    pub fn fit_realm_rows(&mut self) {
+        let n = self.realms.count();
+        let want = n * self.goods.stride();
         if self.realm_stock.len() < want {
             self.realm_stock.resize(want, 0);
+        }
+        for v in [&mut self.realms.ruler, &mut self.realms.heir] {
+            if v.len() < n {
+                v.resize(n, crate::grid::NONE);
+            }
         }
     }
 
@@ -430,7 +479,8 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province, pop, realm and army fields agree on their lengths (after a load).
+    /// Check that province, pop, realm, army and character fields agree on their lengths (after a
+    /// load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
         let pops = self.pops.size.len();
@@ -443,6 +493,7 @@ impl World {
                 Tier::Realm => self.realms.count(),
                 Tier::RealmGood => self.realms.count() * self.goods.stride(),
                 Tier::Army => self.armies.count(),
+                Tier::Character => self.characters.count(),
                 Tier::Cell => continue,
             };
             if len != want {
@@ -470,12 +521,13 @@ impl World {
             let per_row = if def.tier.per_good() { self.goods.stride() } else { 1 };
             let data = match (def.default, self.field(id)) {
                 (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; rows * per_row]),
-                (crate::fields::Default::NoOne, FieldData::U32(_)) => FieldData::U32(vec![crate::grid::NONE; self.provinces.count]),
+                (crate::fields::Default::NoOne, FieldData::U32(_)) => FieldData::U32(vec![crate::grid::NONE; rows]),
                 (crate::fields::Default::Empty, d) => match d {
                     FieldData::U64(_) => FieldData::U64(Vec::new()),
                     FieldData::U32(_) => FieldData::U32(Vec::new()),
                     FieldData::U16(_) => FieldData::U16(Vec::new()),
                     FieldData::U8(_) => FieldData::U8(Vec::new()),
+                    FieldData::F64(_) => FieldData::F64(Vec::new()),
                     other => other,
                 },
                 // Required fields are always owned in a valid configuration.

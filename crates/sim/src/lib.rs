@@ -7,6 +7,7 @@
 pub mod biome;
 pub mod branch;
 pub mod calendar;
+pub mod characters;
 pub mod climate;
 pub mod combos;
 pub mod config;
@@ -28,6 +29,8 @@ pub mod realms;
 mod realm_tests;
 #[cfg(test)]
 mod realm_start_tests;
+#[cfg(test)]
+mod ruler_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;

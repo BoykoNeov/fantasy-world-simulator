@@ -32,8 +32,8 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::Province => vec![province as usize],
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
-                // Realms' and armies' values are not a province's.
-                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army => Vec::new(),
+                // Realms', armies' and characters' values are not a province's.
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -81,7 +81,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character => None,
     }
 }
 
@@ -196,6 +196,7 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
             duration(*days, cal)
         ),
         Event::Arrived { people, cause: c, .. } => format!("{} people arrived: {}", group(*people), cause(*c)),
+        Event::Succession { realm, ruler, how, .. } => format!("realm {realm} has a new ruler, character {ruler}: {}", how.describe()),
     }
 }
 

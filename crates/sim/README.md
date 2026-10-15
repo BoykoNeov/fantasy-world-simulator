@@ -41,7 +41,8 @@ What exists:
   trade out); format 12 trade's prices following the money; format 13 the step-7 groundwork (who
 owns each province, realms and their stores, armies, four new slots, requests that move what they
 take, and the causes and event that come with them); format 14 the realms module's parameters in
-the configuration. Loads refuse other format versions,
+the configuration; format 15 rulers (the characters module's parameters, the character fields,
+each realm's ruler and heir, and the succession event). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -54,6 +55,7 @@ the configuration. Loads refuse other format versions,
   | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
   | Realms | `basic`: makes the starting realms and claims unowned settled land (see below); or off (the default until step 7's checks) | monthly |
+  | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -261,6 +263,43 @@ the configuration. Loads refuse other format versions,
   - Speed: making the realms adds about 0.3 s to making a large world (5,069 provinces); a day costs
     the same as without realms. `simrun` prints the realms (count, sizes, unowned settled land) and,
     with `--out`, draws a realms map (realm colours, realm borders, a dark mark on each capital).
+- **Rulers** (step 7; Characters "rulers", `characters.rs`, tests in `ruler_tests.rs`). Off by
+  default and not among the tester's choices yet, like realms; a configuration
+  (`ModuleConfig::characters`), a scenario file or `simrun --rulers` turns it on. It needs realms
+  (refused without them).
+  - **Characters** are entities like realms, kept as parallel arrays (`character.*` fields): the
+    realm they rule, are heir to or last belonged to; their parent; a name number; the day they were
+    born (below 0 for those born before the world's first day), died and were crowned; how they came
+    to the throne; and three traits from 0 to 100, most often near the middle: cautious to warlike
+    (`martial`), `greed` and `ability`. Each realm has a ruler and an heir (`realm.ruler`,
+    `realm.heir`; none while there is none). Numbers are never reused: the dead keep their entries.
+    Rulers are not extra people, so the people total doesn't count them.
+  - **At the start** every realm gets a founding ruler, 18 to 65 years old (most often about 40),
+    and an heir if the ruler is old enough to have a child (18 to 35 years younger). The world's
+    starting rulers are not announced.
+  - **Each month** everyone alive may die (`characters::death_per_year`: a child's risk early on,
+    then about 2% a year at 40, 6% at 60, 14% at 70 and a third at 80; `RulerParams::mortality`
+    scales it). A ruler without an heir, aged 16 to 50, has a child with a 30% chance a year, who
+    becomes heir; any ruler without an heir names a grown kinsman (16 to 40) with a 10% chance a
+    year. A child takes half of each trait from its parent, and is often named after its parent or
+    grandparent.
+  - **Succession.** When a ruler dies, the heir is crowned the same day: a smooth succession if the
+    heir is grown (16 or more), a weak one if a child. With no heir a claimant from outside the line
+    takes the throne: a contested succession. How each ruler came to the throne and when are kept
+    on the ruler (`character.succession`, `character.crowned`) and sent as a `Succession` event
+    (shown in the capital's event log), for unrest to read when it comes (a later piece of step 7);
+    nothing reacts to them yet. A realm made after the start gets a founding ruler, announced, at
+    the next month's start; the ruler and heir of a dissolved realm lose their places then and live
+    out their lives.
+  - **Names** come from the world's seed and the name number alone (`characters::name`: "Aldric",
+    "Merwen"); a ruler named like an earlier ruler of the same realm gets a number
+    (`characters::title`: "Aldric II").
+  - On the large world (202 realms, seed 7) a century brings about 720 successions: 73% to a grown
+    heir, 16% to a child, 11% contested. Reigns that end last about 23 years on average, and rulers
+    die at about 58. Rulers cost nothing measurable per day. `simrun` prints these figures and the
+    largest realm's ruler and heir.
+  - The engine gives each new realm a ruler and heir of nobody (`World::fit_realm_rows`, as it does
+    its stores), so a world with realms but no rulers saves and loads.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -386,7 +425,8 @@ cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p s
 
 Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (map width in pixels),
 `--terrain null|noise`, `--climate null|latitude`, `--realms settled=1,city=1,frontier=1` (realms on,
-with the ways to start weighted as given), `--save FILE`, `--load FILE` (continue a saved
+with the ways to start weighted as given), `--rulers` (rulers on, and realms the default way if
+`--realms` isn't given), `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
 and `--write-scenario FILE`.
 
