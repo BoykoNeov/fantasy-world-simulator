@@ -1,15 +1,16 @@
 //! How the markets economy settles: each year, people, starved, and per good the world's stores,
 //! workers and median price; then the speed.
 //!
-//! cargo run --release -p sim --example market_stats -- [--n FACE] [--provinces N] [--seed S] [--years Y] [--food]
+//! cargo run --release -p sim --example market_stats -- [--n FACE] [--provinces N] [--seed S] [--years Y] [--food] [--no-trade]
 //!
-//! `--food` runs Economics v0 instead, for comparison.
+//! `--food` runs Economics v0 instead, for comparison; `--no-trade` runs markets without trade.
 
 use sim::config::Config;
 use sim::fields::quantity_total;
 use sim::fields::Quantity;
 use sim::markets::PRICE_SCALE;
 use sim::module::Slot;
+use sim::requests::Cause;
 use sim::sim::Sim;
 use sim::world::WorldParams;
 use std::time::Instant;
@@ -21,6 +22,9 @@ fn main() {
     let mut config = Config::new(params);
     if !args.iter().any(|a| a == "--food") {
         config.modules.set_choice(Slot::Economics, "markets").unwrap();
+        if args.iter().any(|a| a == "--no-trade") {
+            config.modules.markets.as_mut().unwrap().trade = None;
+        }
     }
     let started = Instant::now();
     let mut sim = Sim::new(&config).unwrap();
@@ -48,7 +52,9 @@ fn main() {
     for y in 1..=years {
         sim.run_to_year(first + y);
         let h = sim.year_so_far();
-        println!("year {}: people {} starved {} famine provinces {}{}", h.year, h.population, h.ledger.starved, h.famine_provinces, row(&sim));
+        // What trade moved this year, per class of goods.
+        let traded: Vec<String> = sim.world.quantities().into_iter().filter(|&q| q != Quantity::People).map(|q| format!("{}={}", q.name(&goods), sim.year_flows.get(q, Cause::TradeIn))).collect();
+        println!("year {}: people {} starved {} famine provinces {}{} traded {}", h.year, h.population, h.ledger.starved, h.famine_provinces, row(&sim), traded.join(" "));
     }
     let days = sim.day as f64;
     println!("{:.3} ms a day; problems {:?}", started.elapsed().as_secs_f64() * 1000.0 / days, sim.problems);

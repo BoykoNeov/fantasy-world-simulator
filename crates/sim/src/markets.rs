@@ -18,9 +18,18 @@
 //! 4. **Using**: people use up timber, stone and cloth (less when they are dear). Food is eaten
 //!    through Population's change requests, served from all the food kept. Stores rot or wear.
 //!
-//! Coins (the goods under the money class) are never made, used, spoiled or priced: the province
-//! holds the coins it started with until trade moves them. How each good is made, used and priced
-//! is data (`data/markets.toml`), saved with the world.
+//! Then, between provinces:
+//!
+//! 5. **Trade**: along each way between neighbours (see [`crate::routes`]), goods go to where they
+//!    are dearer when the gap in price beats the cost of carrying them, and the buyer pays the
+//!    seller in coins. Each way closes part of its gap a month (the damper on trade). Goods priced
+//!    together are traded together. Every trade is worked out from the stores as the month's work
+//!    left them, then scaled down to what sellers can spare and buyers can pay, so the result
+//!    doesn't depend on the order of the ways.
+//!
+//! Coins (the goods under the money class) are never made, used, spoiled or priced: provinces
+//! start with them and trade moves them. How each good is made, used, priced and carried is data
+//! (`data/markets.toml`), saved with the world.
 
 use crate::economy::month_share;
 use crate::events::EventKind;
@@ -28,6 +37,7 @@ use crate::fields::{known, FieldData, FieldId, Goods, Quantity, Tier};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
 use crate::requests::{serve_goods, split_proportional, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
+use crate::routes::Link;
 use crate::terrain::fbm;
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -72,6 +82,24 @@ pub struct MarketParams {
     /// Goods priced together, by the node of the goods tree they are under.
     pub groups: BTreeMap<String, GroupParams>,
     pub goods: BTreeMap<String, GoodParams>,
+    /// Trade between neighbours; none in a world without it (and in scenario files written
+    /// before trade, which keep running as they did).
+    #[serde(default)]
+    pub trade: Option<TradeParams>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TradeParams {
+    /// How much of a price gap, beyond the carrying cost, trade closes in a month.
+    pub change: f64,
+    /// Most of a store a province sells in a month.
+    pub most_sold: f64,
+    /// Most of its coins a province spends in a month.
+    pub most_spent: f64,
+    /// A day at sea costs this share of a day overland.
+    pub sea_share: f64,
+    /// Coins to carry one unit of each good one day overland.
+    pub carriage: BTreeMap<String, f64>,
 }
 
 impl Default for MarketParams {
@@ -223,6 +251,28 @@ struct Resolved {
     ids: Vec<u64>,
     /// Whether each group has a good gathered with the harvest.
     group_harvested: Vec<bool>,
+    /// What is priced (and traded) as one: each group, then each good in no group.
+    items: Vec<Item>,
+    /// For each good (by its place in `goods`), its item.
+    item_of: Vec<usize>,
+    /// For each column, coins to carry a unit one day overland (0 for coins).
+    carriage: Vec<f64>,
+}
+
+/// Goods priced as one, by the stores of them all against the stores wanted of them all.
+#[derive(Clone, Debug)]
+struct Item {
+    name: String,
+    cols: Vec<usize>,
+    kind: ItemKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ItemKind {
+    /// A group, by its place in `groups`.
+    Group(usize),
+    /// A good in no group, by its place in `goods`.
+    Good(usize),
 }
 
 impl Resolved {
@@ -289,7 +339,29 @@ impl Resolved {
         }
         let ids = goods.iter().map(|g| g.column as u64).collect();
         let group_harvested = groups.iter().map(|(cols, _)| goods.iter().any(|g| cols.contains(&g.column) && g.params.season == Season::Harvest)).collect();
-        Ok(Resolved { goods, groups, coins, tools, index, ids, group_harvested })
+        let mut items: Vec<Item> = group_names.iter().zip(&groups).enumerate().map(|(j, (name, (cols, _)))| Item { name: name.clone(), cols: cols.clone(), kind: ItemKind::Group(j) }).collect();
+        for (i, g) in goods.iter().enumerate().filter(|(_, g)| g.group.is_none()) {
+            items.push(Item { name: tree.name(kept.columns[g.column]).into(), cols: vec![g.column], kind: ItemKind::Good(i) });
+        }
+        let item_of = goods.iter().enumerate().map(|(i, g)| g.group.unwrap_or_else(|| items.iter().position(|it| matches!(it.kind, ItemKind::Good(x) if x == i)).unwrap())).collect();
+        let mut carriage = vec![0.0; kept.stride()];
+        if let Some(t) = &p.trade {
+            let share = |x: f64| (0.0..=1.0).contains(&x);
+            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && t.sea_share >= 0.0) {
+                return Err("trade: change, most_sold and most_spent must be between 0 and 1, sea_share at least 0".into());
+            }
+            for (name, &x) in &t.carriage {
+                let c = column(name)?;
+                if coins.contains(&c) || x.is_nan() || x < 0.0 {
+                    return Err(format!("trade: {name} can't be carried at {x} coins a day; coins aren't carried, and goods cost at least 0"));
+                }
+                carriage[c] = x;
+            }
+            if let Some(g) = goods.iter().find(|g| !t.carriage.contains_key(tree.name(kept.columns[g.column]))) {
+                return Err(format!("trade: no carrying cost for {}", tree.name(kept.columns[g.column])));
+            }
+        }
+        Ok(Resolved { goods, groups, coins, tools, index, ids, group_harvested, items, item_of, carriage })
     }
 }
 
@@ -489,13 +561,21 @@ impl Module for Markets {
         // Provinces don't touch each other's goods this month, so they are worked out side by side;
         // each one's random draws are its own, so the result is the same however they are shared out.
         let rows = w.stock.par_chunks_mut(k).zip(w.price.par_chunks_mut(k)).zip(w.workers.par_chunks_mut(k));
-        let done: Vec<(Books, Vec<String>)> = rows.enumerate().map(|(prov, ((stock, price), jobs))| month.province(prov, stock, price, jobs)).collect();
+        let done: Vec<(Books, Vec<f64>, Vec<String>)> = rows.enumerate().map(|(prov, ((stock, price), jobs))| month.province(prov, stock, price, jobs)).collect();
+        let people = month.read.people;
         let mut books = Books::default();
-        for (b, notes) in done {
+        let mut wanted = Vec::with_capacity(done.len() * r.items.len());
+        for (b, want, notes) in done {
             for ((class, cause), delta) in b.0 {
                 books.add(class, cause, delta);
             }
+            wanted.extend(want);
             notes.into_iter().for_each(|n| cx.note(n));
+        }
+        if let Some(t) = &self.params.trade {
+            let routes = w.routes.clone();
+            let deals = deals(&r, &self.params, t, &w.stock, &wanted, &people, &routes.links);
+            settle(&r, &deals, &mut w.stock, &w.goods, &mut books, cx.trace).into_iter().for_each(|n| cx.note(n));
         }
         for ((class, cause), delta) in books.0 {
             cx.flow(Quantity::Goods(class), cause, delta);
@@ -529,8 +609,9 @@ struct Month<'a> {
 
 impl Month<'_> {
     /// Province `prov`'s month: its stores, prices and workers are its rows of the per-good
-    /// fields, indexed by column. Returns the flows and, for the traced province, what happened.
-    fn province(&self, prov: usize, stock: &mut [u64], prices: &mut [u64], jobs: &mut [u64]) -> (Books, Vec<String>) {
+    /// fields, indexed by column. Returns the flows, the stores wanted of each item (for trade)
+    /// and, for the traced province, what happened.
+    fn province(&self, prov: usize, stock: &mut [u64], prices: &mut [u64], jobs: &mut [u64]) -> (Books, Vec<f64>, Vec<String>) {
         let (p, r, goods) = (self.p, self.r, self.goods);
         let (seed, day) = (self.seed, self.day);
         let mut books = Books::default();
@@ -550,23 +631,28 @@ impl Month<'_> {
         let to_harvest = months_to_harvest(self.cal, p, self.month, lat);
         let planned: Vec<f64> = r.goods.iter().enumerate().map(|(i, g)| output(land[i], g.params.per_worker * boost, now[i])).collect();
         let need = yearly_need(p, r, people, workers, &planned);
-        let mut price = vec![0.0; r.goods.len()];
-        for (i, g) in r.goods.iter().enumerate() {
-            // Goods gathered with the harvest must last until the next one, on top of the reserve.
-            let (wanted, stored) = match g.group {
-                Some(j) => {
-                    let (cols, gp) = &r.groups[j];
-                    let stored = cols.iter().map(|&c| stock[c] as f64).sum();
-                    let months = gp.reserve_months + if r.group_harvested[j] { to_harvest } else { 0.0 };
-                    (need.1[j] / 12.0 * months, stored)
+        // Goods gathered with the harvest must last until the next one, on top of the reserve.
+        let wanted: Vec<f64> = r
+            .items
+            .iter()
+            .map(|it| match it.kind {
+                ItemKind::Group(j) => {
+                    let months = r.groups[j].1.reserve_months + if r.group_harvested[j] { to_harvest } else { 0.0 };
+                    need.1[j] / 12.0 * months
                 }
-                None => {
+                ItemKind::Good(i) => {
+                    let g = &r.goods[i];
                     let equip = if g.column == r.tools { equip } else { 0.0 };
                     let months = g.params.reserve_months + if g.params.season == Season::Harvest { to_harvest } else { 0.0 };
-                    (need.0[i] / 12.0 * months + equip, held[i])
+                    need.0[i] / 12.0 * months + equip
                 }
-            };
-            let target = target_price(p, g.params.base_price, wanted, stored);
+            })
+            .collect();
+        let mut price = vec![0.0; r.goods.len()];
+        for (i, g) in r.goods.iter().enumerate() {
+            let it = r.item_of[i];
+            let stored = r.items[it].cols.iter().map(|&c| stock[c] as f64).sum();
+            let target = target_price(p, g.params.base_price, wanted[it], stored);
             let was = prices[g.column] as f64 / PRICE_SCALE;
             price[i] = if was > 0.0 { was * (target / was).powf(p.price_change) } else { target };
             prices[g.column] = (price[i] * PRICE_SCALE).round().max(1.0) as u64;
@@ -644,8 +730,215 @@ impl Month<'_> {
                 books.add(class, if gp.lost_as == Loss::Wear { Cause::WornOut } else { Cause::Spoilage }, -(lost as i64));
             }
         }
-        (books, notes)
+        (books, wanted, notes)
     }
+}
+
+/// One month's trade along one way: goods of one item go from `from` to `to`, which pays for them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Deal {
+    pub from: u32,
+    pub to: u32,
+    /// What is traded, as `(column, units, coins a unit)`: the seller's price and the carrying.
+    pub goods: Vec<(usize, u64, f64)>,
+    /// What is priced as one (its place among the items), its price at both ends for the seller's
+    /// mix of goods, and the carrying, in coins a unit: for explaining a day.
+    item: usize,
+    pub prices: (f64, f64),
+    pub carrying: f64,
+}
+
+/// One province's side of one item, as trade sees it.
+#[derive(Clone, Copy, Default)]
+struct Side {
+    held: f64,
+    wanted: f64,
+    /// The price against the base price.
+    factor: f64,
+    /// Base price and carrying a day of a unit of what it holds, in the mix it holds it.
+    base: f64,
+    carry: f64,
+}
+
+/// The month's trades along `links`, from the stores as the month's work left them (`stock`,
+/// `wanted` per province and item, `people` per province). Provinces without people don't trade.
+///
+/// Along each way and for each item, the cheaper end sells to the dearer when the gap in price
+/// beats the carrying, moving a share (`change`) of what would close the gap down to the carrying.
+/// Where several ways serve one store, each closes only its part. Then each province's sales of an
+/// item are scaled down to `most_sold` of its store, and its spending to `most_spent` of its coins.
+/// Everything is worked out from the same stores, so the order of the ways doesn't matter.
+fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted: &[f64], people: &[u64], links: &[Link]) -> Vec<Deal> {
+    let Some(&coin) = r.coins.first() else { return Vec::new() };
+    let (n, m, k) = (people.len(), r.items.len(), r.index.len());
+    let base = |c: usize| r.goods[r.index[c]].params.base_price;
+    let sides: Vec<Side> = (0..n * m)
+        .into_par_iter()
+        .map(|at| {
+            let (prov, item) = (at / m, at % m);
+            let cols = &r.items[item].cols;
+            let held: f64 = cols.iter().map(|&c| stock[prov * k + c] as f64).sum();
+            // A store held empty is priced as if it held equal parts of the item's goods.
+            let mix = |f: &dyn Fn(usize) -> f64| {
+                if held > 0.0 { cols.iter().map(|&c| f(c) * stock[prov * k + c] as f64).sum::<f64>() / held } else { cols.iter().map(|&c| f(c)).sum::<f64>() / cols.len() as f64 }
+            };
+            Side { held, wanted: wanted[at], factor: target_price(p, 1.0, wanted[at], held), base: mix(&base), carry: mix(&|c| r.carriage[c]) }
+        })
+        .collect();
+
+    struct Offer {
+        from: usize,
+        to: usize,
+        item: usize,
+        days: f64,
+        units: f64,
+    }
+    // The ways are looked at side by side; the offers come out in the ways' order.
+    let mut offers: Vec<Offer> = links.par_iter().flat_map_iter(|l| {
+        let mut offers = Vec::new();
+        let (a, b) = (l.a as usize, l.b as usize);
+        // Days by the cheaper way: a day at sea costs `sea_share` of one by land.
+        let days = match (l.land_days, l.sea_days) {
+            (Some(x), Some(y)) => (x as f64).min(y as f64 * t.sea_share),
+            (Some(x), None) => x as f64,
+            (None, Some(y)) => y as f64 * t.sea_share,
+            (None, None) => return offers,
+        };
+        if people[a] == 0 || people[b] == 0 {
+            return offers;
+        }
+        for item in 0..m {
+            let (sa, sb) = (sides[a * m + item], sides[b * m + item]);
+            let (from, to, s, d) = match sa.factor.partial_cmp(&sb.factor) {
+                Some(std::cmp::Ordering::Less) => (a, b, sa, sb),
+                Some(std::cmp::Ordering::Greater) => (b, a, sb, sa),
+                _ => continue,
+            };
+            // The gap left after selling q: it shrinks as q grows.
+            let gap = |q: f64| s.base * (target_price(p, 1.0, d.wanted, d.held + q) - target_price(p, 1.0, s.wanted, s.held - q)) - s.carry * days;
+            if s.held < 1.0 || gap(0.0) <= 0.0 {
+                continue;
+            }
+            // What would close it down to the carrying, found by halving (prices are held within
+            // their range, so no formula does).
+            let close = if gap(s.held) > 0.0 {
+                s.held
+            } else {
+                let (mut lo, mut hi) = (0.0, s.held);
+                for _ in 0..20 {
+                    let mid = 0.5 * (lo + hi);
+                    if gap(mid) > 0.0 { lo = mid } else { hi = mid }
+                }
+                lo
+            };
+            offers.push(Offer { from, to, item, days, units: t.change * close });
+        }
+        offers
+    }).collect();
+
+    // Each way serving a store closes only its part of the gap.
+    let mut sellers = vec![0u32; n * m];
+    let mut buyers = vec![0u32; n * m];
+    for o in &offers {
+        sellers[o.from * m + o.item] += 1;
+        buyers[o.to * m + o.item] += 1;
+    }
+    for o in &mut offers {
+        o.units /= sellers[o.from * m + o.item].max(buyers[o.to * m + o.item]) as f64;
+    }
+    let scale = |offers: &mut Vec<Offer>, key: &dyn Fn(&Offer) -> usize, amount: &dyn Fn(&Offer) -> f64, cap: &dyn Fn(usize) -> f64, len: usize| {
+        let mut sum = vec![0.0; len];
+        for o in offers.iter() {
+            sum[key(o)] += amount(o);
+        }
+        for o in offers.iter_mut() {
+            let (s, c) = (sum[key(o)], cap(key(o)));
+            if s > c {
+                o.units *= c / s;
+            }
+        }
+    };
+    // A seller sells at most `most_sold` of a store; a buyer spends at most `most_spent` of its coins.
+    scale(&mut offers, &|o| o.from * m + o.item, &|o| o.units, &|at| t.most_sold * sides[at].held, n * m);
+    let unit_cost = |o: &Offer| {
+        let s = sides[o.from * m + o.item];
+        s.base * s.factor + s.carry * o.days
+    };
+    scale(&mut offers, &|o| o.to, &|o| o.units * unit_cost(o), &|prov| t.most_spent * stock[prov * k + coin] as f64, n);
+
+    // Whole units, taken from the seller's goods of the item in proportion to what it holds.
+    let mut out = Vec::new();
+    for o in offers {
+        let units = o.units.floor() as u64;
+        if units == 0 {
+            continue;
+        }
+        let (s, d) = (sides[o.from * m + o.item], sides[o.to * m + o.item]);
+        let cols = &r.items[o.item].cols;
+        let unit = |c: usize| base(c) * s.factor + r.carriage[c] * o.days;
+        let goods = if let [c] = cols[..] {
+            vec![(c, units, unit(c))]
+        } else {
+            let held: Vec<u64> = cols.iter().map(|&c| stock[o.from * k + c]).collect();
+            let ids: Vec<u64> = cols.iter().map(|&c| c as u64).collect();
+            let split = split_proportional(units, &held, &ids);
+            cols.iter().zip(split).filter(|x| x.1 > 0).map(|(&c, x)| (c, x, unit(c))).collect()
+        };
+        out.push(Deal {
+            from: o.from as u32,
+            to: o.to as u32,
+            goods,
+            item: o.item,
+            prices: (s.base * s.factor, s.base * d.factor),
+            carrying: s.carry * o.days,
+        });
+    }
+    out
+}
+
+/// Carry out `deals` in order: the goods go, and the coins come back. A seller never sends more
+/// than it holds nor a buyer pays more than it has (the deals were scaled to leave room for that).
+/// Returns what the `traced` province did.
+fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books: &mut Books, traced: Option<u32>) -> Vec<String> {
+    let mut notes = Vec::new();
+    let Some(&coin) = r.coins.first() else { return notes };
+    let k = goods.stride();
+    // What moved, per class: what came in somewhere went out somewhere else.
+    let mut moved = vec![0i64; goods.tree.classes().len()];
+    for d in deals {
+        let (from, to) = (d.from as usize * k, d.to as usize * k);
+        let mut owed = 0.0;
+        let mut sent = 0;
+        for &(c, units, price) in &d.goods {
+            let units = units.min(stock[from + c]);
+            stock[from + c] -= units;
+            stock[to + c] += units;
+            moved[goods.class_of_column(c) as usize] += units as i64;
+            owed += units as f64 * price;
+            sent += units;
+        }
+        let paid = (owed.round() as u64).min(stock[to + coin]);
+        stock[to + coin] -= paid;
+        stock[from + coin] += paid;
+        moved[goods.class_of_column(coin) as usize] += paid as i64;
+        for (who, other, verb) in [(d.from, d.to, "sold"), (d.to, d.from, "bought")] {
+            if traced == Some(who) {
+                notes.push(format!(
+                    "{verb} {sent} {} {} province {other} for {paid} coins ({:.3} a unit where sold, {:.3} where bought, {:.3} to carry)",
+                    r.items[d.item].name,
+                    if verb == "sold" { "to" } else { "from" },
+                    d.prices.0,
+                    d.prices.1,
+                    d.carrying,
+                ));
+            }
+        }
+    }
+    for (class, &x) in moved.iter().enumerate() {
+        books.add(class as u8, Cause::TradeOut, -x);
+        books.add(class as u8, Cause::TradeIn, x);
+    }
+    notes
 }
 
 /// Each good's worth per unit to the one who makes it, what one worker makes and the land, for
@@ -692,7 +985,8 @@ fn months_to_harvest(cal: &crate::calendar::Calendar, p: &MarketParams, month: u
 fn target_price(p: &MarketParams, base: f64, wanted: f64, held: f64) -> f64 {
     // A little slack, so an empty store with nobody wanting it isn't dear.
     let slack = 1.0;
-    let ratio = ((wanted + slack) / (held + slack)).powf(p.price_response);
+    let ratio = (wanted + slack) / (held + slack);
+    let ratio = if p.price_response == 1.0 { ratio } else { ratio.powf(p.price_response) };
     base * ratio.clamp(1.0 / p.price_range, p.price_range)
 }
 
@@ -745,6 +1039,172 @@ mod tests {
         let some = allocate(100.0, &[(1.0, 10.0, 500.0)], 5.0);
         assert!((some[0] - 50.0 * 2f64.ln()).abs() < 1e-6, "{some:?}");
         assert_eq!(allocate(100.0, &[(1.0, 10.0, 500.0)], 10.0), [0.0]);
+    }
+
+    /// The shipped goods and parameters, for trying trade on a few made-up provinces. Columns:
+    /// grain, fish, livestock, timber, stone, ore, cloth, tools, coin. Items: food, then timber,
+    /// stone, ore, cloth and tools.
+    fn shipped() -> (MarketParams, Resolved, Goods) {
+        let goods = Goods::new(crate::taxonomy::Taxonomy::standard_goods(), V1.goods).unwrap();
+        let p = MarketParams::default();
+        let r = Resolved::new(&p, &goods).unwrap();
+        assert_eq!(r.items.iter().map(|it| it.name.as_str()).collect::<Vec<_>>(), ["food", "timber", "stone", "ore", "cloth", "tools"]);
+        (p, r, goods)
+    }
+
+    const K: usize = 9;
+    const COIN: usize = 8;
+    const ITEMS: usize = 6;
+
+    /// `n` provinces holding nothing and wanting nothing, with a million coins each.
+    fn provinces(n: usize) -> (Vec<u64>, Vec<f64>) {
+        let mut stock = vec![0; n * K];
+        (0..n).for_each(|p| stock[p * K + COIN] = 1_000_000);
+        (stock, vec![0.0; n * ITEMS])
+    }
+
+    fn way(a: u32, b: u32, land: Option<f32>, sea: Option<f32>) -> Link {
+        Link { a, b, border_km: 1.0, land_days: land, sea_days: sea }
+    }
+
+    /// A province's price of an item against its base, as trade sees it.
+    fn factor(p: &MarketParams, r: &Resolved, stock: &[u64], wanted: &[f64], prov: usize, item: usize) -> f64 {
+        let held: u64 = r.items[item].cols.iter().map(|&c| stock[prov * K + c]).sum();
+        target_price(p, 1.0, wanted[prov * ITEMS + item], held as f64)
+    }
+
+    #[test]
+    fn food_goes_where_it_is_dear_and_coins_come_back() {
+        let (p, r, goods) = shipped();
+        let t = p.trade.clone().unwrap();
+        let (mut stock, mut wanted) = provinces(2);
+        // Province 0 has plenty of grain and fish, province 1 almost none; both want the same.
+        stock[0] = 900_000;
+        stock[1] = 100_000;
+        stock[K] = 1_000;
+        wanted[0] = 500_000.0;
+        wanted[ITEMS] = 500_000.0;
+        let people = [1000, 1000];
+        let deals = deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)]);
+        assert_eq!(deals.len(), 1, "{deals:?}");
+        let d = &deals[0];
+        assert_eq!((d.from, d.to, d.item), (0, 1, 0));
+        // Food is taken from the seller's grain and fish as it holds them, nine to one.
+        let (grain, fish) = (d.goods[0].1, d.goods[1].1);
+        assert_eq!((d.goods[0].0, d.goods[1].0), (0, 1));
+        assert!(grain > 0 && (grain as f64 / fish as f64 - 9.0).abs() < 0.1, "{d:?}");
+        // At most half the seller's food goes in a month.
+        assert!(grain + fish <= 500_000);
+        let before = stock.clone();
+        let mut books = Books::default();
+        let notes = settle(&r, &deals, &mut stock, &goods, &mut books, Some(1));
+        // Goods and coins only moved: every class balances.
+        for c in 0..K {
+            assert_eq!(stock[c] + stock[K + c], before[c] + before[K + c]);
+        }
+        let paid = before[K + COIN] - stock[K + COIN];
+        assert_eq!(stock[COIN] - before[COIN], paid);
+        // The buyer paid the seller's price and the carrying, for each good.
+        let owed: f64 = d.goods.iter().map(|&(_, u, price)| u as f64 * price).sum();
+        assert_eq!(paid, owed.round() as u64);
+        assert!(books.0.iter().all(|(&(_, cause), _)| matches!(cause, Cause::TradeIn | Cause::TradeOut)));
+        for class in [0u8, 3] {
+            assert_eq!(books.0[&(class, Cause::TradeIn)], -books.0[&(class, Cause::TradeOut)]);
+        }
+        assert!(notes.len() == 1 && notes[0].starts_with(&format!("bought {} food from province 0 for {paid} coins", grain + fish)), "{notes:?}");
+        // The gap has narrowed.
+        assert!(factor(&p, &r, &stock, &wanted, 1, 0) < factor(&p, &r, &before, &wanted, 1, 0));
+    }
+
+    #[test]
+    fn nothing_moves_when_carrying_costs_more_than_the_gap() {
+        let (p, r, _) = shipped();
+        let t = p.trade.clone().unwrap();
+        let (mut stock, mut wanted) = provinces(2);
+        // Grain a fifth dearer in province 1: 0.02 a ration more, which two days' cart eats up (0.04).
+        stock[0] = 500_000;
+        stock[K] = 500_000;
+        wanted[0] = 500_000.0;
+        wanted[ITEMS] = 600_000.0;
+        let people = [1000, 1000];
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)]), []);
+        // By sea, two days cost a tenth as much: it pays.
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, None, Some(2.0))]).len(), 1);
+        // With nobody living at one end, nothing is traded.
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &[1000, 0], &[way(0, 1, None, Some(2.0))]), []);
+    }
+
+    #[test]
+    fn a_buyer_spends_at_most_half_its_coins_and_a_seller_sells_at_most_half_its_store() {
+        let (p, r, _) = shipped();
+        let t = p.trade.clone().unwrap();
+        // Province 0 has tools; 1, 2 and 3 have none and need many, and 1 has only 1,000 coins.
+        let (mut stock, mut wanted) = provinces(4);
+        stock[7] = 10_000;
+        stock[K + COIN] = 1_000;
+        for q in 1..4 {
+            wanted[q * ITEMS + 5] = 1_000_000.0;
+        }
+        let ways = [way(0, 1, Some(1.0), None), way(0, 2, Some(1.0), None), way(0, 3, Some(1.0), None)];
+        let deals = deals(&r, &p, &t, &stock, &wanted, &[10; 4], &ways);
+        assert_eq!(deals.len(), 3, "{deals:?}");
+        let cost = |d: &Deal| d.goods.iter().map(|&(_, u, price)| u as f64 * price).sum::<f64>();
+        assert!(cost(&deals[0]) <= 500.0 && cost(&deals[0]) > 400.0, "{deals:?}");
+        let sold: u64 = deals.iter().map(|d| d.goods[0].1).sum();
+        assert!(sold <= 5_000 && sold > 3_000, "{sold}");
+    }
+
+    #[test]
+    fn the_order_of_the_ways_does_not_matter() {
+        let (p, r, _) = shipped();
+        let t = p.trade.clone().unwrap();
+        let (mut stock, mut wanted) = provinces(4);
+        for (q, (grain, cloth)) in [(900_000, 10), (10_000, 5_000), (300_000, 0), (50_000, 2_000)].into_iter().enumerate() {
+            stock[q * K] = grain;
+            stock[q * K + 6] = cloth;
+            wanted[q * ITEMS] = 300_000.0;
+            wanted[q * ITEMS + 4] = 1_000.0;
+        }
+        let ways = vec![way(0, 1, Some(1.0), None), way(0, 2, Some(3.0), Some(4.0)), way(1, 3, Some(2.0), None), way(2, 3, None, Some(6.0))];
+        let people = [100; 4];
+        let mut forward = deals(&r, &p, &t, &stock, &wanted, &people, &ways);
+        let mut backward = deals(&r, &p, &t, &stock, &wanted, &people, &ways.iter().rev().copied().collect::<Vec<_>>());
+        assert!(forward.len() >= 4);
+        let key = |d: &Deal| (d.from, d.to, d.item);
+        forward.sort_by_key(key);
+        backward.sort_by_key(key);
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn trade_settles_without_goods_going_back_and_forth() {
+        let (p, r, goods) = shipped();
+        let t = p.trade.clone().unwrap();
+        // A row of five provinces a day apart, all food at one end.
+        let n = 5;
+        let (mut stock, mut wanted) = provinces(n);
+        stock[0] = 5_000_000;
+        for q in 0..n {
+            stock[q * K + 1] = 10_000;
+            wanted[q * ITEMS] = 1_000_000.0;
+        }
+        let ways: Vec<Link> = (0..n as u32 - 1).map(|q| way(q, q + 1, Some(1.0), None)).collect();
+        let mut seen: BTreeMap<(u32, u32), u32> = BTreeMap::new();
+        for _ in 0..60 {
+            let deals = deals(&r, &p, &t, &stock, &wanted, &[100; 5], &ways);
+            for d in &deals {
+                // Food only ever goes one way along each way: down the row.
+                *seen.entry((d.from, d.to)).or_default() += 1;
+            }
+            settle(&r, &deals, &mut stock, &goods, &mut Books::default(), None);
+        }
+        assert_eq!(seen.keys().copied().collect::<Vec<_>>(), [(0, 1), (1, 2), (2, 3), (3, 4)]);
+        // By then the gaps are about what a day's carrying costs, or less, and the far end is fed.
+        for q in 0..n - 1 {
+            let gap = 0.1 * (factor(&p, &r, &stock, &wanted, q + 1, 0) - factor(&p, &r, &stock, &wanted, q, 0));
+            assert!(gap < 0.03, "between {q} and {}: {gap}", q + 1);
+        }
+        assert!(stock[(n - 1) * K] > 500_000, "{stock:?}");
     }
 
     #[test]

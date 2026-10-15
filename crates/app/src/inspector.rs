@@ -151,6 +151,8 @@ fn cause(c: Cause) -> &'static str {
         Cause::MadeInto => "made into other goods",
         Cause::Used => "used up",
         Cause::WornOut => "worn out",
+        Cause::TradeIn => "trade, coming in",
+        Cause::TradeOut => "trade, going out",
     }
 }
 

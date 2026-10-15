@@ -1,5 +1,6 @@
 //! Economics v1, "markets", end to end: goods made from land and people, used up and priced; prices
-//! that answer shortage and plenty; coins kept exactly; saves, going back and edits.
+//! that answer shortage and plenty; trade between neighbours, paid in coins; coins kept exactly;
+//! saves, going back and edits.
 
 use sim::config::Config;
 use sim::edit::Edit;
@@ -18,10 +19,30 @@ fn config(seed: u64) -> Config {
 }
 
 fn world(seed: u64) -> Sim {
-    let mut sim = Sim::new(&config(seed)).unwrap();
+    made(&config(seed))
+}
+
+fn made(c: &Config) -> Sim {
+    let mut sim = Sim::new(c).unwrap();
     sim.strict = true;
     sim
 }
+
+/// A small planet (1,000 km in radius), so its provinces are a few days' cart apart, as
+/// on a large world, rather than weeks.
+fn small_planet(seed: u64, trade: bool) -> Sim {
+    let mut c = config(seed);
+    c.world.radius_km = 1000.0;
+    if !trade {
+        c.modules.markets.as_mut().unwrap().trade = None;
+    }
+    made(&c)
+}
+
+fn coins(sim: &Sim, p: usize) -> u64 {
+    sim.world.stock_of(p, "coin").unwrap()
+}
+
 
 const FOOD: Quantity = Quantity::Goods(0);
 const RAW: Quantity = Quantity::Goods(1);
@@ -59,7 +80,7 @@ fn a_markets_world_makes_uses_and_prices_every_good() {
 
     sim.run_to_year(4);
     assert_eq!(sim.problems, Default::default());
-    // Coins are never made, used or lost: none moved at all.
+    // Coins are never made, used or lost: trade only moves them.
     assert_eq!(quantity_total(&sim.world, MONEY), coins);
     assert!(sim.history.iter().all(|y| y.population > 0));
 
@@ -75,6 +96,11 @@ fn a_markets_world_makes_uses_and_prices_every_good() {
     assert!(f.get(RAW, Cause::Made) > 0 && f.get(RAW, Cause::MadeInto) < 0 && f.get(RAW, Cause::Used) < 0);
     assert!(f.get(MADE, Cause::Made) > 0 && f.get(MADE, Cause::Used) < 0 && f.get(MADE, Cause::WornOut) < 0);
     assert_eq!(f.get(MONEY, Cause::Made) + f.get(MONEY, Cause::Used) + f.get(MONEY, Cause::Spoilage), 0);
+    // Goods and coins changed hands between provinces; what came in went out somewhere.
+    for q in [FOOD, RAW, MADE, MONEY] {
+        assert_eq!(f.get(q, Cause::TradeIn), -f.get(q, Cause::TradeOut));
+    }
+    assert!(f.get(FOOD, Cause::TradeIn) > 0 && f.get(MONEY, Cause::TradeIn) > 0);
 
     // Every province with people has a price for every good, within its range, and work for about
     // half its people.
@@ -110,11 +136,14 @@ fn a_markets_world_makes_uses_and_prices_every_good() {
 
 #[test]
 fn prices_answer_shortage_and_plenty_and_work_follows() {
-    let base = world(5);
+    // Without trade, so only the province itself answers.
+    let mut c = config(5);
+    c.modules.markets.as_mut().unwrap().trade = None;
+    let base = made(&c);
     let p = biggest(&base);
     let month = base.calendar.def.months[0].days as u64;
     let run = |change: &dyn Fn(&mut Sim)| {
-        let mut sim = world(5);
+        let mut sim = made(&c);
         sim.run_days(3 * month + 1);
         change(&mut sim);
         // The next month's prices follow the stores; work moves over a few months.
@@ -139,7 +168,7 @@ fn prices_answer_shortage_and_plenty_and_work_follows() {
     assert!(price(&glut, p, "timber") * 4.0 < price(&left, p, "timber"), "timber {} against {}", price(&glut, p, "timber"), price(&left, p, "timber"));
     // Workers move a fifth of the way a month: after three months, about half have gone.
     assert!(workers(&glut, p, "timber") * 3 < workers(&left, p, "timber") * 2, "{} cut timber against {}", workers(&glut, p, "timber"), workers(&left, p, "timber"));
-    // Other provinces don't notice: nothing moves between provinces yet.
+    // Other provinces don't notice: without trade nothing moves between provinces.
     let q = (p + 1) % base.world.provinces.count;
     assert_eq!((price(&short, q, "grain"), price(&glut, q, "timber")), (price(&left, q, "grain"), price(&left, q, "timber")));
     assert_eq!((short.problems, glut.problems), (Default::default(), Default::default()));
@@ -166,7 +195,63 @@ fn a_drought_makes_food_dear_where_it_falls() {
     normal.run_days(year + 2);
     let mean = |sim: &Sim| region.iter().map(|&p| price(sim, p, "grain")).sum::<f64>() / region.len() as f64;
     assert!(mean(&dry) > 1.3 * mean(&normal), "grain {:.3} in the drought, {:.3} without", mean(&dry), mean(&normal));
+    // The region bought food in: it paid out coins it would otherwise have kept.
+    let held = |sim: &Sim| region.iter().map(|&p| coins(sim, p)).sum::<u64>();
+    assert!(held(&dry) < held(&normal), "{} coins in the drought, {} without", held(&dry), held(&normal));
     assert_eq!(dry.problems, Default::default());
+}
+
+#[test]
+fn a_starving_province_buys_food_from_its_neighbours() {
+    let probe = small_planet(13, true);
+    let month = probe.calendar.def.months[0].days as u64;
+    // The most populous province with neighbours.
+    let people = probe.world.province_population();
+    let p = (0..people.len()).filter(|&p| probe.world.routes.of(p as u32).next().is_some()).max_by_key(|&p| people[p]).unwrap();
+    let run = |trade: bool, starve: bool| {
+        let mut sim = small_planet(13, trade);
+        sim.run_days(3 * month + 1);
+        if starve {
+            for g in ["grain", "fish", "livestock"] {
+                sim.edit(Edit::SetStock { province: p as u32, good: g.into(), amount: 0 }).unwrap();
+            }
+        }
+        sim.run_days(2 * month);
+        assert_eq!(sim.problems, Default::default());
+        sim
+    };
+    let (alone, helped, left) = (run(false, true), run(true, true), run(true, false));
+    // Food came in and was eaten: fewer starved. The province paid for it.
+    let starved = |sim: &Sim| sim.world.starved_this_year[p];
+    assert!(starved(&helped) * 2 < starved(&alone), "{} starved with trade, {} without", starved(&helped), starved(&alone));
+    assert!(coins(&helped, p) < coins(&left, p), "{} coins after buying food, {} otherwise", coins(&helped, p), coins(&left, p));
+    // Its neighbours got the coins.
+    let around: Vec<usize> = helped.world.routes.of(p as u32).map(|l| l.other(p as u32) as usize).collect();
+    let earned = |sim: &Sim| around.iter().map(|&q| coins(sim, q)).sum::<u64>();
+    assert!(earned(&helped) > earned(&left));
+    // Asked why, the month's first day says who it bought from.
+    let mut helped = helped;
+    let day = (0..helped.day).rev().find(|&d| helped.calendar.is_month_start(d)).unwrap();
+    let t = helped.trace(day, p as u32).unwrap();
+    let bought = t.steps.iter().any(|s| matches!(&s.what, sim::sim::Traced::Note(n) if n.starts_with("bought") && n.contains(" food from province ")));
+    assert!(bought, "{:?}", t.steps);
+}
+
+#[test]
+fn scenario_files_from_before_trade_run_without_it() {
+    // A configuration written before trade has no trade table: it loads, and nothing moves.
+    let mut c = config(3);
+    c.modules.markets.as_mut().unwrap().trade = None;
+    let text = toml::to_string(&c).unwrap();
+    assert!(!text.contains("trade"));
+    let back: Config = toml::from_str(&text).unwrap();
+    assert_eq!(back, c);
+    let mut sim = made(&back);
+    let start: Vec<u64> = (0..sim.world.provinces.count).map(|p| coins(&sim, p)).collect();
+    sim.run_to_year(2);
+    assert_eq!((0..sim.world.provinces.count).map(|p| coins(&sim, p)).collect::<Vec<_>>(), start);
+    // New worlds trade.
+    assert!(config(3).modules.markets.unwrap().trade.is_some());
 }
 
 #[test]

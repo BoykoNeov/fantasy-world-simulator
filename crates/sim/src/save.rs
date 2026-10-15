@@ -41,7 +41,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// ore), cached from its cells.
 /// Format 10 (step 6): Economics "markets": its parameters in the configuration, prices and work
 /// per good, and the causes made, made into, used and worn out.
-pub const FORMAT_VERSION: u32 = 10;
+/// Format 11 (step 6): trade in the markets parameters, and the causes trade in and trade out.
+pub const FORMAT_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

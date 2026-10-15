@@ -47,6 +47,10 @@ pub enum Cause {
     Used,
     /// Tools and cloth worn out.
     WornOut,
+    /// Goods and coins that came into a province by trade, and those that left it. Every trade is
+    /// both, so the two cancel in each class's total.
+    TradeIn,
+    TradeOut,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

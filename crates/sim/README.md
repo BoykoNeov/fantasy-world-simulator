@@ -37,7 +37,8 @@ What exists:
   everything in flight. Format 6 (step 6) added the goods tree and the per-good store; format 7
   the good a change request asks for; format 8 the edit that sets any good; format 9 the land facts;
   format 10 the markets economy (its parameters, prices, workers and four new causes: made, made
-  into other goods, used up, worn out). Loads refuse other format versions,
+  into other goods, used up, worn out); format 11 trade (its parameters, and the causes trade in and
+  trade out). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -89,15 +90,36 @@ What exists:
   4. *Using*: people use up timber, stone and cloth (less when they are dear); food is eaten through
      Population's requests, served from all three food goods. Stores rot or wear.
 
+  5. *Trade*, after every province's month: along each way between neighbours, a good goes to the
+     end where it is dearer when the gap in price beats the cost of carrying it there. A cart
+     doubles grain's price in about five days; a day at sea costs a tenth of a day by land, and the
+     cheaper way is taken; cloth and tools are worth a lot for their weight. The buyer pays the
+     seller in coins: the seller's price and the carrying. Each way closes half the gap (beyond the
+     carrying) a month: the damper on trade. Where several ways serve one store, each closes only
+     its part. A province sells at most half a store and spends at most half its coins in a month,
+     so a poor province can't buy much. Food is traded as food, taken from the seller's grain, fish
+     and livestock as it holds them. Every trade is worked out from the stores as the month's work
+     left them, then scaled to what sellers can spare and buyers can pay, so the order of the ways
+     doesn't matter. Goods arrive the same month (nothing is on the road). Each year's flows count
+     what came in and went out by trade (the two cancel). Asked why a province changed, the month's
+     first day says what it bought and sold, from and to whom, at what prices.
+
   Coins (the goods under the money class, found through the tree) are never made, used or priced:
-  each person starts with 20, held by the province, until trade moves them. How each good is made,
-  used and priced is data, saved with the world; bad parameters are refused when the world is made.
+  each person starts with 20, held by the province, and trade moves them. How each good is made,
+  used, priced and carried is data, saved with the world; bad parameters are refused when the world
+  is made. A configuration without the trade table (scenario files written before trade) runs with
+  no trade, as it did.
   Work and prices are settled before day one, so the first month starves nobody. Provinces work
   side by side on all cores; each one's random draws are its own, so the result never depends on
   how they are shared out. Shortage of anything but food and tools hurts nobody yet (planned:
-  "everything matters" later). Over a century a small world settles near the old economy's
-  population (136–146 million against 142–152 on seed 1), with famines of the same size: no food
-  moves between provinces until trade. `examples/market_stats.rs` prints a run year by year.
+  "everything matters" later). Before trade, a small world settled near the old economy's
+  population over a century (136–146 million against 142–152 on seed 1), with famines of the same
+  size. Trade cuts starvation: over 15 years about a third on the small world (18.5 million starved
+  against 28.2 million on seed 1) and a fifth on the large one (19.2 against 24.0 million on seed 7),
+  with fewer famine provinces every year. Bad harvests strike whole regions, and goods cross one
+  border a month, so famines remain. On the small world provinces are about 1,000 km across, weeks
+  apart by cart, so grain goes mostly by sea there. `examples/market_stats.rs` prints a run year by
+  year, with what was traded (`--no-trade` turns trade off).
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
   day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
   far is a drought: a centre, a radius, how much rain goes missing, and for how long.
@@ -136,8 +158,8 @@ What exists:
   keeps the values it changed, so going back or forward past it, undoing it or replaying it
   doesn't work the list out again. A timeline copy shares it. If an edit cuts a province in two,
   the way to its far piece goes over the neighbours' land at half speed (a piece left on another
-  island has none). Only a one-province island far out at sea has no neighbour. Nothing reads it
-  yet: trade, a later piece, will. Working it out takes 0.11–0.23 s on a large world (on all
+  island has none). Only a one-province island far out at sea has no neighbour. Trade (in the
+  markets economy) goes along these ways. Working it out takes 0.11–0.23 s on a large world (on all
   cores, depending on how busy the machine is), once per new map edit, never per day; there a
   province has six neighbours at the median, and the median trip is about 7 days by land and 9 by
   sea. After the sea rises 250 m, 310 provinces are in pieces and it takes 0.35 s
@@ -261,7 +283,9 @@ and `--write-scenario FILE`.
 **Markets** (Oct 15, below-normal priority, machine partly busy): on the large world (5,092
 provinces, seeds 1 and 7, 10 years) an average day takes 0.34–0.42 ms against 0.24 ms for Economics
 "food" (one busy-machine run measured 2.2 ms). Making the world takes about 0.5 s more, for
-settling work and prices.
+settling work and prices. Trade (Oct 15, timed a month at a time against the same world without
+it, so both saw the same load on a busy machine) adds about 0.15 ms a day: 0.48–0.59 ms against
+0.34–0.44.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 

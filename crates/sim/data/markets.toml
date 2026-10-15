@@ -116,3 +116,29 @@ base_price = 20.0
 lost_per_year = 0.1
 lost_as = "wear"
 inputs = { ore = 1.0, timber = 1.0 }
+
+# Trade (build step 6): once a month, after the month's work, goods go from a province to a
+# neighbour where they are dearer, when the gap in price beats the cost of carrying them there.
+# The buyer pays the seller in coins: the seller's price and the carrying (the seller's carters
+# and ships do it). Goods priced together (food) are traded together, taken from the seller's
+# goods of the group in proportion to what it holds. A world without this table has no trade.
+[trade]
+# How much of a price gap (beyond the carrying cost) trade closes in a month: the damper on trade.
+change = 0.5
+# Most of a store a province sells in a month, and most of its coins it spends.
+most_sold = 0.5
+most_spent = 0.5
+# A day at sea costs this share of a day overland (ports included in the days).
+sea_share = 0.1
+
+# Coins to carry one unit one day overland. A cart doubles grain's price in about five days;
+# herds walk; fish must hurry; cloth and tools are worth a lot for their weight.
+[trade.carriage]
+grain = 0.02
+livestock = 0.015
+fish = 0.03
+timber = 0.4
+stone = 0.6
+ore = 0.6
+cloth = 0.05
+tools = 0.4
