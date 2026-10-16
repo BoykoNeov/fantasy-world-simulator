@@ -98,7 +98,8 @@ What exists:
   - "realms" colours each province by the realm that owns it, a hue from the realm's number
     (`layers::realm_color`), so a realm keeps its colour while others break away or end. Land
     nobody owns stays clear. Where an enemy occupies a province, diagonal stripes of the
-    occupier's colour run over it, fixed to the screen. Neighbouring realms can get close
+    occupier's colour run over it, fixed to the screen (not yet seen on screen: nothing occupies
+    land until armies come; the colours behind them are tested). Neighbouring realms can get close
     colours; the borders between them tell them apart.
   - "borders between realms" (on by default; a world without realms has none) draws a thick line
     wherever the realms on either side of a province border differ, or a realm meets land nobody
@@ -120,6 +121,10 @@ What exists:
   - Realms and rulers are named everywhere the inspector and the event log speak of them
     (`inspector::Names`), and the log can filter by Realms, Characters and Diplomacy.
   - Hovering says which realm owns a province, who occupies it, and how restless it is.
+  - The Modules section lists the realms, rulers and wars versions running. They aren't among the
+    combination tester's choices until step 7's checks, so a world running them, or a new world
+    made with them, says "not in the combination tester's table yet" rather than the table's
+    verdict on the rest.
 - **Modules** (step 6): the module versions running, and what the combination tester found for
   that mix (`crates/sim/data/compatibility.toml`): no problems found, known quirks, or unstable,
   with each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs. The
