@@ -5,6 +5,7 @@
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
+//!        [--armies]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
@@ -14,7 +15,9 @@
 //! `--wars` keeps wars and truces between realms (started and ended only by pokes, from a scenario
 //! file, for now), turning realms on in the same way. Under `--economics markets`, realms tax and
 //! spend coins, and the realms line says where the coins sit. Realms come with unrest: an unrest
-//! line says how many provinces are in uprising and how many realms have broken away.
+//! line says how many provinces are in uprising and how many realms have broken away. `--armies`
+//! has provinces raise soldiers (turning realms on the same way), and a line says how many serve,
+//! of which kinds, and how many deserted.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -76,6 +79,10 @@ fn main() {
     if args.iter().any(|a| a == "--wars") {
         config.modules.realms.get_or_insert_with(Default::default);
         config.modules.diplomacy = Some(Default::default());
+    }
+    if args.iter().any(|a| a == "--armies") {
+        config.modules.realms.get_or_insert_with(Default::default);
+        config.modules.warfare = Some(Default::default());
     }
 
     let t = Instant::now();
@@ -217,6 +224,7 @@ fn print_realms(sim: &Sim) {
         let won = (0..wars.count()).filter(|&k| wars.winner[k] != sim::grid::NONE).count();
         println!("wars: {} declared, {on} going on, {won} won, {} ended with nobody winning", wars.count(), wars.count() - on - won);
     }
+    print_armies(sim);
 }
 
 /// In a world with coins: the treasuries' share of all coins, the largest realm's treasury against
@@ -328,4 +336,40 @@ fn group(v: u64) -> String {
         out.push(ch);
     }
     out
+}
+
+/// How many serve, of which kinds, against the people; and how many came home in the last year.
+fn print_armies(sim: &Sim) {
+    let Some(params) = &sim.config.modules.warfare else { return };
+    let w = &sim.world;
+    let Ok(tree) = sim::taxonomy::Taxonomy::named(&params.tree, "troop tree") else { return };
+    let mut by_kind = std::collections::BTreeMap::<String, u64>::new();
+    for a in 0..w.armies.count() {
+        if w.armies.size[a] > 0 {
+            *by_kind.entry(tree.name(w.armies.kind[a]).to_string()).or_default() += w.armies.size[a];
+        }
+    }
+    let soldiers: u64 = by_kind.values().sum();
+    let people = quantity_total(w, Quantity::People).max(1);
+    let companies = (0..w.armies.count()).filter(|&a| w.armies.size[a] > 0).count();
+    let kinds: Vec<String> = by_kind.iter().map(|(k, n)| format!("{k} {}", group(*n))).collect();
+    // Raising and going home cancel in the year's flows (booked out by one owner, in by the other),
+    // so the arrivals are counted from the event log.
+    let since = sim.day.saturating_sub(sim.calendar.days_per_year() as u64);
+    let home = |cause| -> u64 {
+        let log = sim.event_log.entries.iter().filter(|p| p.day >= since);
+        log.filter_map(|p| match p.event {
+            sim::events::Event::Arrived { people, cause: c, .. } if c == cause => Some(people),
+            _ => None,
+        })
+        .sum()
+    };
+    println!(
+        "armies: {} soldiers ({:.2}% of the people) in {companies} companies ({}); in the last year {} went home, {} deserted",
+        group(soldiers),
+        100.0 * soldiers as f64 / people as f64,
+        kinds.join(", "),
+        group(home(sim::requests::Cause::Returned)),
+        group(home(sim::requests::Cause::Deserted)),
+    );
 }

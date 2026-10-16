@@ -46,7 +46,9 @@ each realm's ruler and heir, and the succession event); format 16 wars (the dipl
 parameters, the war fields, occupation, and the events of war and peace); format 17 taxes; format 18
 unrest (its parameters, unrest, uprisings and the realm each broke away from, the realms module's
 private state with each province's hunger this month, the events of uprisings and rebellions, and
-a peace saying whether it ended a rebellion). Loads refuse other format versions,
+a peace saying whether it ended a rebellion); format 19 troops (the warfare module's parameters
+with the troop tree, each army's kind and home, and the causes deserted, equipped and bounty).
+Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -61,6 +63,7 @@ a peace saying whether it ended a rebellion). Loads refuse other format versions
   | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below); or off (the default until step 7's checks) | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
   | Diplomacy | `wars`: wars, peace and truces between realms, by pokes (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
+  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry (see below); needs realms; or off (the default until step 7's checks) | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -428,6 +431,58 @@ a peace saying whether it ended a rebellion). Loads refuse other format versions
     The work is a pass over the provinces once a month; it was not timed on its own.
   - `simrun` prints how many provinces are in uprising, how many are at least half way there, and
     how many realms have broken away.
+- **Troops** (step 7; Warfare "troops", `warfare.rs`, `data/troops.toml`, tests in
+  `troops_tests.rs`). Off by default and not among the tester's choices yet, like realms; a
+  configuration (`ModuleConfig::warfare`), a scenario file or `simrun --armies` turns it on. It needs
+  realms (refused without them). Armies don't move or fight yet: that is the next piece.
+  - **Troop kinds are data**, a tree like the goods tree saved with the world: levies, heavy
+    infantry and cavalry on land, ships at sea. Each kind has a weight, the land that suits it (land
+    with ore in reach for heavy infantry, food better from herds for cavalry, woodland for ships,
+    which also need a shore) and, where the economy keeps goods, what each soldier uses up when
+    raised (a set of tools for heavy infantry, a cartload of timber for each ship's crewman).
+  - **An army entry is a company**: soldiers of one kind (`army.kind`, a node of the troop tree)
+    from one province (`army.home`), serving the realm that held it when they were raised, and
+    standing at home (`army.province`). Each province keeps at most one company of each kind for
+    each realm; an emptied company is filled again rather than a new one made.
+  - **Each month** (`TroopParams`): a province a realm holds wants 0.5% of its people (its soldiers
+    included) under arms in peace and 5% while its realm is at war with anyone. A tenth or more
+    below that, it asks Population for recruits up to that number, at most a third of the war-time
+    number a month (so a war reaches 5% in 3 months), shared between the kinds by their weights times how well the land suits each. More
+    than a quarter over (after a peace), the extra go home ("returned"), every kind alike. A province
+    an enemy occupies or in uprising raises nobody. Companies whose realm no longer holds their home
+    (it changed hands, or the realm was dissolved) go home, all of them.
+  - **Eating**: the companies standing in a province ask it together for a month of food, at the
+    priority people ask with, so a shortage is shared alike (tested), and each company gets the same
+    share. The module keeps who asked for how many until the grant comes (its private state, schema
+    `eating-1`, saved). When the grant comes, half of the unfed
+    desert home ("deserted", its own cause, a day on the way like soldiers going home), the unfed who
+    stay die as hungry civilians do, and soldiers die of age and illness at the civilians' rate.
+    The food was asked for the soldiers of that morning; recruits booked in the same day ate with
+    the civilians (found by a test: counting them as unfed made too many desert). Soldiers' hunger
+    is not a famine, so it adds nothing to unrest.
+  - **Goods and the bounty** (markets only): the day the recruits come, Warfare asks for their
+    goods, for as many as came ("equipped"); those the province can't equip join its levies. And
+    the realm pays 10 coins a recruit from its treasury into the province ("bounty", a move, so no
+    flow): asked at low priority on the month's second day, so it never cuts into the realm's own
+    spending; a treasury short of coins pays what it has. Under Economics v0 the module asks for food
+    and people only (a second manifest, as realms' taxes), and the land alone decides the kinds.
+  - **Who reads whom**: Warfare reads owners, occupation, uprisings, wars, people and land facts;
+    nothing reads the army fields yet, so realms and markets don't depend on them. War losses
+    raising unrest wait for the battles.
+  - `simrun --armies` prints the soldiers, their share of the people, the companies and kinds, and
+    how many went home and deserted in the last year.
+  - **Measured** (Oct 16). Story 1 (`examples/unrest_check.rs ECONOMICS SEED drought armies`) comes
+    out exactly as without troops on seeds 21, 3 and 7 under both economies. Over 150 quiet years
+    (seed 21, `... quiet armies`) troops change little: Economics v0 88 uprisings against 89, 36
+    realms at the end either way, 8.6 starved per 1,000 a year against 8.8; markets 179 against
+    191, 48 realms against 49, 8.2 against 8.4. At the decade ends 0.5–1.8% of the people are under
+    arms: any war puts a whole realm on a war footing, but few wars go on at once. Treasuries still
+    hold 9.9% of their land's coins (`examples/coin_spread.rs 7 50 armies`): the bounty is small
+    beside taxes. Speed, large world under markets with wars, processor time on one worker thread:
+    0.27–0.39 ms a day more than 1.97–2.02 ms. Two changes got it there from about 0.6 ms: raising
+    only a tenth or more below the number wanted, and one food request a province, not a company
+    (each request and grant costs the engine about as much as a company's month).
+
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -555,7 +610,7 @@ Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (ma
 `--terrain null|noise`, `--climate null|latitude`, `--economics food|markets|off`,
 `--realms settled=1,city=1,frontier=1` (realms on,
 with the ways to start weighted as given), `--rulers` (rulers on, and realms the default way if
-`--realms` isn't given), `--save FILE`, `--load FILE` (continue a saved
+`--realms` isn't given), `--wars`, `--armies` (troops on, realms likewise), `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
 and `--write-scenario FILE`.
 

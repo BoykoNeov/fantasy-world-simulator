@@ -15,6 +15,7 @@ use crate::provinces::ProvinceGrowth;
 use crate::realms::{Founding, RealmParams};
 use crate::taxonomy::TreeDef;
 use crate::terrain::{NoiseTerrain, NullTerrain};
+use crate::warfare::{TroopParams, Troops};
 use crate::weather::Droughts;
 use crate::world::{Fertility, WorldParams};
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,10 @@ pub struct ModuleConfig {
     /// Needs realms. Off by default and out of [`CHOICES`] until step 7's checks, as realms are.
     #[serde(default)]
     pub diplomacy: Option<WarParams>,
+    /// Warfare v1, "troops": provinces raise soldiers who eat and desert (step 7). Needs realms. Off
+    /// by default and out of [`CHOICES`] until step 7's checks, as realms are.
+    #[serde(default)]
+    pub warfare: Option<TroopParams>,
 }
 
 impl Default for ModuleConfig {
@@ -100,6 +105,7 @@ impl Default for ModuleConfig {
             realms: None,
             characters: None,
             diplomacy: None,
+            warfare: None,
         }
     }
 }
@@ -144,6 +150,10 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.diplomacy {
             out.push(Box::new(WarState { params: params.clone() }));
+        }
+        if let Some(params) = &self.warfare {
+            // Soldiers use up goods and are paid for only where the world keeps them.
+            out.push(Box::new(Troops::new(params.clone(), self.markets.is_some())));
         }
         out
     }

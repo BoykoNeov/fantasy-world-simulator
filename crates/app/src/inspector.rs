@@ -377,6 +377,9 @@ fn cause(c: Cause) -> &'static str {
         Cause::Raised => "raising soldiers",
         Cause::Returned => "soldiers coming home",
         Cause::Spent => "a realm's spending",
+        Cause::Deserted => "hungry soldiers deserting home",
+        Cause::Equipped => "equipping soldiers",
+        Cause::Bounty => "a bounty for soldiers raised",
     }
 }
 

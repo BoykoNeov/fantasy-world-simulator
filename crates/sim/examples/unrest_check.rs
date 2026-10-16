@@ -7,9 +7,11 @@
 //! same for the same world without the drought. Then how many months of famine (more than half a
 //! percent of the people starving) the provinces had, at most, within any two years.
 //!
-//! cargo run --release -p sim --example unrest_check -- [food|markets] [seed] [quiet|drought] [years] [famine]
+//! cargo run --release -p sim --example unrest_check -- [food|markets] [seed] [quiet|drought] [years] [famine] [armies]
 //!
-//! `famine` sets what a month of famine adds to unrest, to try other settings.
+//! `famine` sets what a month of famine adds to unrest, to try other settings. `armies`, anywhere
+//! among the arguments, has provinces raise troops too; `quiet` then also prints the people who
+//! starved in each decade (soldiers included) and the share under arms at its end.
 
 use sim::config::Config;
 use sim::events::Event;
@@ -20,7 +22,7 @@ use sim::world::WorldParams;
 const FAMINE: f64 = 0.005;
 const WINDOW: usize = 24;
 
-fn world(economics: &str, seed: u64, famine: Option<f64>) -> Sim {
+fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool) -> Sim {
     let mut config = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     config.modules.set_choice(Slot::Economics, economics).unwrap();
     let mut realms = sim::realms::RealmParams::default();
@@ -30,6 +32,9 @@ fn world(economics: &str, seed: u64, famine: Option<f64>) -> Sim {
     config.modules.realms = Some(realms);
     config.modules.characters = Some(Default::default());
     config.modules.diplomacy = Some(Default::default());
+    if armies {
+        config.modules.warfare = Some(Default::default());
+    }
     Sim::new(&config).unwrap()
 }
 
@@ -83,18 +88,20 @@ fn famine_months(most: &[usize], of: impl Iterator<Item = usize>) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    let armies = all.iter().any(|a| a == "armies");
+    let args: Vec<String> = all.into_iter().filter(|a| a != "armies").collect();
     let economics = args.first().map_or("food", |s| s.as_str());
     let seed: u64 = args.get(1).map_or(21, |s| s.parse().expect("seed"));
     let drought = args.get(2).is_some_and(|s| s == "drought");
     let years: i64 = args.get(3).map_or(if drought { 5 } else { 150 }, |s| s.parse().expect("years"));
     let famine: Option<f64> = args.get(4).map(|s| s.parse().expect("famine"));
-    let mut sim = world(economics, seed, famine);
+    let mut sim = world(economics, seed, famine, armies);
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let year = sim.calendar.days_per_year() as u64;
     let u = sim.config.modules.realms.as_ref().unwrap().unrest.clone().unwrap();
-    println!("{economics}, seed {seed}, {n} provinces, {} realms; a famine month adds {}", sim.world.realms.count(), u.famine);
+    println!("{economics}, seed {seed}, {n} provinces, {} realms; a famine month adds {}; armies {armies}", sim.world.realms.count(), u.famine);
 
     if !drought {
         for decade in 0..(years + 9) / 10 {
@@ -104,11 +111,21 @@ fn main() {
             let w = &sim.world;
             let risen = w.uprising.iter().filter(|&&s| s != sim::grid::NONE).count();
             let alive = (0..w.realms.count() as u32).filter(|&r| w.realms.alive(r)).count();
+            // The decade's summaries: people who starved (soldiers too), and the people on average.
+            let decade_years: Vec<_> = sim.history.iter().filter(|y| y.year >= start + decade * 10).collect();
+            let starved: u64 = decade_years.iter().map(|y| y.ledger.starved).sum();
+            let people = decade_years.iter().map(|y| y.population as f64).sum::<f64>() / decade_years.len().max(1) as f64;
+            let soldiers: u64 = w.armies.size.iter().sum();
+            let all = sim::fields::quantity_total(w, sim::fields::Quantity::People);
+            let wars = (0..w.wars.count() as u32).filter(|&k| w.wars.ongoing(k)).count();
             println!(
-                "years to {:>3}: {} uprisings begun, {} realms broke away; at the end {risen} provinces in uprising, {alive} realms; famine months in two years, most: {}",
+                "years to {:>3}: {} uprisings begun, {} realms broke away; at the end {risen} provinces in uprising, {alive} realms, {wars} wars going on, {:.2}% under arms; starved {:.2} per 1,000 a year (people {:.1} million); famine months in two years, most: {}",
                 ((decade + 1) * 10).min(years),
                 seen.uprisings.len(),
                 seen.breakaways.len(),
+                100.0 * soldiers as f64 / all as f64,
+                1000.0 * starved as f64 / people.max(1.0) / decade_years.len().max(1) as f64,
+                people / 1e6,
                 famine_months(&seen.most_famine, 0..n)
             );
         }

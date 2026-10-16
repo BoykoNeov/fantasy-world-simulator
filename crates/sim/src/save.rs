@@ -57,7 +57,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// wars', unrest, uprisings and the realm each broke away from, the realms module's private state
 /// (each province's hunger this month too), the events of uprisings and rebellions, and a peace
 /// saying whether it ended a rebellion.
-pub const FORMAT_VERSION: u32 = 18;
+/// Format 19 (step 7): Warfare "troops": its parameters (the troop tree and kinds) in the
+/// configuration, each army's kind and home, and the causes deserted, equipped and bounty.
+pub const FORMAT_VERSION: u32 = 19;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

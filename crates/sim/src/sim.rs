@@ -72,7 +72,7 @@ impl Ledger {
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
             food_edited: food_net(Cause::Edit),
             people_edited: f.get(Quantity::People, Cause::Edit),
-            people_on_the_way: f.get(Quantity::People, Cause::Raised) + f.get(Quantity::People, Cause::Returned),
+            people_on_the_way: f.get(Quantity::People, Cause::Raised) + f.get(Quantity::People, Cause::Returned) + f.get(Quantity::People, Cause::Deserted),
         }
     }
 }

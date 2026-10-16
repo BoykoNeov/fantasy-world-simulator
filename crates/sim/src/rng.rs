@@ -21,6 +21,8 @@ pub enum Module {
     Realms = 7,
     /// Characters: rulers' and heirs' births, deaths, traits and names.
     Characters = 8,
+    /// Warfare: soldiers' deaths and desertions.
+    Warfare = 9,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

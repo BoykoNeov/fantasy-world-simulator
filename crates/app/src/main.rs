@@ -6,7 +6,7 @@
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--modules SLOT=VERSION,...] [--remake SIZE,SEED,YEARS[,SLOT=VERSION...]]
-//!            [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
+//!            [--realms settled=W,city=W,frontier=W] [--rulers] [--wars] [--armies]
 //!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
@@ -25,8 +25,8 @@
 //! new world through the New world section once the window is open, as a player would (the
 //! versions given change those of the world shown). `--realms` switches realms on, with the ways
 //! to start weighted as given (`--realms settled=1` is the default way); `--rulers` gives every
-//! realm a ruler and heir, and `--wars` keeps wars and truces (both turn realms on the default way
-//! if `--realms` isn't given), as in `simrun`.
+//! realm a ruler and heir, `--wars` keeps wars and truces, and `--armies` has provinces raise
+//! troops (each turns realms on the default way if `--realms` isn't given), as in `simrun`.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
@@ -249,6 +249,10 @@ impl Options {
                     o.config.modules.realms.get_or_insert_with(Default::default);
                     o.config.modules.diplomacy = Some(Default::default());
                 }
+                "--armies" => {
+                    o.config.modules.realms.get_or_insert_with(Default::default);
+                    o.config.modules.warfare = Some(Default::default());
+                }
                 "--bench" => o.bench = true,
                 "--out" => o.out_dir = value(&mut i),
                 "--tag" => o.tag = value(&mut i),
@@ -333,9 +337,10 @@ impl WorldInfo {
             .collect();
         let mc = &sim.config.modules;
         let mut versions: Vec<(String, &'static str)> = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
-        // Realms, rulers and wars aren't among the tester's choices yet (until step 7's checks): a
-        // world running them is a mix the tester never ran, whatever its table says for the rest.
-        let untested: Vec<&Manifest> = manifests.iter().copied().filter(|m| matches!(m.slot, Slot::Realms | Slot::Characters | Slot::Diplomacy)).collect();
+        // Realms, rulers, wars and troops aren't among the tester's choices yet (until step 7's
+        // checks): a world running them is a mix the tester never ran, whatever its table says for
+        // the rest.
+        let untested: Vec<&Manifest> = manifests.iter().copied().filter(|m| matches!(m.slot, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare)).collect();
         versions.extend(untested.iter().map(|m| (inspector::slot_name(m.slot).to_string(), m.version)));
         let verdict = match untested.is_empty() {
             true => table.as_ref().map(|t| t.verdict_for(mc)).map_err(|e| e.clone()),
@@ -1727,7 +1732,7 @@ impl MapApp {
         ui.label(egui::RichText::new("What happened here").strong());
         ui.horizontal_wrapped(|ui| {
             let running = |slot: Slot| self.owners.iter().any(|o| o.1 == Some(slot));
-            let modules = [Slot::Population, Slot::Economics, Slot::Weather, Slot::Realms, Slot::Characters, Slot::Diplomacy];
+            let modules = [Slot::Population, Slot::Economics, Slot::Weather, Slot::Realms, Slot::Characters, Slot::Diplomacy, Slot::Warfare];
             let sources: Vec<Source> = modules.into_iter().filter(|&m| matches!(m, Slot::Population | Slot::Economics | Slot::Weather) || running(m)).map(Source::Module).chain([Source::Player, Source::Engine]).collect();
             for s in sources {
                 let mut on = !self.hidden_sources.contains(&s);

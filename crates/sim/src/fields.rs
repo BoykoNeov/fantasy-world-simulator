@@ -345,6 +345,9 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Zero, ..def("province.unrest", Tier::Province, "thousandths of the way to an uprising", 0.0, 1000.0) },
     FieldDef { default: Default::NoOne, ..def("province.uprising", Tier::Province, "province id where its uprising began, none where calm", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::NoOne, ..def("realm.broke_from", Tier::Realm, "realm id it broke away from, none if it didn't", -UNBOUNDED, UNBOUNDED) },
+    // Troops (step 7, Warfare "troops"): an army entry is a company of one kind from one province.
+    FieldDef { default: Default::Empty, ..def("army.kind", Tier::Army, "troop kind: a node of the troop tree", 0.0, u16::MAX as f64) },
+    FieldDef { default: Default::Empty, ..def("army.home", Tier::Army, "province id its soldiers came from", -UNBOUNDED, UNBOUNDED) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

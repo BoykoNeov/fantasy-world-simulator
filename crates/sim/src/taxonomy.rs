@@ -64,6 +64,12 @@ impl Taxonomy {
     /// Build and check a tree: every name once, every listed parent reachable from the root, at
     /// least one class under the root.
     pub fn new(def: &TreeDef) -> Result<Taxonomy, String> {
+        Taxonomy::named(def, "goods tree")
+    }
+
+    /// [`Taxonomy::new`] for a tree of something other than goods (`what` names it in refusals:
+    /// "troop tree").
+    pub fn named(def: &TreeDef, what: &str) -> Result<Taxonomy, String> {
         let mut t = Taxonomy { nodes: Vec::new() };
         fn visit(t: &mut Taxonomy, def: &TreeDef, name: &str, parent: Option<NodeId>, depth: u8) -> Result<(), String> {
             if t.find(name).is_some() {
@@ -82,13 +88,13 @@ impl Taxonomy {
             t.nodes[id as usize].end = t.nodes.len() as NodeId;
             Ok(())
         }
-        visit(&mut t, def, &def.root, None, 0).map_err(|e| format!("goods tree: {e}"))?;
+        visit(&mut t, def, &def.root, None, 0).map_err(|e| format!("{what}: {e}"))?;
         let unknown = def.children.keys().chain(def.units.keys()).find(|n| t.find(n).is_none());
         if let Some(n) = unknown {
-            return Err(format!("goods tree: {n} is not under {}", def.root));
+            return Err(format!("{what}: {n} is not under {}", def.root));
         }
         if t.classes().is_empty() {
-            return Err(format!("goods tree: {} has no classes under it", def.root));
+            return Err(format!("{what}: {} has no classes under it", def.root));
         }
         Ok(t)
     }

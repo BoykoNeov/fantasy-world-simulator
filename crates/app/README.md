@@ -150,9 +150,11 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
 - `--modules SLOT=VERSION,...`: any module versions, e.g. `economics=off,population=off` or
   `weather=off` (slots: terrain, climate, economics, population, weather).
-- `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`: realms (with the ways to start
-  weighted as given), rulers and heirs, and wars and truces, as in `simrun`. Realms are off by
-  default until step 7's checks; `--rulers` or `--wars` alone turn them on the default way.
+- `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`, `--armies`: realms (with the ways
+  to start weighted as given), rulers and heirs, wars and truces, and troops, as in `simrun`. Realms
+  are off by default until step 7's checks; `--rulers`, `--wars` or `--armies` alone turn them on
+  the default way. Armies aren't drawn yet (window part 2); soldiers going home and deserting show
+  in the event log, under Warfare.
 - `--years Y`: how long to run before showing it (default 20).
 - `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
   on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).

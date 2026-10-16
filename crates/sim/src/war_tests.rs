@@ -318,7 +318,7 @@ static TAKER: Manifest = Manifest {
     tier: Tier::Army,
     cadence: Cadence::Daily,
     reads: &["province.owner", "province.occupier", "war.attacker", "war.defender", "war.ended"],
-    owns: &["army.realm", "army.province", "army.size"],
+    owns: &["army.realm", "army.province", "army.size", "army.kind", "army.home"],
     requests: &[],
     asks: &[],
     moves: &[],

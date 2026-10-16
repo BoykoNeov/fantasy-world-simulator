@@ -34,6 +34,8 @@ mod realm_start_tests;
 mod ruler_tests;
 #[cfg(test)]
 mod war_tests;
+#[cfg(test)]
+mod troops_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;

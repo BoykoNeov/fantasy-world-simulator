@@ -1,0 +1,76 @@
+# Warfare "troops" (build step 7): the kinds of troops and how provinces raise them. The defaults a
+# new world gets; a world's own copy is saved with it, so editing this file changes new worlds only.
+#
+# Every province a realm holds keeps some of its people under arms, at home: a share in peace, a
+# bigger share while its realm is at war. Soldiers are people taken from the pops; they eat where
+# they stand, and the hungry desert home. An army entry is a company: soldiers of one kind from one
+# province.
+
+# Share of a province's people (soldiers from it included) under arms in peace, and while its realm
+# is at war with anyone.
+peace_share = 0.005
+war_share = 0.05
+# Raising goes at most this fast: each month a province raises up to the war-time number divided by
+# this.
+months_to_raise = 3.0
+# Soldiers go home only once a province has more than this much over the number wanted (a quarter
+# more), and then down to that number, so a few people dying or being born doesn't send soldiers
+# back and forth every month.
+disband_slack = 0.25
+# Likewise a province raises only once it has less than this share of the number wanted (nine
+# tenths), and then up to that number: soldiers dying of age don't make it raise a few every month.
+raise_below = 0.9
+# Of the soldiers left unfed in a month, the share who desert home.
+desert_share = 0.5
+# Soldiers die of age and illness as civilians do, and the hungry who stay die as hungry civilians
+# do (share of the unfed, per 30 days). The same as Population's defaults.
+deaths_per_year = 0.028
+starvation_deaths = 0.3
+# Under an economy with coins: coins a realm pays from its treasury into a province for each soldier
+# raised there (people start with 20 coins each). A treasury short of coins pays what it has.
+bounty = 10.0
+# The class of the goods tree whose goods are coins.
+money = "money"
+# The kind raised in place of a kind whose goods the province can't supply. It needs no goods.
+fallback = "levies"
+
+# The troop tree, written like the goods tree. Its leaves are the kinds; the classes split troops on
+# land from those at sea (fleets), for moving and fighting (the next piece).
+[tree]
+root = "troops"
+
+[tree.children]
+troops = ["land", "sea"]
+land = ["foot", "horse"]
+foot = ["levies", "heavy_infantry"]
+horse = ["cavalry"]
+sea = ["ships"]
+
+[tree.units]
+troops = "soldiers"
+sea = "crew"
+
+# One table per kind. A province raises each kind in proportion to its `weight` times the share of
+# its land that suits it (`land`: "ore" for land with ore in reach, "grazing" for food better from
+# herds, "woodland"; none for any land). `coast`: only provinces with a shore raise it. Under an
+# economy that keeps goods, each soldier raised uses up `per_soldier` of `good`; without them the
+# land alone decides.
+[kinds.levies]
+weight = 1.0
+
+[kinds.heavy_infantry]
+weight = 0.5
+land = "ore"
+good = "tools"
+per_soldier = 1.0
+
+[kinds.cavalry]
+weight = 0.5
+land = "grazing"
+
+[kinds.ships]
+weight = 0.3
+land = "woodland"
+coast = true
+good = "timber"
+per_soldier = 1.0

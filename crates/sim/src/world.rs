@@ -285,6 +285,8 @@ impl World {
             "province.unrest" => U64(self.unrest.clone()),
             "province.uprising" => U32(self.uprising.clone()),
             "realm.broke_from" => U32(self.realms.broke_from.clone()),
+            "army.kind" => U16(self.armies.kind.clone()),
+            "army.home" => U32(self.armies.home.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -380,6 +382,8 @@ impl World {
             ("province.unrest", U64(v)) => self.unrest = v,
             ("province.uprising", U32(v)) => self.uprising = v,
             ("realm.broke_from", U32(v)) => self.realms.broke_from = v,
+            ("army.kind", U16(v)) => self.armies.kind = v,
+            ("army.home", U32(v)) => self.armies.home = v,
             _ => return wrong(),
         }
         Ok(())
@@ -467,6 +471,8 @@ impl World {
             ("province.unrest", U64(x)) => put(&mut self.unrest, at, x),
             ("province.uprising", U32(x)) => put(&mut self.uprising, at, x),
             ("realm.broke_from", U32(x)) => put(&mut self.realms.broke_from, at, x),
+            ("army.kind", U16(x)) => put(&mut armies.kind, at, x),
+            ("army.home", U32(x)) => put(&mut armies.home, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }

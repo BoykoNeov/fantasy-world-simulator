@@ -68,6 +68,15 @@ pub enum Cause {
     /// Coins a realm pays out of its treasury into a province: its spending, or what a dissolved
     /// realm leaves to the land (step 7).
     Spent,
+    /// Soldiers who left an army for home because they went hungry: booked out by the army's owner
+    /// and in by the pops' when they arrive, the next day, as [`Cause::Returned`] is.
+    Deserted,
+    /// Goods used up equipping soldiers when they are raised: tools for heavy infantry, timber for
+    /// ships.
+    Equipped,
+    /// Coins a realm pays from its treasury into a province for each soldier raised there (a move,
+    /// so no flow is booked).
+    Bounty,
 }
 
 /// Where a request's grant goes when it is moved rather than used up: one value of a field the
