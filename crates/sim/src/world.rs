@@ -287,6 +287,12 @@ impl World {
             "realm.broke_from" => U32(self.realms.broke_from.clone()),
             "army.kind" => U16(self.armies.kind.clone()),
             "army.home" => U32(self.armies.home.clone()),
+            "army.role" => U8(self.armies.role.clone()),
+            "army.group" => U32(self.armies.group.clone()),
+            "army.dest" => U32(self.armies.dest.clone()),
+            "army.next" => U32(self.armies.next.clone()),
+            "army.days_left" => F32(self.armies.days_left.clone()),
+            "army.siege_days" => U32(self.armies.siege_days.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -384,6 +390,12 @@ impl World {
             ("realm.broke_from", U32(v)) => self.realms.broke_from = v,
             ("army.kind", U16(v)) => self.armies.kind = v,
             ("army.home", U32(v)) => self.armies.home = v,
+            ("army.role", U8(v)) => self.armies.role = v,
+            ("army.group", U32(v)) => self.armies.group = v,
+            ("army.dest", U32(v)) => self.armies.dest = v,
+            ("army.next", U32(v)) => self.armies.next = v,
+            ("army.days_left", F32(v)) => self.armies.days_left = v,
+            ("army.siege_days", U32(v)) => self.armies.siege_days = v,
             _ => return wrong(),
         }
         Ok(())
@@ -473,6 +485,12 @@ impl World {
             ("realm.broke_from", U32(x)) => put(&mut self.realms.broke_from, at, x),
             ("army.kind", U16(x)) => put(&mut armies.kind, at, x),
             ("army.home", U32(x)) => put(&mut armies.home, at, x),
+            ("army.role", U8(x)) => put(&mut armies.role, at, x),
+            ("army.group", U32(x)) => put(&mut armies.group, at, x),
+            ("army.dest", U32(x)) => put(&mut armies.dest, at, x),
+            ("army.next", U32(x)) => put(&mut armies.next, at, x),
+            ("army.days_left", F32(x)) => put(&mut armies.days_left, at, x),
+            ("army.siege_days", U32(x)) => put(&mut armies.siege_days, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }

@@ -33,9 +33,11 @@ pub struct Ledger {
     pub spoiled: u64,
     pub eaten: u64,
     pub births: u64,
-    /// All deaths, starvation included.
+    /// All deaths, starvation and soldiers killed in war included.
     pub deaths: u64,
     pub starved: u64,
+    /// Soldiers killed in battle or lost at sea.
+    pub killed: u64,
     /// Net change from field contracts clamping a value back into bounds (normally 0). With it,
     /// each year balances exactly: food after = before + produced − spoiled − eaten + food_clamped,
     /// people after = before + births − deaths + people_clamped + people_edited +
@@ -58,6 +60,7 @@ impl Ledger {
         let pos = |q, c| f.get(q, c).max(0) as u64;
         let neg = |q, c| (-f.get(q, c)).max(0) as u64;
         let starved = neg(Quantity::People, Cause::Starvation);
+        let killed = neg(Quantity::People, Cause::Killed);
         let food_in = |c| food.map_or(0, |q| pos(q, c));
         let food_out = |c| food.map_or(0, |q| neg(q, c));
         let food_net = |c| food.map_or(0, |q| f.get(q, c));
@@ -66,8 +69,9 @@ impl Ledger {
             spoiled: food_out(Cause::Spoilage),
             eaten: food_out(Cause::Eating),
             births: pos(Quantity::People, Cause::Births),
-            deaths: neg(Quantity::People, Cause::Deaths) + starved,
+            deaths: neg(Quantity::People, Cause::Deaths) + starved + killed,
             starved,
+            killed,
             food_clamped: food_net(Cause::ContractClamp),
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
             food_edited: food_net(Cause::Edit),
@@ -405,7 +409,7 @@ impl Sim {
         }
         for k in 0..self.plan.runtime.len() {
             let i = self.plan.runtime[k];
-            if self.modules[i].manifest().cadence.due(&self.calendar, self.day) {
+            if self.modules[i].manifest().cadence.due(&self.calendar, self.day) && !self.modules[i].idle(&self.world, &self.calendar, self.day) {
                 self.stage(Stage::Tick, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.tick(w, cx)))]);
                 ran = true;
             }
@@ -812,7 +816,12 @@ impl Sim {
         } else {
             Vec::new()
         };
-        let quantities = if conserve { self.world.quantities() } else { Vec::new() };
+        // Only a quantity held in fields the actors own can change in their stage (strict mode
+        // checks it), so only those are summed before and after; the rest are checked by the flows
+        // booked for them, which must come to nothing. A module that runs daily then pays only for
+        // what it keeps.
+        let (quantities, others): (Vec<Quantity>, Vec<Quantity>) =
+            if conserve { self.world.quantities().into_iter().partition(|q| q.fields().iter().any(|&f| owned_by_actors(self, f))) } else { (Vec::new(), Vec::new()) };
         let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();
         // Only the actors can change anything (strict mode checks it), so only their fields are watched.
         let watched: Vec<(FieldId, FieldData)> =
@@ -836,6 +845,15 @@ impl Sim {
                     self.problems.conservation_breaks += 1;
                     let by = actors.iter().map(|&i| self.modules[i].manifest().slot).collect();
                     self.post(None, Event::ConservationBroken { quantity: q, expected: expected.max(0) as u64, actual, by });
+                }
+            }
+            for &q in &others {
+                let net: i64 = outs.iter().map(|(_, o)| o.flows.net(q)).sum();
+                if net != 0 {
+                    let actual = quantity_total(&self.world, q);
+                    self.problems.conservation_breaks += 1;
+                    let by = actors.iter().map(|&i| self.modules[i].manifest().slot).collect();
+                    self.post(None, Event::ConservationBroken { quantity: q, expected: (actual as i128 + net as i128).max(0) as u64, actual, by });
                 }
             }
         }

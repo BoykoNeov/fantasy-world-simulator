@@ -36,6 +36,8 @@ mod ruler_tests;
 mod war_tests;
 #[cfg(test)]
 mod troops_tests;
+#[cfg(test)]
+mod army_tests;
 pub mod requests;
 pub mod rng;
 pub mod routes;

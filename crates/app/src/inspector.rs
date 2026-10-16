@@ -210,6 +210,7 @@ pub fn realms_in(e: &Event) -> Vec<u32> {
         Event::ForcePeace { a, b, .. } => vec![a, b],
         Event::Occupied { by, .. } => vec![by],
         Event::Rebellion { realm, from, .. } => vec![realm, from],
+        Event::Battle { winner, loser, .. } => [winner, loser].into_iter().filter(|&r| r != NONE).collect(),
         _ => Vec::new(),
     }
 }
@@ -380,6 +381,7 @@ fn cause(c: Cause) -> &'static str {
         Cause::Deserted => "hungry soldiers deserting home",
         Cause::Equipped => "equipping soldiers",
         Cause::Bounty => "a bounty for soldiers raised",
+        Cause::Killed => "soldiers killed in battle or lost at sea",
     }
 }
 
@@ -436,6 +438,12 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Uprising { realm: r, seat, .. } => format!("the province joined the uprising against {} begun in province {seat}", realm(r)),
         Event::Calmed { realm: r, .. } => format!("the uprising against {} died down", realm(r)),
         Event::Rebellion { realm: r, from, provinces, .. } => format!("{provinces} provinces broke away from {} as {}", realm(from), realm(r)),
+        Event::Battle { winner, loser, killed, .. } => match (*winner, *loser) {
+            (NONE, NONE) => format!("a battle here ended with nobody holding the field: {} killed", group(*killed)),
+            (w, NONE) => format!("a battle here ended with {} holding the field: {} killed", realm(&w), group(*killed)),
+            (NONE, l) => format!("a battle here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
+            (w, l) => format!("{} beat {} in battle here: {} killed", realm(&w), realm(&l), group(*killed)),
+        },
     }
 }
 

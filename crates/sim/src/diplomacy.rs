@@ -7,9 +7,10 @@
 //! choose war themselves is a later version's.
 //!
 //! Rebels who break away ([`Event::Rebellion`]) are at war with the realm they left, from the day
-//! after. Until armies can fight it out, a rebellion's war still going after
-//! [`WarParams::rebel_war_years`] ends with the rebels free: they win. At a rebellion's peace the
-//! realm they broke from, winning, takes back all their land (the realms module does that).
+//! after. On a month's first day, a rebellion's war in which the realm the rebels left occupies the
+//! rebels' capital ends, won by that realm; one still going after [`WarParams::rebel_war_years`]
+//! ends with the rebels free: they win. At a rebellion's peace the realm they broke from, winning,
+//! takes back all their land (the realms module does that). Other wars end by the player's pokes.
 //!
 //! At the peace the winner keeps every province of the loser's it occupies, and everything else
 //! goes back: no peace changes hands any other land, and with nobody winning nothing changes hands
@@ -228,7 +229,7 @@ static V0: Manifest = Manifest {
     version: "wars",
     tier: crate::fields::Tier::War,
     cadence: Cadence::Monthly,
-    reads: &["realm.capital"],
+    reads: &["realm.capital", "province.occupier"],
     owns: &["war.attacker", "war.defender", "war.cause", "war.began", "war.ended", "war.winner", "war.truce_until"],
     requests: &[],
     asks: &[],
@@ -258,8 +259,9 @@ impl Module for WarState {
         Ok(())
     }
 
-    /// Wars with a realm that has been dissolved end, won by the other side; a rebellion's war that
-    /// has gone on long enough ends with the rebels free.
+    /// Wars with a realm that has been dissolved end, won by the other side; a rebellion's war ends
+    /// won by the realm the rebels left once it occupies their capital, and otherwise, after long
+    /// enough, with the rebels free.
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         let rebels_free = (self.params.rebel_war_years * cx.calendar.days_per_year() as f64).round() as u64;
         for k in 0..w.wars.count() as u32 {
@@ -269,6 +271,8 @@ impl Module for WarState {
             let ku = k as usize;
             let (a, d) = (w.wars.attacker[ku], w.wars.defender[ku]);
             let winner = match (w.realms.alive(a), w.realms.alive(d)) {
+                // The realm the rebels left holds their capital: the rebellion is put down.
+                (true, true) if WarCause::from_u8(w.wars.cause[ku]) == WarCause::Rebellion && w.occupier.get(w.realms.capital[a as usize] as usize) == Some(&d) => d,
                 (true, true) if WarCause::from_u8(w.wars.cause[ku]) == WarCause::Rebellion && cx.day >= w.wars.began[ku].saturating_add(rebels_free) => a,
                 (true, true) => continue,
                 (true, false) => a,

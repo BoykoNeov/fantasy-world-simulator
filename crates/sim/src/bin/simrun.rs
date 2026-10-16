@@ -372,4 +372,8 @@ fn print_armies(sim: &Sim) {
         group(home(sim::requests::Cause::Returned)),
         group(home(sim::requests::Cause::Deserted)),
     );
+    let battles = sim.event_log.entries.iter().filter(|p| p.day >= since && matches!(p.event, sim::events::Event::Battle { .. })).count();
+    let killed = sim.history.last().map_or(0, |y| y.ledger.killed);
+    let occupied = w.occupier.iter().filter(|&&o| o != sim::grid::NONE).count();
+    println!("  in the last year {battles} battles; {} killed in the last full year; {occupied} provinces occupied now", group(killed));
 }

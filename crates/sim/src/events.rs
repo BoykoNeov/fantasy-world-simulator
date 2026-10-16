@@ -56,6 +56,10 @@ pub enum Event {
     /// Provinces in uprising have broken away from realm `from` as the new realm `realm`, with
     /// `capital` its capital and `provinces` provinces. It is at war with `from` from the next day.
     Rebellion { realm: u32, from: u32, capital: u32, provinces: u32 },
+    /// A battle in `province` is over: `winner` held the field (or nobody, [`crate::grid::NONE`],
+    /// when a peace ended it), `loser` broke first (or nobody), and `killed` soldiers died in it.
+    /// The owner of provinces adds to the unrest where it was fought.
+    Battle { province: u32, winner: u32, loser: u32, killed: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -76,6 +80,7 @@ pub enum EventKind {
     Uprising,
     Calmed,
     Rebellion,
+    Battle,
 }
 
 impl EventKind {
@@ -84,14 +89,14 @@ impl EventKind {
     ///
     /// | class | value | kinds |
     /// | --- | --- | --- |
-    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied |
+    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle |
     /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion |
     /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
             // A province taken the day before a peace is handed over (or given back) by it.
-            EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied => 0,
+            EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied | EventKind::Battle => 0,
             EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion => 1,
             EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
@@ -118,6 +123,7 @@ impl Event {
             Event::Uprising { .. } => EventKind::Uprising,
             Event::Calmed { .. } => EventKind::Calmed,
             Event::Rebellion { .. } => EventKind::Rebellion,
+            Event::Battle { .. } => EventKind::Battle,
         }
     }
 
@@ -134,7 +140,7 @@ impl Event {
                 pair(*a, *b)
             }
             Event::WarDeclared { war, .. } | Event::Peace { war, .. } => *war as u64,
-            Event::Occupied { province, .. } | Event::Uprising { province, .. } | Event::Calmed { province, .. } => *province as u64,
+            Event::Occupied { province, .. } | Event::Uprising { province, .. } | Event::Calmed { province, .. } | Event::Battle { province, .. } => *province as u64,
             Event::Rebellion { realm, .. } => *realm as u64,
         }
     }
@@ -145,6 +151,7 @@ impl Event {
             Event::Famine { province, .. }
             | Event::Arrived { province, .. }
             | Event::Occupied { province, .. }
+            | Event::Battle { province, .. }
             | Event::Uprising { province, .. }
             | Event::Calmed { province, .. } => Some(*province),
             Event::Succession { capital, .. } | Event::Rebellion { capital, .. } => Some(*capital),

@@ -36,6 +36,15 @@ fn world(seed: u64, markets: bool) -> Sim {
     sim
 }
 
+/// The same, with generals who never attack: raising alone, without the fighting.
+fn quiet(seed: u64, markets: bool) -> Sim {
+    let mut c = config(seed, markets);
+    c.modules.warfare.as_mut().unwrap().outmatch = 1e9;
+    let mut sim = Sim::new(&c).unwrap();
+    sim.strict = true;
+    sim
+}
+
 fn land_of(w: &World, r: u32) -> Vec<u32> {
     (0..w.provinces.count as u32).filter(|&p| w.owner[p as usize] == r).collect()
 }
@@ -148,7 +157,7 @@ fn in_peace_every_province_keeps_half_a_percent_under_arms_at_home() {
 
 #[test]
 fn a_war_raises_both_realms_to_five_percent_over_three_months_and_the_peace_sends_them_home() {
-    let mut sim = world(2, false);
+    let mut sim = quiet(2, false);
     let (a, b) = neighbours(&sim.world, 3);
     sim.run_days(2);
     let calm = (0..sim.world.realms.count() as u32).find(|&r| r != a && r != b && land_of(&sim.world, r).len() >= 3).unwrap();
@@ -315,7 +324,7 @@ fn under_markets_soldiers_use_up_goods_and_realms_pay_a_bounty_for_each() {
 
 #[test]
 fn occupied_and_rising_provinces_raise_nobody_and_land_changing_hands_sends_its_soldiers_home() {
-    let mut sim = world(6, false);
+    let mut sim = quiet(6, false);
     let (a, b) = neighbours(&sim.world, 3);
     sim.run_days(2);
     let land_b = land_of(&sim.world, b);

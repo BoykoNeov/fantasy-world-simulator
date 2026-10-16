@@ -77,6 +77,8 @@ pub enum Cause {
     /// Coins a realm pays from its treasury into a province for each soldier raised there (a move,
     /// so no flow is booked).
     Bounty,
+    /// Soldiers killed in battle, or lost at sea when their fleet broke.
+    Killed,
 }
 
 /// Where a request's grant goes when it is moved rather than used up: one value of a field the

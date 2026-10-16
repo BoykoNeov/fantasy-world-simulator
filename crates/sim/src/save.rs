@@ -59,7 +59,7 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// saying whether it ended a rebellion.
 /// Format 19 (step 7): Warfare "troops": its parameters (the troop tree and kinds) in the
 /// configuration, each army's kind and home, and the causes deserted, equipped and bounty.
-pub const FORMAT_VERSION: u32 = 19;
+pub const FORMAT_VERSION: u32 = 20;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

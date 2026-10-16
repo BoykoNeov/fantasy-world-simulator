@@ -115,7 +115,19 @@ static MUSTER: Manifest = Manifest {
     tier: Tier::Army,
     cadence: Cadence::Monthly,
     reads: &["province.owner"],
-    owns: &["army.realm", "army.province", "army.size", "army.kind", "army.home"],
+    owns: &[
+        "army.realm",
+        "army.province",
+        "army.size",
+        "army.kind",
+        "army.home",
+        "army.role",
+        "army.group",
+        "army.dest",
+        "army.next",
+        "army.days_left",
+        "army.siege_days",
+    ],
     requests: &["pop.size"],
     asks: &[],
     moves: &[],
@@ -152,7 +164,7 @@ impl Module for Muster {
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         let Event::Granted { request, granted } = *e else { return };
         if w.armies.count() == 0 {
-            w.armies.push(w.owner[request.entity as usize], request.entity, 0, 0);
+            w.armies.push(w.owner[request.entity as usize], request.entity, 0, 0, 0);
         }
         w.armies.size[0] += granted;
         cx.flow(Quantity::People, Cause::Raised, granted as i64);

@@ -238,6 +238,12 @@ pub trait Module: Send {
     /// Main logic, on the module's cadence.
     fn tick(&mut self, _w: &mut World, _cx: &mut Ctx) {}
 
+    /// Whether the module has nothing to do on `day`, a day its cadence is due: the engine then
+    /// skips its tick and the checks around it. For a daily module whose days are mostly quiet.
+    fn idle(&self, _w: &World, _calendar: &Calendar, _day: u64) -> bool {
+        false
+    }
+
     /// Owners: apply today's requests for owned fields, in the fixed order given, and grant each.
     fn apply_requests(&mut self, _w: &mut World, _requests: &[Request], _cx: &mut Ctx) {}
 

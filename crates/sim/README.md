@@ -29,9 +29,11 @@ What exists:
   configuration whose goods can't serve one is refused.
 - **Events** (`events.rs`): sent on day N, delivered on day N+1, in a documented priority order.
 - **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and each
-  class of goods changed only by what was reported, and clamps values that leave their bounds; both kinds of
-  problem are counted and sent out as events. In strict mode (tests) a module that writes a field
-  it doesn't own stops the run.
+  class of goods changed only by what was reported (summing those held in fields the stage's
+  modules own; the others, which they can't change, must have no flows reported), and clamps values
+  that leave their bounds; both kinds of problem are counted and sent out as events. In strict
+  mode (tests) a module that writes a field it doesn't own stops the run. A module may tell the
+  engine it is idle on a day its cadence is due (`Module::idle`); its stage is then skipped.
 - **Saves** (`save.rs`): configuration, module versions and state schemas, the command log, and a
   snapshot with every field by name (a per-good field also names the goods it holds) and
   everything in flight. Format 6 (step 6) added the goods tree and the per-good store; format 7
@@ -47,7 +49,10 @@ parameters, the war fields, occupation, and the events of war and peace); format
 unrest (its parameters, unrest, uprisings and the realm each broke away from, the realms module's
 private state with each province's hunger this month, the events of uprisings and rebellions, and
 a peace saying whether it ended a rebellion); format 19 troops (the warfare module's parameters
-with the troop tree, each army's kind and home, and the causes deserted, equipped and bounty).
+with the troop tree, each army's kind and home, and the causes deserted, equipped and bounty);
+format 20 armies moving and fighting (each company's role, group, destination, next province, days
+left on its way and siege days, the warfare module's new private state, the battle event, the cause
+killed and the year's killed in the ledger).
 Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
@@ -62,8 +67,8 @@ Loads refuse other format versions,
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
   | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below); or off (the default until step 7's checks) | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
-  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
-  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry (see below); needs realms; or off (the default until step 7's checks) | monthly |
+  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
+  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off (the default until step 7's checks) | daily (raising and eating monthly) |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -413,9 +418,10 @@ Loads refuse other format versions,
     3 or more, become a new realm (`Rebellion`): its capital the most populous of them, its unrest
     spent, and `realm.broke_from` naming the realm it left. Its name comes from its number, as every
     realm's; the rulers module gives it a ruler the same day. The wars module sets it at war with
-    the realm it left the day after (cause "rebellion"). Until armies can fight it out, a
-    rebellion's war still going after 5 years (`WarParams::rebel_war_years`) ends with the rebels
-    winning. At a rebellion's peace (`Peace` says so), the realm they left, winning, takes back all
+    the realm it left the day after (cause "rebellion"). On a month's first day, a rebellion's war
+    in which the realm the rebels left occupies the rebels' capital ends, won by that realm (armies
+    take it by siege); one still going after 5 years (`WarParams::rebel_war_years`) ends with the
+    rebels winning. At a rebellion's peace (`Peace` says so), the realm they left, winning, takes back all
     their land; with the rebels or nobody winning, they stay free. A later, ordinary war between the
     two hands over only what is occupied. Without wars kept, rebels are simply free.
   - **How often** (story 1's world, `examples/unrest_check.rs`, the user's choice of speed). The
@@ -427,34 +433,41 @@ Loads refuse other format versions,
     economies (seeds 21 and 3, after 1.4 to 2.9 years; seed 7's drought starves too little), and
     the same worlds without it don't. Left alone for 150 years (seed 21), the world's own famines
     start about 5 uprisings a decade on Economics v0 and about 13 under markets, and the 18 realms
-    become 36 and 49: nothing joins realms together again until armies and wars of conquest come.
+    become 36 and 49: nothing joins realms together again without armies (with them, see Armies
+    moving and fighting below).
     The work is a pass over the provinces once a month; it was not timed on its own.
   - `simrun` prints how many provinces are in uprising, how many are at least half way there, and
     how many realms have broken away.
 - **Troops** (step 7; Warfare "troops", `warfare.rs`, `data/troops.toml`, tests in
   `troops_tests.rs`). Off by default and not among the tester's choices yet, like realms; a
   configuration (`ModuleConfig::warfare`), a scenario file or `simrun --armies` turns it on. It needs
-  realms (refused without them). Armies don't move or fight yet: that is the next piece.
+  realms (refused without them). How they move and fight is the next section.
   - **Troop kinds are data**, a tree like the goods tree saved with the world: levies, heavy
     infantry and cavalry on land, ships at sea. Each kind has a weight, the land that suits it (land
     with ore in reach for heavy infantry, food better from herds for cavalry, woodland for ships,
     which also need a shore) and, where the economy keeps goods, what each soldier uses up when
     raised (a set of tools for heavy infantry, a cartload of timber for each ship's crewman).
   - **An army entry is a company**: soldiers of one kind (`army.kind`, a node of the troop tree)
-    from one province (`army.home`), serving the realm that held it when they were raised, and
-    standing at home (`army.province`). Each province keeps at most one company of each kind for
-    each realm; an emptied company is filled again rather than a new one made.
-  - **Each month** (`TroopParams`): a province a realm holds wants 0.5% of its people (its soldiers
-    included) under arms in peace and 5% while its realm is at war with anyone. A tenth or more
-    below that, it asks Population for recruits up to that number, at most a third of the war-time
-    number a month (so a war reaches 5% in 3 months), shared between the kinds by their weights times how well the land suits each. More
-    than a quarter over (after a peace), the extra go home ("returned"), every kind alike. A province
-    an enemy occupies or in uprising raises nobody. Companies whose realm no longer holds their home
-    (it changed hands, or the realm was dissolved) go home, all of them.
+    from one province (`army.home`), serving the realm that held it when they were raised. A company
+    is a guard (`army.role` 0), the peace-time force, which stands at home and fights only for its
+    own province, or a field company (1), raised in war, which marches (`army.province` is where it
+    stands, or the province it left while on its way). Each province keeps one guard company of
+    each kind; recruits for field companies join one standing at home in no group, or an emptied
+    one, or a new one, so entries number at most the most ever out at once.
+  - **Each month** (`TroopParams`): a province a realm holds keeps 0.5% of its people (its soldiers
+    included) as guards, and while its realm is at war with anyone, field companies up to 5% in
+    all. A tenth or more below either, it asks Population for recruits up to that number, at most a
+    third of the war-time number a month (so a war reaches 5% in 3 months), shared between the
+    kinds by their weights times how well the land suits each. More than a quarter over, the extra
+    go home ("returned"): guards from the guards, field soldiers only from companies standing at home
+    in no group. A province an enemy occupies or in uprising raises nobody. Companies whose realm no
+    longer holds their home (it changed hands, or the realm was dissolved) go home, all of them,
+    and so do the guards of a province an enemy occupies. A company waiting for recruits or their
+    goods isn't sent anywhere until they come.
   - **Eating**: the companies standing in a province ask it together for a month of food, at the
     priority people ask with, so a shortage is shared alike (tested), and each company gets the same
-    share. The module keeps who asked for how many until the grant comes (its private state, schema
-    `eating-1`, saved). When the grant comes, half of the unfed
+    share; a company on its way eats from the province it left. The module keeps who asked for how
+    many until the grant comes (in its private state, saved). When the grant comes, half of the unfed
     desert home ("deserted", its own cause, a day on the way like soldiers going home), the unfed who
     stay die as hungry civilians do, and soldiers die of age and illness at the civilians' rate.
     The food was asked for the soldiers of that morning; recruits booked in the same day ate with
@@ -466,11 +479,12 @@ Loads refuse other format versions,
     flow): asked at low priority on the month's second day, so it never cuts into the realm's own
     spending; a treasury short of coins pays what it has. Under Economics v0 the module asks for food
     and people only (a second manifest, as realms' taxes), and the land alone decides the kinds.
-  - **Who reads whom**: Warfare reads owners, occupation, uprisings, wars, people and land facts;
-    nothing reads the army fields yet, so realms and markets don't depend on them. War losses
-    raising unrest wait for the battles.
+  - **Who reads whom**: Warfare reads owners, occupation, uprisings, wars, people, land facts and
+    the ways between provinces; nothing else reads the army fields, so realms, markets and diplomacy
+    don't depend on them. They learn of occupations and battles by events.
   - `simrun --armies` prints the soldiers, their share of the people, the companies and kinds, and
-    how many went home and deserted in the last year.
+    how many went home and deserted in the last year; then the last year's battles, the soldiers
+    killed in the last full year and the provinces occupied now.
   - **Measured** (Oct 16). Story 1 (`examples/unrest_check.rs ECONOMICS SEED drought armies`) comes
     out exactly as without troops on seeds 21, 3 and 7 under both economies. Over 150 quiet years
     (seed 21, `... quiet armies`) troops change little: Economics v0 88 uprisings against 89, 36
@@ -482,6 +496,77 @@ Loads refuse other format versions,
     0.23–0.39 ms a day more than 1.89–2.07 ms. Two changes got it there from about 0.6 ms: raising
     only a tenth or more below the number wanted, and one food request a province, not a company
     (each request and grant costs the engine about as much as a company's month).
+
+- **Armies moving and fighting** (step 7; the same Warfare "troops", tests in `army_tests.rs`,
+  `examples/war_check.rs`). Warfare runs daily now; raising and eating stay on the month's first
+  day, and a day with nobody moving, fighting or besieging costs a few checks.
+  - **Marching**: a company on its way (`army.next`, `army.days_left`, `army.dest`) counts down the
+    way's days divided by its pace (cavalry 1.5 times foot; a group set off together goes at its
+    slowest), along a route worked out when it was sent: through land its realm holds or occupies,
+    its enemies' land and land nobody owns, never a neutral's (tested). Land troops go by land
+    ways and ships by sea ways; land troops cross the sea only in a crossing. A company coming into a
+    province where enemies stand stops there. A route whose way is gone (the map changed) stops the
+    company and its general plans again.
+  - **The general** of each realm at war plans on the month's first day and whenever one of its
+    companies arrives, a battle ends or a province is taken. Targets in turn: its own land where
+    enemies stand or that an enemy occupies, then enemy provinces next to land it holds or occupies,
+    nearest its capital first, then enemy coasts facing its own across the sea. For each it sends
+    free field companies (in no group, standing, rested, awaiting no recruits, not in a battle),
+    nearest first by travel days, to gather in its provinces next to the target where no enemy
+    stands, each taking its realm's field soldiers up to a tenth of its people (`gather_share`), until
+    they bring 1.2 times the strength of the enemies standing in the target, counting their quarter
+    more on their own land (`outmatch`, `home_edge`). A target it can't send enough to waits. Once all
+    of a group (`army.group`, numbers never reused) has gathered and still outmatches the enemy
+    there, it sets off together. Companies with nothing to do go home to their province.
+  - **Battles**: where realms at war that day both have land troops standing in a province, each
+    day each side loses strength 3% of the other's (`battle_rate`), each side's blows up to a quarter
+    stronger or weaker at random (`luck`), and the side on its own land deals a quarter more. A
+    company's share of its side's loss is its share of the side's strength, and it loses that
+    strength over its kind's strength a soldier (levies 1, cavalry 2, heavy infantry 3): soldiers
+    killed ("killed", counted in the year's deaths). A side that has lost 30% of the soldiers it
+    fought with breaks (`break_share`): its field companies fall back to the nearest province of
+    their own where no enemy stands and aren't sent to attack for 10 days; its guards go back to the
+    people. When it ends, `Battle` names the province, who held the field, who broke and the killed,
+    and the realms module adds to the unrest there what a month of occupation adds, once a battle.
+  - **Sieges**: a realm's field companies standing in an enemy province where no enemy stands
+    besiege it (`army.siege_days`); after 30 days × (1 + its people / the world's middle province's
+    people), doubled for a capital and at most 180 days, Warfare sends `Occupied` and the realms
+    module marks it. They free their own province in half the time. Besiegers fewer than 1% of its
+    people make no progress; leaving loses it. Measured against the middle province because
+    provinces hold ten times more people on a small world than on a large one.
+  - **Across the sea**: a group gathers in its coastal provinces facing the target, with ships at
+    each enough to carry the soldiers there (5 a crewman, `carry`) and in all 1.2 times the enemy's
+    ships at the target, and crosses one stretch of sea. Enemy ships standing where it lands fight
+    the fleet first, worked out on arrival day by day; if the fleet breaks, everyone turns back and
+    the soldiers the surviving ships can't carry are lost at sea. After a landing the ships go back.
+    Fleets don't seek each other out otherwise. Tested: soldiers at sea never outnumber what the ships
+    with them carry.
+  - **War and peace on the day**: battles and sieges go on only between realms at war that day. At
+    a peace a realm with no war left sends all its field companies home; one still at war brings them
+    back from the former enemy's land and plans again (tested).
+  - **What is kept** (private state `armies-1`, saved): the food asked for, the groups, each moving
+    company's route, a group's pace, companies resting after breaking, the battles going on, the
+    provinces where a battle or siege may go on, the companies on the move, and those awaiting
+    recruits or their goods. Where companies stand is worked out again from the army fields after a
+    load. Tested: saving, loading and going back mid-march, mid-battle and mid-siege.
+  - **Measured** (Oct 16, `examples/war_check.rs`). Story 1 with armies (`examples/unrest_check.rs
+    ECONOMICS SEED drought armies`) comes out as before: the drought region rises up on seeds 21 and
+    3 (after 1.4 and 2.9 years on Economics v0, 1.4 and 2.0 under markets), not on 7, and the worlds
+    without the drought don't. Over 150 years of story 1's world (seed 21, `... long 150`), with
+    armies and without: on Economics v0 the 18 realms become 20 rather than 36, 22 rebellions are put
+    down and 3 win (without armies 18 win); under markets 29 rather than 49, 41 put down and 11 win
+    (without, 30 win). Starvation is no worse (8.6 per 1,000 a year against 8.9 on Economics v0, 7.7
+    against 8.4 under markets); soldiers get 99.2-99.9% of the food they ask for, and few famines
+    fall where armies stand away from home (at most 39 of a decade's 479 province-months). About 4
+    million soldiers are killed in the 150 years on Economics v0 and 10 million under markets, beside
+    about 130 million starved. Soldiers cross the sea: up to about 1,300 company-days afloat in a
+    decade under markets. Speed, large world under markets without unrest, on one worker thread: a
+    day that isn't a month's first costs nothing in peace (Warfare tells the engine it is idle and is
+    skipped); every day averaged, armies add 0.20 ms a day in peace (3.06 against 2.86 ms) and 2.1
+    ms a day through a year of war between the two biggest realms that border each other (4.88
+    against 2.80 ms). Getting there, the engine now sums only the quantities a module's own fields
+    hold around its stage, and checks the rest by their flows, which must come to nothing (before,
+    every stage summed every quantity: a daily module cost 15 ms a day).
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

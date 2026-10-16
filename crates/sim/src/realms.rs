@@ -224,7 +224,7 @@ static V1: Manifest = Manifest {
     // Realms are made over settled land: without people there is none.
     requires: &["pop.size"],
     emits: &[EventKind::Uprising, EventKind::Calmed, EventKind::Rebellion],
-    handles: &[EventKind::Occupied, EventKind::Peace, EventKind::Famine, EventKind::Succession],
+    handles: &[EventKind::Occupied, EventKind::Peace, EventKind::Famine, EventKind::Succession, EventKind::Battle],
     state_schema: "capitals-hunger-1",
     goods: &[],
 };
@@ -316,6 +316,20 @@ impl Module for Founding {
             Event::Succession { realm, how, .. } => {
                 if let Some(u) = &self.params.unrest {
                     succession(w, cx, u, realm, how);
+                }
+            }
+            // A battle fought on a realm's land stirs it there, once a battle, as a month of
+            // occupation does.
+            Event::Battle { province, .. } => {
+                let p = province as usize;
+                if let Some(u) = &self.params.unrest
+                    && w.owner.get(p).is_some_and(|&o| o != NONE)
+                {
+                    let was = w.unrest[p];
+                    w.unrest[p] = (was + u.occupied.round() as u64).min(LINE);
+                    if cx.traced(province) {
+                        cx.note(format!("a battle was fought here: unrest {was} rises to {}", w.unrest[p]));
+                    }
                 }
             }
             _ => {}

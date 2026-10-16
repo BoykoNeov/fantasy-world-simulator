@@ -1,8 +1,8 @@
 # Warfare "troops" (build step 7): the kinds of troops and how provinces raise them. The defaults a
 # new world gets; a world's own copy is saved with it, so editing this file changes new worlds only.
 #
-# Every province a realm holds keeps some of its people under arms, at home: a share in peace, a
-# bigger share while its realm is at war. Soldiers are people taken from the pops; they eat where
+# Every province a realm holds keeps some of its people under arms: a share in peace, standing at
+# home, and a bigger share while its realm is at war, which marches. Soldiers are people taken from the pops; they eat where
 # they stand, and the hungry desert home. An army entry is a company: soldiers of one kind from one
 # province.
 
@@ -33,9 +33,44 @@ bounty = 10.0
 money = "money"
 # The kind raised in place of a kind whose goods the province can't supply. It needs no goods.
 fallback = "levies"
+# The class of the troop tree whose kinds are ships: they move by sea, fight only ships, and carry
+# land troops across the sea.
+sea = "sea"
+
+# Moving and fighting. Guards (the peace-time share) stay home; field companies (the rest of the
+# war-time share) march under their realm's general, who gathers them in its provinces next to a
+# target and sends them in together once they outmatch the enemies standing there.
+#
+# A province where soldiers gather takes its realm's field soldiers up to this share of its people,
+# so its food isn't stretched more than about this much.
+gather_share = 0.1
+# The general attacks when it sends this many times the strength of the enemies standing in the
+# target, counting their edge on their own land.
+outmatch = 1.2
+# Each day of battle a side loses this share of the other side's strength (in strength: a soldier
+# killed is their kind's strength lost); each side's blows are up to `luck` stronger or weaker at
+# random, and the side on its own land deals `home_edge` more.
+battle_rate = 0.03
+luck = 0.25
+home_edge = 0.25
+# A side breaks once it has lost this share of the soldiers it fought with: its field companies fall
+# back to the nearest province of their own where no enemy stands, and aren't sent to attack for
+# `rest_days`; its guards go back to the people.
+break_share = 0.3
+rest_days = 10
+# Soldiers standing alone in an enemy province besiege it, and occupy it after
+# siege_base_days × (1 + its people / the people of the world's middle province) days, times
+# capital_siege for a capital, and then at most siege_max_days: about a month for a small province,
+# two for a middling one. Freeing a province of one's own takes free_siege of that. Besiegers fewer
+# than siege_min_share of its people make no progress.
+siege_base_days = 30.0
+capital_siege = 2.0
+siege_max_days = 180.0
+free_siege = 0.5
+siege_min_share = 0.01
 
 # The troop tree, written like the goods tree. Its leaves are the kinds; the classes split troops on
-# land from those at sea (fleets), for moving and fighting (the next piece).
+# land from those at sea (fleets).
 [tree]
 root = "troops"
 
@@ -54,19 +89,25 @@ sea = "crew"
 # its land that suits it (`land`: "ore" for land with ore in reach, "grazing" for food better from
 # herds, "woodland"; none for any land). `coast`: only provinces with a shore raise it. Under an
 # economy that keeps goods, each soldier raised uses up `per_soldier` of `good`; without them the
-# land alone decides.
+# land alone decides. `strength`: a soldier's strength in battle (ships' only against ships);
+# `speed`: a way's days are divided by it, and a group goes at its slowest; `carry`: for ships, the
+# soldiers each crewman takes across the sea.
 [kinds.levies]
 weight = 1.0
+strength = 1.0
 
 [kinds.heavy_infantry]
 weight = 0.5
 land = "ore"
 good = "tools"
 per_soldier = 1.0
+strength = 3.0
 
 [kinds.cavalry]
 weight = 0.5
 land = "grazing"
+strength = 2.0
+speed = 1.5
 
 [kinds.ships]
 weight = 0.3
@@ -74,3 +115,5 @@ land = "woodland"
 coast = true
 good = "timber"
 per_soldier = 1.0
+strength = 1.0
+carry = 5.0

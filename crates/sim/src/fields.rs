@@ -348,6 +348,13 @@ pub const FIELDS: &[FieldDef] = &[
     // Troops (step 7, Warfare "troops"): an army entry is a company of one kind from one province.
     FieldDef { default: Default::Empty, ..def("army.kind", Tier::Army, "troop kind: a node of the troop tree", 0.0, u16::MAX as f64) },
     FieldDef { default: Default::Empty, ..def("army.home", Tier::Army, "province id its soldiers came from", -UNBOUNDED, UNBOUNDED) },
+    // Armies moving and fighting (step 7, Warfare "troops"): companies march in groups.
+    FieldDef { default: Default::Empty, ..def("army.role", Tier::Army, "0 a guard that stays home, 1 a field company that marches", 0.0, 1.0) },
+    FieldDef { default: Default::Empty, ..def("army.group", Tier::Army, "the lowest company id of the group it marches in, none if in none", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.dest", Tier::Army, "province id it is going to, none when standing", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.next", Tier::Army, "province id it is on its way to next, none when standing", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.days_left", Tier::Army, "days until it reaches army.next", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.siege_days", Tier::Army, "days it has besieged the province it stands in", 0.0, UNBOUNDED) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {
