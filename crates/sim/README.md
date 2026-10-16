@@ -479,7 +479,7 @@ Loads refuse other format versions,
     arms: any war puts a whole realm on a war footing, but few wars go on at once. Treasuries still
     hold 9.9% of their land's coins (`examples/coin_spread.rs 7 50 armies`): the bounty is small
     beside taxes. Speed, large world under markets with wars, processor time on one worker thread:
-    0.27–0.39 ms a day more than 1.97–2.02 ms. Two changes got it there from about 0.6 ms: raising
+    0.23–0.39 ms a day more than 1.89–2.07 ms. Two changes got it there from about 0.6 ms: raising
     only a tenth or more below the number wanted, and one food request a province, not a company
     (each request and grant costs the engine about as much as a company's month).
 

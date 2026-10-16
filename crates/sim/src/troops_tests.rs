@@ -300,6 +300,16 @@ fn under_markets_soldiers_use_up_goods_and_realms_pay_a_bounty_for_each() {
     // Every soldier raised is still there, as levies.
     let all: u64 = sim.world.armies.size.iter().sum();
     assert_eq!(w.armies.size.iter().sum::<u64>(), all);
+    // One company of each kind from each province for each realm, the levies that take the
+    // unequipped included, after months of raising.
+    for s in [&mut sim, &mut bare] {
+        s.run_days(100);
+        let w = &s.world;
+        let mut seen = std::collections::BTreeSet::new();
+        for a in 0..w.armies.count() {
+            assert!(seen.insert((w.armies.realm[a], w.armies.home[a], w.armies.kind[a])), "company {a} is a second of its kind");
+        }
+    }
     assert_eq!((sim.problems, bare.problems), (Problems::default(), Problems::default()));
 }
 

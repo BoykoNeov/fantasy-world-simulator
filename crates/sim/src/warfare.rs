@@ -341,7 +341,7 @@ impl Module for Troops {
             if owner == NONE || !w.realms.alive(owner) {
                 continue;
             }
-            let mine: Vec<u32> = companies[prov].iter().copied().filter(|&a| w.armies.realm[a as usize] == owner).collect();
+            let mut mine: Vec<u32> = companies[prov].iter().copied().filter(|&a| w.armies.realm[a as usize] == owner).collect();
             let current: u64 = mine.iter().map(|&a| w.armies.size[a as usize]).sum();
             let total = people[prov] + current;
             if total == 0 {
@@ -366,17 +366,24 @@ impl Module for Troops {
                 let weights = kind_weights(w, prov, &res);
                 let order: Vec<u64> = (0..res.kinds.len() as u64).collect();
                 let parts = split_proportional(raise, &weights, &order);
-                let company = |w: &mut World, node: NodeId| -> u32 {
-                    mine.iter().copied().find(|&a| w.armies.kind[a as usize] == node).unwrap_or_else(|| w.armies.push(owner, prov as u32, node, 0))
+                // The province's company of a kind, made if it has none (and then found by the next
+                // kind that asks for it).
+                let company = |w: &mut World, mine: &mut Vec<u32>, node: NodeId| -> u32 {
+                    if let Some(a) = mine.iter().copied().find(|&a| w.armies.kind[a as usize] == node) {
+                        return a;
+                    }
+                    let a = w.armies.push(owner, prov as u32, node, 0);
+                    mine.push(a);
+                    a
                 };
                 for (k, &part) in parts.iter().enumerate() {
                     if part == 0 {
                         continue;
                     }
-                    let a = company(w, res.kinds[k].node);
+                    let a = company(w, &mut mine, res.kinds[k].node);
                     // Recruits a kind's goods can't equip join the fallback company: made now, so the
                     // grant knows where they go.
-                    let fallback = if self.coins && res.kinds[k].good.is_some() { company(w, res.kinds[res.fallback].node) } else { a };
+                    let fallback = if self.coins && res.kinds[k].good.is_some() { company(w, &mut mine, res.kinds[res.fallback].node) } else { a };
                     let tag = (a as u64) | (fallback as u64) << 32;
                     cx.request(pop_size, prov as u32, part, Priority::Normal, Cause::Raised, tag);
                 }
