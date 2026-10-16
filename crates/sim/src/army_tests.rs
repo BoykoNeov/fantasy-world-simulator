@@ -442,12 +442,13 @@ fn armies_on_the_march_in_battle_and_besieging_survive_saving_loading_and_going_
         assert_eq!(loaded.fingerprint(), twin.fingerprint(), "saved on day {d}");
         prints.push(sim.fingerprint());
     }
-    let today = sim.day;
+    let (today, now) = (sim.day, sim.fingerprint());
     for (&d, &print) in stops.iter().zip(&prints).rev() {
         sim.goto(d).unwrap();
         assert_eq!(sim.fingerprint(), print, "back to day {d}");
     }
     sim.goto(today).unwrap();
+    assert_eq!(sim.fingerprint(), now, "forward again to day {today}");
     assert_eq!(sim.problems, Problems::default());
 }
 
