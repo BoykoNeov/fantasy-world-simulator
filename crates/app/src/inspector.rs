@@ -204,12 +204,22 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
             w => format!("realms {a} and {b} are to make peace, realm {w} winning"),
         },
         Event::WarDeclared { war, attacker, defender, cause } => format!("realm {attacker} declared war on realm {defender} (war {war}): {}", cause.describe()),
-        Event::Peace { war, attacker, defender, winner } => match *winner {
+        // In a rebellion's war the rebels are the attacker.
+        Event::Peace { war, attacker, defender, winner, rebellion: true } => match *winner {
+            w if w == *defender => format!("the rebellion of realm {attacker} is over (war {war}): realm {defender} won and takes back all the rebels' land"),
+            w if w == *attacker => format!("realm {attacker} has won its freedom from realm {defender} (war {war}) and keeps the land it holds"),
+            _ => format!("peace between the rebels of realm {attacker} and realm {defender} (war {war}): nobody won, the rebels stay free"),
+        },
+        Event::Peace { war, attacker, defender, winner, rebellion: false } => match *winner {
             sim::grid::NONE => format!("peace between realms {attacker} and {defender} (war {war}): nobody won, all occupied land goes back"),
             w => format!("peace between realms {attacker} and {defender} (war {war}): realm {w} won and keeps the land it holds"),
         },
         Event::Occupied { by, .. } => format!("realm {by} took the province (or, if it owns it, freed it)"),
         Event::WarRefused { attacker, defender, why } => format!("the poke about realms {attacker} and {defender} was turned down: {}", why.describe()),
+        Event::Uprising { province, realm, seat } if province == seat => format!("the province rose up against realm {realm}"),
+        Event::Uprising { realm, seat, .. } => format!("the province joined the uprising against realm {realm} begun in province {seat}"),
+        Event::Calmed { realm, .. } => format!("the uprising against realm {realm} died down"),
+        Event::Rebellion { realm, from, provinces, .. } => format!("{provinces} provinces broke away from realm {from} as realm {realm}"),
     }
 }
 

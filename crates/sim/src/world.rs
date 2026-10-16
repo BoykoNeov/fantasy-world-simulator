@@ -144,6 +144,12 @@ pub struct World {
     pub occupier: Vec<u32>,
     /// Wars, going on and ended.
     pub wars: Wars,
+    /// How restless each province is (field `province.unrest`): thousandths of the way to an
+    /// uprising.
+    pub unrest: Vec<u64>,
+    /// The province where each province's uprising began (field `province.uprising`),
+    /// [`crate::grid::NONE`] where it is calm.
+    pub uprising: Vec<u32>,
 }
 
 impl World {
@@ -180,6 +186,8 @@ impl World {
             characters: Characters::default(),
             occupier: Vec::new(),
             wars: Wars::default(),
+            unrest: Vec::new(),
+            uprising: Vec::new(),
         }
     }
 
@@ -274,6 +282,9 @@ impl World {
             "war.ended" => U64(self.wars.ended.clone()),
             "war.winner" => U32(self.wars.winner.clone()),
             "war.truce_until" => U64(self.wars.truce_until.clone()),
+            "province.unrest" => U64(self.unrest.clone()),
+            "province.uprising" => U32(self.uprising.clone()),
+            "realm.broke_from" => U32(self.realms.broke_from.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -366,6 +377,9 @@ impl World {
             ("war.ended", U64(v)) => self.wars.ended = v,
             ("war.winner", U32(v)) => self.wars.winner = v,
             ("war.truce_until", U64(v)) => self.wars.truce_until = v,
+            ("province.unrest", U64(v)) => self.unrest = v,
+            ("province.uprising", U32(v)) => self.uprising = v,
+            ("realm.broke_from", U32(v)) => self.realms.broke_from = v,
             _ => return wrong(),
         }
         Ok(())
@@ -450,6 +464,9 @@ impl World {
             ("war.ended", U64(x)) => put(&mut wars.ended, at, x),
             ("war.winner", U32(x)) => put(&mut wars.winner, at, x),
             ("war.truce_until", U64(x)) => put(&mut wars.truce_until, at, x),
+            ("province.unrest", U64(x)) => put(&mut self.unrest, at, x),
+            ("province.uprising", U32(x)) => put(&mut self.uprising, at, x),
+            ("realm.broke_from", U32(x)) => put(&mut self.realms.broke_from, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -459,7 +476,7 @@ impl World {
     /// here.)
     pub fn grow_province_fields(&mut self) {
         let n = self.provinces.count;
-        for v in [&mut self.starved_this_year, &mut self.rain_shortfall] {
+        for v in [&mut self.starved_this_year, &mut self.rain_shortfall, &mut self.unrest] {
             if v.len() < n {
                 v.resize(n, 0);
             }
@@ -470,9 +487,9 @@ impl World {
                 v.resize(goods, 0);
             }
         }
-        // A new province belongs to nobody, and nobody occupies it, until whoever made it says
-        // otherwise.
-        for v in [&mut self.owner, &mut self.occupier] {
+        // A new province belongs to nobody, nobody occupies it and nobody rises up in it, until
+        // whoever made it says otherwise.
+        for v in [&mut self.owner, &mut self.occupier, &mut self.uprising] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }
@@ -480,16 +497,16 @@ impl World {
     }
 
     /// Give every realm the values other modules than the one that makes realms keep for it: a
-    /// row of stores (empty), a ruler and an heir (nobody). The engine calls it after every stage
-    /// and edit, so whoever adds a realm needn't own those, and they are there with their owners
-    /// off.
+    /// row of stores (empty), a ruler and an heir (nobody); and the realm it broke away from
+    /// (none), for realms made by hand. The engine calls it after every stage and edit, so whoever
+    /// adds a realm needn't own those, and they are there with their owners off.
     pub fn fit_realm_rows(&mut self) {
         let n = self.realms.count();
         let want = n * self.goods.stride();
         if self.realm_stock.len() < want {
             self.realm_stock.resize(want, 0);
         }
-        for v in [&mut self.realms.ruler, &mut self.realms.heir] {
+        for v in [&mut self.realms.ruler, &mut self.realms.heir, &mut self.realms.broke_from] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }

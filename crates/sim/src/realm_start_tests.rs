@@ -121,7 +121,8 @@ fn city_states_hold_one_to_three_provinces_all_settled() {
 
 #[test]
 fn the_frontier_leaves_land_between_realms_that_they_claim_over_time() {
-    let mut sim = world(params(0.0, 0.0, 1.0), 3);
+    // Without unrest: land changes hands here by claims alone, not by provinces breaking away.
+    let mut sim = world(RealmParams { unrest: None, ..params(0.0, 0.0, 1.0) }, 3);
     let realms = alive(&sim.world).len();
     let at_start = unowned_settled(&sim.world);
     check_realms(&sim.world);

@@ -341,6 +341,10 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("war.ended", Tier::War, "day of the peace, none while it goes on", 0.0, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("war.winner", Tier::War, "realm id that won, none while it goes on or when nobody won", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("war.truce_until", Tier::War, "first day the two may fight again, none while it goes on", 0.0, UNBOUNDED) },
+    // Unrest and rebellion (step 7, kept by the realms module).
+    FieldDef { default: Default::Zero, ..def("province.unrest", Tier::Province, "thousandths of the way to an uprising", 0.0, 1000.0) },
+    FieldDef { default: Default::NoOne, ..def("province.uprising", Tier::Province, "province id where its uprising began, none where calm", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::NoOne, ..def("realm.broke_from", Tier::Realm, "realm id it broke away from, none if it didn't", -UNBOUNDED, UNBOUNDED) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

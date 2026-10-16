@@ -44,6 +44,8 @@ pub mod taxonomy;
 pub mod terrain;
 #[cfg(test)]
 mod treasury_tests;
+#[cfg(test)]
+mod unrest_tests;
 pub mod warfare;
 pub mod weather;
 pub mod world;

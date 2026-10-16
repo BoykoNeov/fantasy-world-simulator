@@ -13,7 +13,8 @@
 //! every realm a ruler and heir (and turns realms on the default way if `--realms` isn't given).
 //! `--wars` keeps wars and truces between realms (started and ended only by pokes, from a scenario
 //! file, for now), turning realms on in the same way. Under `--economics markets`, realms tax and
-//! spend coins, and the realms line says where the coins sit.
+//! spend coins, and the realms line says where the coins sit. Realms come with unrest: an unrest
+//! line says how many provinces are in uprising and how many realms have broken away.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -204,6 +205,12 @@ fn print_realms(sim: &Sim) {
     );
     print_treasuries(sim, &alive, biggest, &names[biggest as usize]);
     print_rulers(sim, biggest, &names[biggest as usize]);
+    if sim.config.modules.realms.as_ref().is_some_and(|r| r.unrest.is_some()) {
+        let risen = w.uprising.iter().filter(|&&s| s != sim::grid::NONE).count();
+        let restless = w.unrest.iter().filter(|&&u| u >= sim::realms::LINE / 2).count();
+        let broke = w.realms.broke_from.iter().filter(|&&r| r != sim::grid::NONE).count();
+        println!("unrest: {risen} provinces in uprising, {restless} at least half way there; {broke} realms have broken away so far");
+    }
     let wars = &w.wars;
     if wars.count() > 0 {
         let on = (0..wars.count() as u32).filter(|&k| wars.ongoing(k)).count();

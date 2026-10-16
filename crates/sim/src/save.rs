@@ -53,7 +53,11 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// occupation, and the events of war and peace.
 /// Format 17 (step 7): taxes in the realms parameters, the realms module's private state (each
 /// realm's last capital), the cause of a realm's spending, and markets keeping the realms' stores.
-pub const FORMAT_VERSION: u32 = 17;
+/// Format 18 (step 7): unrest in the realms parameters and how long a rebellion's war lasts in the
+/// wars', unrest, uprisings and the realm each broke away from, the realms module's private state
+/// (each province's hunger this month too), the events of uprisings and rebellions, and a peace
+/// saying whether it ended a rebellion.
+pub const FORMAT_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

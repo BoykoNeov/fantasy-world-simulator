@@ -163,7 +163,7 @@ fn a_realm_that_loses_all_its_land_is_dissolved_and_its_other_wars_end() {
     sim.run_days(month + 2 - sim.day);
     let w = &sim.world;
     assert_eq!((w.wars.ended[war as usize], w.wars.winner[war as usize]), (month, c));
-    assert!(sim.event_log.entries.iter().any(|p| p.event == Event::Peace { war, attacker: c, defender: b, winner: c }));
+    assert!(sim.event_log.entries.iter().any(|p| p.event == Event::Peace { war, attacker: c, defender: b, winner: c, rebellion: false }));
     assert_eq!(sim.problems, Problems::default());
 }
 
@@ -277,7 +277,7 @@ fn wars_need_realms_and_a_sensible_truce() {
     assert!(e.contains("realm.capital"), "{e}");
     for bad in [-1.0, f64::NAN, f64::INFINITY] {
         let mut c = config(1);
-        c.modules.diplomacy = Some(WarParams { truce_years: bad });
+        c.modules.diplomacy = Some(WarParams { truce_years: bad, ..WarParams::default() });
         assert!(Sim::new(&c).is_err(), "{bad}");
     }
     // Realms without wars: no war entries, nobody occupied, and it saves and loads.
@@ -292,10 +292,12 @@ fn wars_need_realms_and_a_sensible_truce() {
 
 #[test]
 fn without_pokes_wars_change_nothing() {
+    // Without unrest, as rebels breaking away start wars of their own.
     let mut c = config(2);
+    c.modules.realms.as_mut().unwrap().unrest = None;
+    let mut wars = Sim::new(&c).unwrap();
     c.modules.diplomacy = None;
     let mut plain = Sim::new(&c).unwrap();
-    let mut wars = world(2);
     for s in [&mut plain, &mut wars] {
         s.run_to_year(s.calendar.date(0).year + 3);
     }

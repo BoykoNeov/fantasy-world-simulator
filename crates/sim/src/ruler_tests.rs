@@ -108,7 +108,9 @@ fn the_same_seed_makes_the_same_rulers() {
 
 #[test]
 fn over_a_century_rulers_die_and_heirs_take_over() {
-    let mut sim = world(2);
+    // Without unrest: realms that break away would bring founding rulers of their own.
+    let mut sim = Sim::new(&config(RealmParams { unrest: None, ..RealmParams::default() }, 2)).unwrap();
+    sim.strict = true;
     let start = sim.calendar.date(0).year;
     let mut announced = 0;
     for year in 1..=100 {

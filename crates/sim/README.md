@@ -43,7 +43,10 @@ owns each province, realms and their stores, armies, four new slots, requests th
 take, and the causes and event that come with them); format 14 the realms module's parameters in
 the configuration; format 15 rulers (the characters module's parameters, the character fields,
 each realm's ruler and heir, and the succession event); format 16 wars (the diplomacy module's
-parameters, the war fields, occupation, and the events of war and peace). Loads refuse other format versions,
+parameters, the war fields, occupation, and the events of war and peace); format 17 taxes; format 18
+unrest (its parameters, unrest, uprisings and the realm each broke away from, the realms module's
+private state with each province's hunger this month, the events of uprisings and rebellions, and
+a peace saying whether it ended a rebellion). Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
 
@@ -55,7 +58,7 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
   | Economics | `food` (default): monthly harvest and spoilage, keeps one store per province of the "food" class; `markets`: the eight goods and coins, made by workers from the land, used up and priced (see below); or off | monthly |
   | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
-  | Realms | `basic`: makes the starting realms and claims unowned settled land (see below); or off (the default until step 7's checks) | monthly |
+  | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below); or off (the default until step 7's checks) | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
   | Diplomacy | `wars`: wars, peace and truces between realms, by pokes (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
 
@@ -307,7 +310,8 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
   not among the tester's choices yet, like realms; a configuration (`ModuleConfig::diplomacy`), a
   scenario file or `simrun --wars` turns it on. It needs realms (refused without them).
   - **Wars** are entities like realms, kept as parallel arrays (`war.*` fields): the realm that
-    declared it and the one it was declared on, why (`war.cause`: so far only "the player's poke"),
+    declared it and the one it was declared on, why (`war.cause`: the player's poke, or rebels who
+    broke away),
     the day it began and the day of the peace, who won (nobody, or one of the two), and the first
     day the two may fight again (`war.truce_until`). Numbers are never reused: an ended war keeps
     its entry. Two realms are at war while a war between them goes on, under a truce until its truce
@@ -338,7 +342,8 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
     an order between the modules: trade will read the wars, while realms choosing war will read
     trade's stores and prices. Taxes already have realms reading markets' stores; the loop closes
     when markets reads owners and wars (trade and realms).
-  - With no pokes, worlds with wars on hold the same values as without (a test). Wars cost nothing
+  - With no pokes and no unrest, worlds with wars on hold the same values as without (a test);
+    with unrest, rebels who break away start wars of their own. Wars cost nothing
     measurable per day. `simrun` prints how many wars were declared, go on, were won and ended with
     nobody winning.
 - **Treasury and taxes** (step 7; Realms "basic" with markets, `realms.rs`, tests in
@@ -367,19 +372,62 @@ parameters, the war fields, occupation, and the events of war and peace). Loads 
   - A province an enemy occupies pays nobody and gets nothing, a capital too. A dissolved realm's
     treasury goes, at the next month's start, into the province that was last its capital (whoever
     holds it then taxes it), or the nearest with land if it sank. The realms module keeps each
-    realm's last capital as private state (schema `capitals-1`).
-  - Paying the provinces that raise troops waits for the troops piece.
+    realm's last capital as private state (schema `capitals-1`, now `capitals-hunger-1`: see unrest).
+  - Paying the provinces that raise troops waits for the troops piece. A province in uprising, too,
+    pays nobody and gets nothing (see unrest, below).
   - Treasuries hold 7.6% of their land's coins after a year, 9.5% after two and 10.0% from the third
     (large world, seed 7). Against the same world without realms over 50 years
     (`examples/coin_spread.rs`), the middle and the top tenth of provinces are as rich either way. The
     richest 1% settle near 10 times the world's coins a person, where without realms they keep
-    climbing (33 times by year 50, a drift markets already had).
+    climbing (33 times by year 50, a drift markets already had). Rerun with unrest on (Oct 16): treasuries
+    and the richest 1% are as before, but the single richest province reaches 120 times by year 50
+    (28 before), probably one that paid no taxes for a while: in uprising, or newly broken away.
   - Speed: the large world's day costs about 0.3 ms more than markets alone, as CPU time on one
     worker thread (about 15%), for the roughly 10,000 coin moves a month and their replies. Not
     re-measured on all cores, since the machine was fully busy; the budget check is step 7's checks
     piece. `simrun --economics markets --realms
     settled=1` prints the treasuries' share of all coins, the largest realm's treasury against its
     land's coins, and how rich capitals are against the world (the richest named).
+- **Unrest and rebellion** (step 7; Realms "basic", `realms.rs`, tests in `unrest_tests.rs`). On
+  with realms (`RealmParams::unrest`); a scenario file written before it has none, so it makes the
+  same world it made then.
+  - **Unrest** (`province.unrest`) is kept in thousandths of the way to an uprising (the line,
+    1000). Each month it fades (it halves in 2 quiet years; rounded by chance, so a little fades as
+    surely as a lot) and rises with the month before's hunger: 180 for a month in which 2% or more
+    of the province's people starved, in proportion for fewer. The realms module counts the starved
+    from `Famine` events through the month (private state, schema `capitals-hunger-1`) and reads
+    the people once at the month's start. Each month an enemy occupies it adds 25. A child heir adds
+    150 in every province of the realm, a contested succession 300 (from `Succession` events; a
+    grown heir or a founding adds nothing). Taxes add nothing yet: every realm taxes alike. War
+    losses wait for the armies.
+  - **Uprisings** (`province.uprising`, the province where it began) go by unrest as it stood at
+    the month's end, before the new month's is added. A province at the line rises up; a province
+    of 500 or more next to an uprising of its own realm joins it (one step a month); an uprising
+    dies down below 250. A realm's capital and land an enemy occupies never rise up (occupation puts
+    an uprising down; a freed province keeps its unrest). A province in uprising pays no taxes and
+    gets no spending. Events: `Uprising` (begun or joined) and `Calmed`.
+  - **Breaking away.** Provinces in uprising of one realm that hold together by the province ways,
+    3 or more, become a new realm (`Rebellion`): its capital the most populous of them, its unrest
+    spent, and `realm.broke_from` naming the realm it left. Its name comes from its number, as every
+    realm's; the rulers module gives it a ruler the same day. The wars module sets it at war with
+    the realm it left the day after (cause "rebellion"). Until armies can fight it out, a
+    rebellion's war still going after 5 years (`WarParams::rebel_war_years`) ends with the rebels
+    winning. At a rebellion's peace (`Peace` says so), the realm they left, winning, takes back all
+    their land; with the rebels or nobody winning, they stay free. A later, ordinary war between the
+    two hands over only what is occupied. Without wars kept, rebels are simply free.
+  - **How often** (story 1's world, `examples/unrest_check.rs`, the user's choice of speed). The
+    world's own famines are as deep and as long as the story-1 drought's: about 1% of
+    province-months starve more than 1% of the people, and every decade a few provinces have 7 or
+    more famine months within two years (populations grow until a poor harvest empties the stores).
+    So a famine's depth or length can't tell a drought from an ordinary bad patch; the setting is
+    the one at which the drought region rises up within 5 years on 2 of 3 seeds under both
+    economies (seeds 21 and 3, after 1.4 to 2.9 years; seed 7's drought starves too little), and
+    the same worlds without it don't. Left alone for 150 years (seed 21), the world's own famines
+    start about 5 uprisings a decade on Economics v0 and about 13 under markets, and the 18 realms
+    become 36 and 49: nothing joins realms together again until armies and wars of conquest come.
+    The work is a pass over the provinces once a month; it was not timed on its own.
+  - `simrun` prints how many provinces are in uprising, how many are at least half way there, and
+    how many realms have broken away.
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a

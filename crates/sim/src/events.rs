@@ -39,13 +39,23 @@ pub enum Event {
     WarDeclared { war: u32, attacker: u32, defender: u32, cause: crate::diplomacy::WarCause },
     /// War `war` has ended. `winner` (or nobody, [`crate::grid::NONE`]) keeps every province of the
     /// other's that it occupies; every other occupation between the two ends. The owner of
-    /// provinces hands them over on delivery.
-    Peace { war: u32, attacker: u32, defender: u32, winner: u32 },
+    /// provinces hands them over on delivery. `rebellion` when it was a rebellion's war: then the
+    /// realm the rebels broke from, winning, takes back all their land.
+    Peace { war: u32, attacker: u32, defender: u32, winner: u32, rebellion: bool },
     /// Realm `by` has taken `province` and occupies it, or, when `by` is its owner, freed it. The
     /// sender (warfare) sends it only for enemies at war; the owner of provinces applies it.
     Occupied { province: u32, by: u32 },
     /// A poke about war or peace between `attacker` and `defender` was turned down, and why.
     WarRefused { attacker: u32, defender: u32, why: crate::diplomacy::Refusal },
+    /// `province`, of realm `realm`, has risen up: in an uprising of its own (`seat` is
+    /// `province`), or joining the one that began in `seat`. It pays its realm nothing until the
+    /// uprising dies down.
+    Uprising { province: u32, realm: u32, seat: u32 },
+    /// The uprising in `province`, of realm `realm`, has died down.
+    Calmed { province: u32, realm: u32 },
+    /// Provinces in uprising have broken away from realm `from` as the new realm `realm`, with
+    /// `capital` its capital and `provinces` provinces. It is at war with `from` from the next day.
+    Rebellion { realm: u32, from: u32, capital: u32, provinces: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -63,6 +73,9 @@ pub enum EventKind {
     Peace,
     Occupied,
     WarRefused,
+    Uprising,
+    Calmed,
+    Rebellion,
 }
 
 impl EventKind {
@@ -72,15 +85,15 @@ impl EventKind {
     /// | class | value | kinds |
     /// | --- | --- | --- |
     /// | destruction and death | 0 | Famine, Drought, Succession, Occupied |
-    /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused |
-    /// | routine changes | 2 | Granted, Arrived |
+    /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion |
+    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
             // A province taken the day before a peace is handed over (or given back) by it.
             EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied => 0,
-            EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused => 1,
-            EventKind::Granted | EventKind::Arrived => 2,
+            EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion => 1,
+            EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -102,6 +115,9 @@ impl Event {
             Event::Peace { .. } => EventKind::Peace,
             Event::Occupied { .. } => EventKind::Occupied,
             Event::WarRefused { .. } => EventKind::WarRefused,
+            Event::Uprising { .. } => EventKind::Uprising,
+            Event::Calmed { .. } => EventKind::Calmed,
+            Event::Rebellion { .. } => EventKind::Rebellion,
         }
     }
 
@@ -118,15 +134,20 @@ impl Event {
                 pair(*a, *b)
             }
             Event::WarDeclared { war, .. } | Event::Peace { war, .. } => *war as u64,
-            Event::Occupied { province, .. } => *province as u64,
+            Event::Occupied { province, .. } | Event::Uprising { province, .. } | Event::Calmed { province, .. } => *province as u64,
+            Event::Rebellion { realm, .. } => *realm as u64,
         }
     }
 
     /// The province this event is about, if it is about one.
     pub fn province(&self) -> Option<u32> {
         match self {
-            Event::Famine { province, .. } | Event::Arrived { province, .. } | Event::Occupied { province, .. } => Some(*province),
-            Event::Succession { capital, .. } => Some(*capital),
+            Event::Famine { province, .. }
+            | Event::Arrived { province, .. }
+            | Event::Occupied { province, .. }
+            | Event::Uprising { province, .. }
+            | Event::Calmed { province, .. } => Some(*province),
+            Event::Succession { capital, .. } | Event::Rebellion { capital, .. } => Some(*capital),
             _ => None,
         }
     }

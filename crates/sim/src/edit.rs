@@ -282,8 +282,8 @@ impl Edit {
                 w.grow_province_fields();
                 let moved = map.expect("a province edit changes the map").moved_cells();
                 if let Edit::Split { .. } = self {
-                    // The new province's land had the rain, and the owner, of the province that gave
-                    // the most of it.
+                    // The new province's land had the rain, the owner and the mood of the province
+                    // that gave the most of it.
                     let mut from: Vec<u32> = moved.iter().map(|m| m.1).collect();
                     from.sort_unstable();
                     if let Some(run) = from.chunk_by(|a, b| a == b).max_by_key(|run| run.len()) {
@@ -291,6 +291,8 @@ impl Edit {
                         w.rain_shortfall[new] = w.rain_shortfall[run[0] as usize];
                         w.owner[new] = w.owner[run[0] as usize];
                         w.occupier[new] = w.occupier[run[0] as usize];
+                        w.unrest[new] = w.unrest[run[0] as usize];
+                        w.uprising[new] = w.uprising[run[0] as usize];
                     }
                 }
                 share_out(w, &moved);

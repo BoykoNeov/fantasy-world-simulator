@@ -6,6 +6,11 @@
 //! start and end by the player's pokes ([`Event::DeclareWar`], [`Event::ForcePeace`]); why realms
 //! choose war themselves is a later version's.
 //!
+//! Rebels who break away ([`Event::Rebellion`]) are at war with the realm they left, from the day
+//! after. Until armies can fight it out, a rebellion's war still going after
+//! [`WarParams::rebel_war_years`] ends with the rebels free: they win. At a rebellion's peace the
+//! realm they broke from, winning, takes back all their land (the realms module does that).
+//!
 //! At the peace the winner keeps every province of the loser's it occupies, and everything else
 //! goes back: no peace changes hands any other land, and with nobody winning nothing changes hands
 //! at all. Diplomacy works out nothing of this itself: it sends [`Event::Peace`], and the owner of
@@ -83,22 +88,28 @@ impl Wars {
     }
 }
 
-/// Why a war was declared. Later versions add their reasons (food, a rich province, rebellion).
+/// Why a war was declared. Later versions add their reasons (food, a rich province).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum WarCause {
     /// The player's poke.
     Poke = 0,
+    /// Rebels broke away, and fight the realm they left.
+    Rebellion = 1,
 }
 
 impl WarCause {
-    pub fn from_u8(_n: u8) -> WarCause {
-        WarCause::Poke
+    pub fn from_u8(n: u8) -> WarCause {
+        match n {
+            1 => WarCause::Rebellion,
+            _ => WarCause::Poke,
+        }
     }
 
     pub fn describe(self) -> &'static str {
         match self {
             WarCause::Poke => "declared by the player",
+            WarCause::Rebellion => "rebels broke away and fight for their freedom",
         }
     }
 }
@@ -192,11 +203,19 @@ pub fn enemies(w: &World) -> Vec<Vec<u32>> {
 pub struct WarParams {
     /// How long a truce lasts after a peace, in years.
     pub truce_years: f64,
+    /// A rebellion's war still going after this many years ends with the rebels winning: a stand-in
+    /// until armies fight it out. Scenario files written before rebellions get the default.
+    #[serde(default = "rebel_war_years")]
+    pub rebel_war_years: f64,
+}
+
+fn rebel_war_years() -> f64 {
+    5.0
 }
 
 impl Default for WarParams {
     fn default() -> Self {
-        WarParams { truce_years: 5.0 }
+        WarParams { truce_years: 5.0, rebel_war_years: rebel_war_years() }
     }
 }
 
@@ -217,7 +236,7 @@ static V0: Manifest = Manifest {
     // Wars are between realms: without them there is nobody to fight.
     requires: &["realm.capital"],
     emits: &[EventKind::WarDeclared, EventKind::Peace, EventKind::WarRefused],
-    handles: &[EventKind::DeclareWar, EventKind::ForcePeace],
+    handles: &[EventKind::DeclareWar, EventKind::ForcePeace, EventKind::Rebellion],
     state_schema: "none",
     goods: &[],
 };
@@ -232,17 +251,25 @@ impl Module for WarState {
         if !(t.is_finite() && t >= 0.0) {
             return Err("a truce lasts zero years or more".into());
         }
+        let r = self.params.rebel_war_years;
+        if !(r.is_finite() && r >= 0.0) {
+            return Err("a rebellion's war lasts zero years or more".into());
+        }
         Ok(())
     }
 
-    /// Wars with a realm that has been dissolved end, won by the other side.
+    /// Wars with a realm that has been dissolved end, won by the other side; a rebellion's war that
+    /// has gone on long enough ends with the rebels free.
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
+        let rebels_free = (self.params.rebel_war_years * cx.calendar.days_per_year() as f64).round() as u64;
         for k in 0..w.wars.count() as u32 {
             if !w.wars.ongoing(k) {
                 continue;
             }
-            let (a, d) = (w.wars.attacker[k as usize], w.wars.defender[k as usize]);
+            let ku = k as usize;
+            let (a, d) = (w.wars.attacker[ku], w.wars.defender[ku]);
             let winner = match (w.realms.alive(a), w.realms.alive(d)) {
+                (true, true) if WarCause::from_u8(w.wars.cause[ku]) == WarCause::Rebellion && cx.day >= w.wars.began[ku].saturating_add(rebels_free) => a,
                 (true, true) => continue,
                 (true, false) => a,
                 (false, true) => d,
@@ -254,7 +281,11 @@ impl Module for WarState {
 
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         match *e {
-            Event::DeclareWar { attacker, defender } => declare(w, cx, attacker, defender),
+            Event::DeclareWar { attacker, defender } => declare(w, cx, attacker, defender, WarCause::Poke),
+            // The rebels fight the realm they left, if both are still there.
+            Event::Rebellion { realm, from, .. } if w.realms.alive(realm) && w.realms.alive(from) && w.wars.current(realm, from).is_none() => {
+                declare(w, cx, realm, from, WarCause::Rebellion)
+            }
             Event::ForcePeace { a, b, winner } => {
                 let refused = if a == b {
                     Some(Refusal::SameRealm)
@@ -276,9 +307,9 @@ impl Module for WarState {
     }
 }
 
-/// `attacker` declares war on `defender` today, by the player's poke. A truce between them is
-/// broken: it ends today.
-fn declare(w: &mut World, cx: &mut Ctx, attacker: u32, defender: u32) {
+/// `attacker` declares war on `defender` today, for `cause`. A truce between them is broken: it
+/// ends today.
+fn declare(w: &mut World, cx: &mut Ctx, attacker: u32, defender: u32, cause: WarCause) {
     let why = if attacker == defender {
         Some(Refusal::SameRealm)
     } else if !(w.realms.alive(attacker) && w.realms.alive(defender)) {
@@ -298,12 +329,12 @@ fn declare(w: &mut World, cx: &mut Ctx, attacker: u32, defender: u32) {
             wars.truce_until[k as usize] = cx.day;
         }
     }
-    let war = wars.push(attacker, defender, WarCause::Poke, cx.day);
-    cx.emit(Event::WarDeclared { war, attacker, defender, cause: WarCause::Poke });
+    let war = wars.push(attacker, defender, cause, cx.day);
+    cx.emit(Event::WarDeclared { war, attacker, defender, cause });
     for r in [attacker, defender] {
         let capital = w.realms.capital[r as usize];
         if cx.traced(capital) {
-            cx.note(format!("realm {attacker} declared war on realm {defender} (war {war}): {}", WarCause::Poke.describe()));
+            cx.note(format!("realm {attacker} declared war on realm {defender} (war {war}): {}", cause.describe()));
         }
     }
 }
@@ -317,7 +348,8 @@ fn end(w: &mut World, cx: &mut Ctx, params: &WarParams, k: u32, winner: u32) {
     w.wars.winner[ku] = winner;
     w.wars.truce_until[ku] = cx.day.saturating_add(truce);
     let (attacker, defender) = (w.wars.attacker[ku], w.wars.defender[ku]);
-    cx.emit(Event::Peace { war: k, attacker, defender, winner });
+    let rebellion = WarCause::from_u8(w.wars.cause[ku]) == WarCause::Rebellion;
+    cx.emit(Event::Peace { war: k, attacker, defender, winner, rebellion });
     for r in [attacker, defender] {
         let capital = w.realms.capital.get(r as usize).copied().unwrap_or(NONE);
         if capital != NONE && cx.traced(capital) {

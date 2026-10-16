@@ -43,6 +43,18 @@
 //! kept by the economics module (coins keep one keeper), so all of it is asked of that module by
 //! moves; the realms module is built with a manifest that asks for coins only when the world keeps
 //! them ([`Founding::new`]). Under Economics v0 there are no coins, and treasuries stay empty.
+//!
+//! Provinces grow restless ([`UnrestParams`]; `province.unrest`, in thousandths of the way to an
+//! uprising). Each month unrest fades, and rises with hunger (the share of the people who starved
+//! that month, from [`Event::Famine`]) and with an enemy's occupation; a child heir or a contested
+//! succession ([`Event::Succession`]) stirs a whole realm at once. A province that reaches the line
+//! rises up (`province.uprising`): it pays its realm nothing and is paid nothing. A neighbouring
+//! province of the same realm restless enough joins it, one step a month, and an uprising dies down
+//! once unrest has fallen far enough. A realm's capital and occupied land never rise up. Provinces
+//! in uprising that hold together, enough of them, break away as a new realm ([`Event::Rebellion`])
+//! that remembers the realm it left (`realm.broke_from`); the wars module sets them at war with it.
+//! At the peace of a rebellion's war, the realm they left, winning, takes back all their land;
+//! otherwise they stay free. Without wars kept, rebels are simply free.
 
 use crate::events::{Event, EventKind};
 use crate::fields::known;
@@ -64,6 +76,8 @@ pub struct Realms {
     /// characters module); [`NONE`] for none.
     pub ruler: Vec<u32>,
     pub heir: Vec<u32>,
+    /// The realm it broke away from (field `realm.broke_from`); [`NONE`] if it didn't.
+    pub broke_from: Vec<u32>,
 }
 
 impl Realms {
@@ -94,11 +108,56 @@ pub struct RealmParams {
     /// the defaults.
     #[serde(default)]
     pub taxes: TaxParams,
+    /// Unrest and rebellion; none for no unrest. Scenario files written before unrest have none, so
+    /// they make the same world they made then.
+    #[serde(default)]
+    pub unrest: Option<UnrestParams>,
 }
 
 impl Default for RealmParams {
     fn default() -> Self {
-        RealmParams { settled: 1.0, city_states: 0.0, frontier: 0.0, provinces_per_realm: 25.0, unclaimed_share: 0.6, claim_per_month: 0.005, taxes: TaxParams::default() }
+        RealmParams {
+            settled: 1.0,
+            city_states: 0.0,
+            frontier: 0.0,
+            provinces_per_realm: 25.0,
+            unclaimed_share: 0.6,
+            claim_per_month: 0.005,
+            taxes: TaxParams::default(),
+            unrest: Some(UnrestParams::default()),
+        }
+    }
+}
+
+/// The line: a province whose unrest reaches it rises up. Unrest is kept in thousandths of it.
+pub const LINE: u64 = 1000;
+
+/// How provinces grow restless, rise up and break away. Unrest is in thousandths of the way to an
+/// uprising ([`LINE`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UnrestParams {
+    /// Years for unrest to fall by half, with nothing stirring it.
+    pub half_life_years: f64,
+    /// Unrest a month of famine adds: a month in which `famine_share` or more of a province's people
+    /// starved, and in proportion for fewer.
+    pub famine: f64,
+    pub famine_share: f64,
+    /// Unrest each month an enemy occupies the province adds.
+    pub occupied: f64,
+    /// Unrest a child heir, and a contested succession, add in every province of the realm.
+    pub child_heir: f64,
+    pub claimant: f64,
+    /// A province next to an uprising of its own realm, as restless as this or more, joins it.
+    pub join: u64,
+    /// An uprising dies down in a province once its unrest falls below this.
+    pub calm: u64,
+    /// Provinces in uprising that hold together, this many or more, break away as a realm.
+    pub breakaway: u32,
+}
+
+impl Default for UnrestParams {
+    fn default() -> Self {
+        UnrestParams { half_life_years: 2.0, famine: 180.0, famine_share: 0.02, occupied: 25.0, child_heir: 150.0, claimant: 300.0, join: 500, calm: 250, breakaway: 3 }
     }
 }
 
@@ -137,6 +196,9 @@ pub struct Founding {
     taxes: bool,
     /// Each realm's capital as last seen alive, so a dissolved realm's coins know where to go.
     last_capital: Vec<u32>,
+    /// People who starved in each province this month, as famines are told; turned into unrest at
+    /// the next month's start.
+    starved: Vec<u64>,
 }
 
 impl Founding {
@@ -145,7 +207,7 @@ impl Founding {
     /// version name and private state, so saves and scenario files don't depend on which it is;
     /// the configuration picks by the economics chosen.
     pub fn new(params: RealmParams, taxes: bool) -> Founding {
-        Founding { params, taxes, last_capital: Vec::new() }
+        Founding { params, taxes, last_capital: Vec::new(), starved: Vec::new() }
     }
 }
 
@@ -155,15 +217,15 @@ static V1: Manifest = Manifest {
     tier: crate::fields::Tier::Realm,
     cadence: Cadence::Monthly,
     reads: &["pop.province", "pop.size", "province.cells", "province.center"],
-    owns: &["province.owner", "realm.capital", "province.occupier"],
+    owns: &["province.owner", "realm.capital", "province.occupier", "province.unrest", "province.uprising", "realm.broke_from"],
     requests: &[],
     asks: &[],
     moves: &[],
     // Realms are made over settled land: without people there is none.
     requires: &["pop.size"],
-    emits: &[],
-    handles: &[EventKind::Occupied, EventKind::Peace],
-    state_schema: "capitals-1",
+    emits: &[EventKind::Uprising, EventKind::Calmed, EventKind::Rebellion],
+    handles: &[EventKind::Occupied, EventKind::Peace, EventKind::Famine, EventKind::Succession],
+    state_schema: "capitals-hunger-1",
     goods: &[],
 };
 
@@ -204,12 +266,33 @@ impl Module for Founding {
         if !(t.capital_weight.is_finite() && t.capital_weight >= 1.0 && t.capital_weight <= 1000.0) {
             return Err("taxes: the capital counts from 1 to 1000 times its people".into());
         }
+        if let Some(u) = &p.unrest {
+            if !(u.half_life_years.is_finite() && u.half_life_years > 0.0) {
+                return Err("unrest: it takes more than zero years to fall by half".into());
+            }
+            if ![u.famine, u.occupied, u.child_heir, u.claimant].iter().all(|x| x.is_finite() && (0.0..=LINE as f64).contains(x)) {
+                return Err(format!("unrest: what famine, occupation and successions add goes from 0 to {LINE}"));
+            }
+            if !(u.famine_share > 0.0 && u.famine_share <= 1.0) {
+                return Err("unrest: a month of famine is one in which more than none, up to all, of the people starve".into());
+            }
+            if !(u.calm <= u.join && u.join <= LINE) {
+                return Err(format!("unrest: an uprising dies down below the unrest a province joins at, which is at most {LINE}"));
+            }
+            if u.breakaway < 1 {
+                return Err("unrest: a realm that breaks away holds a province or more".into());
+            }
+        }
         Ok(())
     }
 
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
         let (owner, capital) = found(w, &self.params, cx.seed);
-        w.occupier = vec![NONE; owner.len()];
+        let n = owner.len();
+        w.occupier = vec![NONE; n];
+        w.unrest = vec![0; n];
+        w.uprising = vec![NONE; n];
+        w.realms.broke_from = vec![NONE; capital.len()];
         w.owner = owner;
         w.realms.capital = capital;
         self.remember(w);
@@ -218,16 +301,30 @@ impl Module for Founding {
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         match *e {
             Event::Occupied { province, by } => occupy(w, cx, province, by),
-            Event::Peace { war, attacker, defender, winner } => {
+            Event::Peace { war, attacker, defender, winner, rebellion } => {
                 // The peace may dissolve a realm: its capital is kept first.
                 self.remember(w);
-                peace(w, cx, war, attacker, defender, winner);
+                peace(w, cx, war, attacker, defender, winner, rebellion);
+            }
+            Event::Famine { province, starved } if self.params.unrest.is_some() => {
+                let p = province as usize;
+                if self.starved.len() <= p {
+                    self.starved.resize(w.provinces.count.max(p + 1), 0);
+                }
+                self.starved[p] += starved;
+            }
+            Event::Succession { realm, how, .. } => {
+                if let Some(u) = &self.params.unrest {
+                    succession(w, cx, u, realm, how);
+                }
             }
             _ => {}
         }
     }
 
-    /// Claims, then taxes and spending.
+    /// Claims, then taxes and spending, then uprisings and realms breaking away, as unrest stood at
+    /// the month's end, then the new month's unrest (last, so a realm made today is in nobody's way
+    /// before tomorrow).
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         if w.realms.count() == 0 {
             return;
@@ -237,14 +334,20 @@ impl Module for Founding {
         if self.taxes {
             self.tax(w, cx);
         }
+        if let Some(u) = self.params.unrest.clone() {
+            rise(w, cx, &u);
+            break_away(w, cx, &u);
+            self.stir(w, cx, &u);
+            self.remember(w);
+        }
     }
 
     fn save_state(&self) -> Vec<u8> {
-        crate::sim::to_bytes(&self.last_capital)
+        crate::sim::to_bytes(&(&self.last_capital, &self.starved))
     }
 
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.last_capital = postcard::from_bytes(bytes).map_err(|e| format!("Realms state: {e}"))?;
+        (self.last_capital, self.starved) = postcard::from_bytes(bytes).map_err(|e| format!("Realms state: {e}"))?;
         Ok(())
     }
 }
@@ -294,8 +397,8 @@ impl Founding {
     }
 
     /// Taxes and spending, asked of the keeper of the coins and moved tonight, the taxes first.
-    /// Every province a realm holds and no enemy occupies pays a share of its coins into the
-    /// treasury. Every realm spends a share of its treasury as it stood this morning (so it always
+    /// Every province a realm holds, that no enemy occupies and that hasn't risen up, pays a share
+    /// of its coins into the treasury. Every realm spends a share of its treasury as it stood this morning (so it always
     /// has it) over those provinces by their people, the capital's (if it holds it) counted
     /// several times. A dissolved realm's coins all go to the land it last had as its capital.
     fn tax(&self, w: &World, cx: &mut Ctx) {
@@ -311,7 +414,8 @@ impl Founding {
         for p in 0..w.provinces.count {
             let r = w.owner[p];
             let occupied = w.occupier.get(p).is_some_and(|&o| o != NONE);
-            if r == NONE || !w.realms.alive(r) || occupied || w.provinces.cells[p] == 0 {
+            let risen = w.uprising.get(p).is_some_and(|&s| s != NONE);
+            if r == NONE || !w.realms.alive(r) || occupied || risen || w.provinces.cells[p] == 0 {
                 continue;
             }
             paying[r as usize].push(p as u32);
@@ -346,6 +450,149 @@ impl Founding {
                 }
             }
         }
+    }
+}
+
+impl Founding {
+    /// The month's unrest: what there was fades, and the last month's hunger and this month's
+    /// occupation add to it.
+    fn stir(&mut self, w: &mut World, cx: &mut Ctx, u: &UnrestParams) {
+        let months = cx.calendar.months_per_year() as f64;
+        let keep = 0.5f64.powf(1.0 / (u.half_life_years * months));
+        let people = w.province_population();
+        let n = w.provinces.count;
+        self.starved.resize(n, 0);
+        for p in 0..n {
+            let starved = std::mem::take(&mut self.starved[p]);
+            if w.unrest[p] == 0 && starved == 0 && w.occupier[p] == NONE {
+                continue;
+            }
+            let was = w.unrest[p];
+            let share = if starved == 0 { 0.0 } else { starved as f64 / (people[p] + starved) as f64 };
+            let hunger = u.famine * (share / u.famine_share).min(1.0);
+            let occupied = if w.occupier[p] != NONE { u.occupied } else { 0.0 };
+            // Rounded at random, so a little unrest fades as surely as a lot does.
+            let now = round_stochastic(was as f64 * keep + hunger + occupied, cx.seed, Rng::Realms, cx.day, p as u64, purpose("unrest"));
+            w.unrest[p] = now.min(LINE);
+            if cx.traced(p as u32) {
+                cx.note(format!(
+                    "unrest {was} fades to {:.0}; {:.1}% of the people starved last month, adding {hunger:.0}; {}; now {} of {LINE}",
+                    was as f64 * keep,
+                    100.0 * share,
+                    if occupied > 0.0 { format!("occupied by an enemy, adding {occupied:.0}") } else { "not occupied".to_string() },
+                    w.unrest[p]
+                ));
+            }
+        }
+    }
+}
+
+/// A new ruler came to realm `realm`'s throne: a child heir or a contested succession stirs every
+/// province it holds.
+fn succession(w: &mut World, cx: &mut Ctx, u: &UnrestParams, realm: u32, how: crate::characters::Succession) {
+    use crate::characters::Succession;
+    let add = match how {
+        Succession::Child => u.child_heir,
+        Succession::Claimant => u.claimant,
+        Succession::Never | Succession::Founded | Succession::Heir => return,
+    } as u64;
+    for p in 0..w.provinces.count {
+        if w.owner[p] == realm && w.provinces.cells[p] > 0 {
+            w.unrest[p] = (w.unrest[p] + add).min(LINE);
+            if cx.traced(p as u32) {
+                cx.note(format!("the realm's new ruler is {}: unrest rises by {add} to {}", how.describe(), w.unrest[p]));
+            }
+        }
+    }
+}
+
+/// Whether province `p` may rise up: land with people, held by a living realm, not its capital, no
+/// enemy occupying it.
+fn may_rise(w: &World, people: &[u64], p: usize) -> bool {
+    let r = w.owner[p];
+    r != NONE && w.realms.alive(r) && w.realms.capital[r as usize] != p as u32 && w.occupier[p] == NONE && w.provinces.cells[p] > 0 && people[p] > 0
+}
+
+/// Uprisings, as unrest stood at the month's end: they die down where it has fallen below the calm, provinces at the line rise up, and provinces restless enough next to an
+/// uprising of their own realm (as the uprisings stood before) join it.
+fn rise(w: &mut World, cx: &mut Ctx, u: &UnrestParams) {
+    let people = w.province_population();
+    for p in 0..w.provinces.count {
+        if w.uprising[p] != NONE && w.unrest[p] < u.calm {
+            w.uprising[p] = NONE;
+            cx.emit(Event::Calmed { province: p as u32, realm: w.owner[p] });
+            if cx.traced(p as u32) {
+                cx.note(format!("unrest {} is below {}: the uprising dies down", w.unrest[p], u.calm));
+            }
+        }
+    }
+    let before = w.uprising.clone();
+    for p in 0..w.provinces.count {
+        if before[p] != NONE || !may_rise(w, &people, p) {
+            continue;
+        }
+        let r = w.owner[p];
+        let seat = if w.unrest[p] >= LINE {
+            Some(p as u32)
+        } else if w.unrest[p] >= u.join {
+            w.routes.of(p as u32).map(|l| l.other(p as u32) as usize).filter(|&q| before[q] != NONE && w.owner[q] == r).map(|q| before[q]).min()
+        } else {
+            None
+        };
+        if let Some(seat) = seat {
+            w.uprising[p] = seat;
+            cx.emit(Event::Uprising { province: p as u32, realm: r, seat });
+            if cx.traced(p as u32) {
+                let how = if seat == p as u32 { format!("reached the line, {LINE}: the province rises up") } else { format!("is {} or more, next to the uprising begun in province {seat}: it joins", u.join) };
+                cx.note(format!("unrest {} {how}", w.unrest[p]));
+            }
+        }
+    }
+}
+
+/// Provinces in uprising that hold together (by the province ways), all of one realm and enough of
+/// them, break away as a new realm, its capital the most populous of them. Their unrest is spent.
+fn break_away(w: &mut World, cx: &mut Ctx, u: &UnrestParams) {
+    let people = w.province_population();
+    let n = w.provinces.count;
+    let mut seen = vec![false; n];
+    for start in 0..n {
+        if seen[start] || w.uprising[start] == NONE {
+            continue;
+        }
+        let from = w.owner[start];
+        let mut group = vec![start as u32];
+        seen[start] = true;
+        let mut k = 0;
+        while k < group.len() {
+            let p = group[k];
+            for l in w.routes.of(p) {
+                let q = l.other(p) as usize;
+                if !seen[q] && w.uprising[q] != NONE && w.owner[q] == from {
+                    seen[q] = true;
+                    group.push(q as u32);
+                }
+            }
+            k += 1;
+        }
+        if group.len() < u.breakaway as usize {
+            continue;
+        }
+        group.sort_unstable();
+        let realm = w.realms.count() as u32;
+        let capital = *group.iter().max_by(|&&a, &&b| people[a as usize].cmp(&people[b as usize]).then(b.cmp(&a))).expect("not empty");
+        w.realms.capital.push(capital);
+        w.realms.broke_from.push(from);
+        for &p in &group {
+            let p = p as usize;
+            w.owner[p] = realm;
+            w.uprising[p] = NONE;
+            w.unrest[p] = 0;
+            if cx.traced(p as u32) {
+                cx.note(format!("{} provinces in uprising hold together: they break away from realm {from} as realm {realm}", group.len()));
+            }
+        }
+        cx.emit(Event::Rebellion { realm, from, capital, provinces: group.len() as u32 });
     }
 }
 
@@ -561,6 +808,10 @@ fn occupy(w: &mut World, cx: &mut Ctx, province: u32, by: u32) {
         return;
     };
     w.occupier[p] = to;
+    // An enemy holding the province puts its uprising down.
+    if to != NONE {
+        w.uprising[p] = NONE;
+    }
     if cx.traced(province) {
         let what = if to == NONE { format!("freed by its owner, realm {owner}") } else { format!("occupied by realm {by}, at war with its owner, realm {owner}") };
         cx.note(format!("the province was {what}"));
@@ -568,9 +819,21 @@ fn occupy(w: &mut World, cx: &mut Ctx, province: u32, by: u32) {
 }
 
 /// War `war` between `attacker` and `defender` has ended: `winner` (or nobody) takes every province
-/// of the other's it occupies, and every other occupation between the two ends.
-fn peace(w: &mut World, cx: &mut Ctx, war: u32, attacker: u32, defender: u32, winner: u32) {
+/// of the other's it occupies, and every other occupation between the two ends. At a rebellion's
+/// peace won by the realm the rebels broke from, it takes back all their land.
+#[allow(clippy::too_many_arguments)]
+fn peace(w: &mut World, cx: &mut Ctx, war: u32, attacker: u32, defender: u32, winner: u32, rebellion: bool) {
+    let loser = if winner == attacker { defender } else if winner == defender { attacker } else { NONE };
+    let retaken = rebellion && loser != NONE && w.realms.broke_from.get(loser as usize) == Some(&winner);
     for p in 0..w.provinces.count {
+        if retaken && w.owner[p] == loser {
+            w.owner[p] = winner;
+            w.occupier[p] = NONE;
+            if cx.traced(p as u32) {
+                cx.note(format!("peace after war {war}: the rebellion is over, and the province goes back to realm {winner}"));
+            }
+            continue;
+        }
         let (owner, by) = (w.owner[p], w.occupier[p]);
         if !((owner, by) == (attacker, defender) || (owner, by) == (defender, attacker)) {
             continue;
@@ -620,6 +883,13 @@ fn settle(w: &mut World) {
         let by = w.occupier[p];
         if by != NONE && (by == w.owner[p] || w.owner[p] == NONE || !w.realms.alive(by)) {
             w.occupier[p] = NONE;
+        }
+    }
+    // Nor uprisings. Nobody rises up in land nobody holds, a capital, or land an enemy occupies.
+    for p in 0..w.uprising.len().min(w.provinces.count) {
+        let r = w.owner[p];
+        if w.uprising[p] != NONE && (r == NONE || !w.realms.alive(r) || w.realms.capital[r as usize] == p as u32 || w.occupier[p] != NONE) {
+            w.uprising[p] = NONE;
         }
     }
 }
