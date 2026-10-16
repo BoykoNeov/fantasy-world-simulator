@@ -10,6 +10,7 @@ struct MapParams {
     layers1: vec4<f32>,  // opacity: famine, provinces; lines: coasts, rivers
     layers2: vec4<f32>,  // lines: province borders, graticule; opacity: drought, prices
     layers3: vec4<f32>,  // lines: roads and sea lanes, trade; opacity: trade balance; unused
+    layers4: vec4<f32>,  // opacity: realms, unrest; lines: realm borders; unused
     ids: vec4<u32>,      // hovered province, selected province (or NO_PROVINCE), unused x2
 };
 
@@ -231,8 +232,9 @@ fn province_at(f: vec3<f32>, need_land: bool) -> u32 {
     return best;
 }
 
-// The planet's colour at a point on the map.
-fn world_color(lon: f32, lat: f32) -> vec3<f32> {
+// The planet's colour at a point on the map; `local` is the map-relative pixel, for patterns fixed
+// to the screen.
+fn world_color(lon: f32, lat: f32, local: vec2<f32>) -> vec3<f32> {
     let f = dir_to_face_texel(lonlat_to_dir(lon, lat));
     let face = i32(f.x);
     let n = params.view.w;
@@ -258,7 +260,7 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
 
     // Only look the province up when something on screen uses it.
     let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0 || params.layers2.w > 0.0 || params.layers3.z > 0.0
-        || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
+        || params.layers4.x > 0.0 || params.layers4.y > 0.0 || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
     if (!wanted) {
         return col;
     }
@@ -274,6 +276,18 @@ fn world_color(lon: f32, lat: f32) -> vec3<f32> {
     col = mix(col, price.rgb, params.layers2.w * price.a);
     let balance = table(prov, 5);
     col = mix(col, balance.rgb, params.layers3.z * balance.a);
+    // The owner's colour; where an enemy occupies it, diagonal stripes of the occupier's.
+    let realm = table(prov, 6);
+    col = mix(col, realm.rgb, params.layers4.x * 0.6 * realm.a);
+    let occupier = table(prov, 7);
+    if (occupier.a > 0.0) {
+        let period = 9.0 * params.proj.z;
+        let d = fract((local.x + local.y) / period);
+        let stripe = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.42, 0.5, d));
+        col = mix(col, occupier.rgb, params.layers4.x * 0.8 * stripe);
+    }
+    let unrest = table(prov, 8);
+    col = mix(col, unrest.rgb, params.layers4.y * unrest.a);
     let fam = table(prov, 2);
     col = mix(col, fam.rgb, params.layers1.x * fam.a);
     col = mix(col, table(prov, 0).rgb, params.layers1.y * 0.55);
@@ -330,7 +344,7 @@ fn fs_map(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let u = unproject(p);
     var col: vec3<f32>;
     if (u.z > 0.5) {
-        col = world_color(wrap_lon(params.view.x + u.x), u.y);
+        col = world_color(wrap_lon(params.view.x + u.x), u.y, local);
     } else {
         col = page_color(p, u.w);
     }
@@ -406,11 +420,15 @@ fn vs_line(
         case 4u: { color = vec4<f32>(0.48, 0.32, 0.18, 0.7 * params.layers3.x); }
         case 5u: { color = vec4<f32>(0.18, 0.30, 0.50, 0.6 * params.layers3.x); }
         case 6u: { color = vec4<f32>(0.55, 0.10, 0.12, 0.9 * params.layers3.y); }
+        case 7u: { color = vec4<f32>(0.40, 0.11, 0.10, 0.8 * params.layers4.z); }
         default: { color = vec4<f32>(0.40, 0.30, 0.20, 0.35 * params.layers2.y); }
     }
-    // Rivers thin out when zoomed far out.
+    // Rivers and realm borders thin out when zoomed far out.
     if (kind == 2u) {
         hw = hw * clamp(s / (params.screen.y * 0.6), 0.6, 1.0);
+    }
+    if (kind == 7u) {
+        hw = hw * clamp(s / (params.screen.y * 1.2), 0.45, 1.0);
     }
 
     let delta = sb - sa;

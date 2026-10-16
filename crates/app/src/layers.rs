@@ -26,7 +26,10 @@ pub const TABLE_FAMINE: usize = 2;
 pub const TABLE_DROUGHT: usize = 3;
 pub const TABLE_PRICE: usize = 4;
 pub const TABLE_BALANCE: usize = 5;
-pub const TABLE_LAYERS: usize = 6;
+pub const TABLE_REALM: usize = 6;
+pub const TABLE_OCCUPIER: usize = 7;
+pub const TABLE_UNREST: usize = 8;
+pub const TABLE_LAYERS: usize = 9;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -246,7 +249,9 @@ pub fn table_rows(count: usize) -> usize {
 
 /// Province tables, layer after layer, each `TABLE_WIDTH` × `table_rows` texels. Alpha scales how
 /// strongly the colour covers the map (famine and drought are clear where there is none). `world`
-/// gives the provinces' areas and the seed for their colours; `v` the values shown.
+/// gives the provinces' areas, the seed for their colours, and who owns, occupies and is restless
+/// where (realm numbers are never blended between days, so these come from the day shown); `v` the
+/// values shown.
 pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> Vec<Rgba> {
     let count = world.provinces.count;
     let size = TABLE_WIDTH * table_rows(count);
@@ -286,8 +291,45 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> 
             let [r, g, b] = if x >= 0.0 { [205, 160, 40] } else { [175, 60, 110] };
             out[TABLE_BALANCE * size + p] = [r, g, b, (255.0 * (x.abs() as f64).sqrt()).round() as u8];
         }
+
+        // The realm that owns it, and the enemy occupying it; clear for nobody.
+        let realm_of = |v: &[u32]| v.get(p).copied().filter(|&r| r != NONE);
+        if let Some(r) = realm_of(&world.owner) {
+            let [r, g, b] = realm_color(r, world.params.seed);
+            out[TABLE_REALM * size + p] = [r, g, b, 255];
+        }
+        if let Some(r) = realm_of(&world.occupier) {
+            let [r, g, b] = realm_color(r, world.params.seed);
+            out[TABLE_OCCUPIER * size + p] = [r, g, b, 255];
+        }
+        out[TABLE_UNREST * size + p] = unrest_color(world.unrest.get(p).copied().unwrap_or(0), realm_of(&world.uprising).is_some());
     }
     out
+}
+
+/// How restless a province is (`unrest`, thousandths of the way to an uprising), as a colour:
+/// clear when calm, pale yellow through orange to red nearing the line, and a deep crimson in
+/// uprising.
+pub fn unrest_color(unrest: u64, uprising: bool) -> Rgba {
+    if uprising {
+        return [120, 10, 30, 255];
+    }
+    if unrest == 0 {
+        return [0, 0, 0, 0];
+    }
+    let t = (unrest as f64 / sim::realms::LINE as f64).clamp(0.0, 1.0);
+    let [r, g, b] = ramp(&[[240, 220, 120], [235, 150, 50], [205, 50, 30]], t);
+    [r, g, b, (255.0 * t.sqrt()).round() as u8]
+}
+
+/// A realm's colour: a hue from its number, as provinces get theirs, a little muted for the
+/// parchment. Steady for as long as the realm lasts, whatever else breaks away or is made.
+pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
+    let h = sim::rng::mix(seed ^ 0x5EA1_3000 ^ (r as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let hue = (r as f64 * 0.618_033_988_75 + (seed % 97) as f64 / 97.0).fract();
+    let sat = 0.42 + (h % 100) as f64 / 100.0 * 0.18;
+    let light = 0.48 + (h / 100 % 100) as f64 / 100.0 * 0.16;
+    hsl(hue, sat, light)
 }
 
 /// The tables for the world as it stands.
@@ -381,6 +423,43 @@ mod tests {
         assert!((y[0] - 0.5).abs() < 1e-6);
         assert_eq!(y[1], 0.0);
     }
+    #[test]
+    fn realm_tables_show_owner_occupier_and_unrest_from_the_day_shown() {
+        let mut w = World::generate(&sim::world::WorldParams { n: 24, provinces: 30, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+        let count = w.provinces.count;
+        w.owner = vec![NONE; count];
+        w.occupier = vec![NONE; count];
+        w.unrest = vec![0; count];
+        w.uprising = vec![NONE; count];
+        (w.owner[0], w.owner[1], w.owner[2]) = (3, 3, 4);
+        w.occupier[1] = 4;
+        (w.unrest[0], w.unrest[2]) = (500, 1000);
+        w.uprising[2] = 2;
+        let v = ProvinceView { people: vec![0.0; count], starved: vec![0.0; count], drought: vec![0.0; count] };
+        let t = province_tables(&w, &v, &MarketView::default());
+        let size = TABLE_WIDTH * table_rows(count);
+        let at = |layer: usize, p: usize| t[layer * size + p];
+        let colour = |r| {
+            let [a, b, c] = realm_color(r, w.params.seed);
+            [a, b, c, 255]
+        };
+        // Owners in their realm's colour, nobody's land clear.
+        assert_eq!((at(TABLE_REALM, 0), at(TABLE_REALM, 1), at(TABLE_REALM, 2)), (colour(3), colour(3), colour(4)));
+        assert_eq!(at(TABLE_REALM, 3)[3], 0);
+        assert_ne!(colour(3), colour(4));
+        // The occupier only where one is.
+        assert_eq!(at(TABLE_OCCUPIER, 1), colour(4));
+        assert_eq!(at(TABLE_OCCUPIER, 0)[3], 0);
+        // Calm is clear; half way shows, fainter than the line; an uprising is crimson.
+        assert_eq!(at(TABLE_UNREST, 1)[3], 0);
+        assert!(at(TABLE_UNREST, 0)[3] > 0 && at(TABLE_UNREST, 0)[3] < 255);
+        assert_eq!(at(TABLE_UNREST, 2), unrest_color(1000, true));
+        // A world without realms keeps empty lists: everything clear, nothing out of bounds.
+        let bare = World::generate(&sim::world::WorldParams { n: 24, provinces: 30, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+        let t = province_tables(&bare, &v, &MarketView::default());
+        assert!((0..count).all(|p| t[TABLE_REALM * size + p][3] == 0 && t[TABLE_OCCUPIER * size + p][3] == 0 && t[TABLE_UNREST * size + p][3] == 0));
+    }
+
     use sim::grid::{face_dir, uv_to_ab};
 
     /// Each border texel shows the cell found by stepping just past the face edge on the sphere.

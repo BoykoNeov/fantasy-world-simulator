@@ -6,10 +6,12 @@
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--modules SLOT=VERSION,...] [--remake SIZE,SEED,YEARS[,SLOT=VERSION...]]
+//!            [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
 //!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
-//! trade, balance (0..1), and coasts, rivers, borders, graticule, roads (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
+//! trade, balance, realms, unrest (0..1), and coasts, rivers, borders, graticule, roads,
+//! realm_borders (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
@@ -21,13 +23,16 @@
 //! picks module versions, e.g. `economics=off,population=off` (see `sim::config::CHOICES`); the
 //! Modules section shows what the combination tester found for the mix running. `--remake` makes a
 //! new world through the New world section once the window is open, as a player would (the
-//! versions given change those of the world shown).
+//! versions given change those of the world shown). `--realms` switches realms on, with the ways
+//! to start weighted as given (`--realms settled=1` is the default way); `--rulers` gives every
+//! realm a ruler and heir, and `--wars` keeps wars and truces (both turn realms on the default way
+//! if `--realms` isn't given), as in `simrun`.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
 use app::editor::Editor;
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
-use app::inspector::{self, group, LogEntry, Source};
+use app::inspector::{self, group, LogEntry, Names, RealmNames, Source};
 use app::layers::{self, ProvinceView};
 use app::playback::{Change, Clock, DayState, Frame, FromSim, MapState, Rate, Speed, Status, Worker};
 use app::projection::{Camera, Projection};
@@ -197,6 +202,9 @@ impl Options {
                         "prices" => l.prices = x,
                         "trade" => l.trade = x,
                         "balance" => l.trade_balance = x,
+                        "realms" => l.realms = x,
+                        "unrest" => l.unrest = x,
+                        "realm_borders" => l.realm_borders = x > 0.5,
                         "roads" => l.roads = x > 0.5,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
@@ -219,6 +227,28 @@ impl Options {
                     o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
                 }
                 "--remake" => o.remake = Some(value(&mut i)),
+                "--realms" => {
+                    let mut r = sim::realms::RealmParams { settled: 0.0, ..Default::default() };
+                    for part in value(&mut i).split(',') {
+                        let (way, weight) = part.split_once('=').unwrap_or_else(|| panic!("--realms: {part}: expected way=weight"));
+                        let weight: f64 = weight.parse().expect("--realms weight");
+                        match way {
+                            "settled" => r.settled = weight,
+                            "city" => r.city_states = weight,
+                            "frontier" => r.frontier = weight,
+                            _ => panic!("--realms: no way {way}; expected settled, city or frontier"),
+                        }
+                    }
+                    o.config.modules.realms = Some(r);
+                }
+                "--rulers" => {
+                    o.config.modules.realms.get_or_insert_with(Default::default);
+                    o.config.modules.characters = Some(Default::default());
+                }
+                "--wars" => {
+                    o.config.modules.realms.get_or_insert_with(Default::default);
+                    o.config.modules.diplomacy = Some(Default::default());
+                }
                 "--bench" => o.bench = true,
                 "--out" => o.out_dir = value(&mut i),
                 "--tag" => o.tag = value(&mut i),
@@ -443,6 +473,13 @@ struct MapApp {
     /// the next paint callback to upload them.
     trade_lines_for: Option<(usize, usize)>,
     pending_trade: Option<Vec<app::geometry::LineInstance>>,
+    /// The drawn map's province borders, ready to be drawn as borders between realms; who owned
+    /// what, and the map, when the borders on the GPU were copied; borders waiting for the next
+    /// paint callback to upload them.
+    realm_borders: Arc<app::geometry::RealmBorders>,
+    realm_lines_for: Option<(Vec<u32>, usize)>,
+    pending_realm: Option<Vec<app::geometry::LineInstance>>,
+    realm_names: RealmNames,
     /// What the province layers show right now (blended between days).
     view: ProvinceView,
     tables_for: Option<(u64, u64, u64)>,
@@ -581,6 +618,10 @@ impl MapApp {
             new_world,
             trade_lines_for: None,
             pending_trade: None,
+            realm_borders: data.realm_borders.clone(),
+            realm_lines_for: None,
+            pending_realm: None,
+            realm_names: RealmNames::default(),
             view: frame.state.view.clone(),
             frames: VecDeque::from([frame]),
             worker: Worker::start_timelines(timelines, move || ctx.request_repaint()),
@@ -643,6 +684,7 @@ impl MapApp {
         (self.pop_edit, self.stock_good, self.stock_edit) = (None, 0, None);
         (self.market, self.market_for, self.tables_for, self.trade_lines_for) = (layers::MarketView::default(), None, None, None);
         (self.pending_tables, self.pending_trade) = (None, None);
+        (self.realm_borders, self.realm_lines_for, self.pending_realm, self.realm_names) = (data.realm_borders.clone(), None, None, RealmNames::default());
         self.provinces = ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
         (self.line_segments, self.gpu_provinces, self.gen_s) = (data.lines.len(), data.provinces, gen_s);
         self.pending_gpu = Some(Arc::new(data));
@@ -761,6 +803,15 @@ impl MapApp {
             self.pending_trade = Some(app::geometry::instances(&app::geometry::trade_chains(&self.geo, &net)).0);
             self.trade_lines_for = Some(lines_key);
         }
+        // Borders between realms: copied again from the province borders whenever who owns what
+        // changes, on the map drawn.
+        let drawn = Arc::as_ptr(&self.drawn_map) as usize;
+        let stale = self.realm_lines_for.as_ref().is_none_or(|(owner, map)| *map != drawn || *owner != self.geo.owner);
+        if self.layers.realm_borders && stale && self.geo.provinces.count == self.gpu_provinces {
+            self.pending_realm = Some(self.realm_borders.lines(&self.geo.owner));
+            self.realm_lines_for = Some((self.geo.owner.clone(), drawn));
+        }
+        self.realm_names.update(&self.geo);
         if self.tables_for != Some(key) {
             self.view = match next {
                 Some(n) => ProvinceView::blend(&front.state.view, &n.state.view, t),
@@ -787,10 +838,11 @@ impl MapApp {
                         self.provinces = ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
                         self.line_segments = data.lines.len();
                         self.gpu_provinces = data.provinces;
+                        self.realm_borders = data.realm_borders.clone();
                         self.pending_gpu = Some(Arc::new(data));
                         self.drawn_map = map;
-                        // The new picture starts with no trade lines.
-                        (self.tables_for, self.trade_lines_for) = (None, None);
+                        // The new picture starts with no trade lines and no realm borders.
+                        (self.tables_for, self.trade_lines_for, self.realm_lines_for) = (None, None, None);
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => return,
@@ -1081,6 +1133,7 @@ impl MapApp {
         ui.separator();
 
         ui.label("Layers");
+        let realms = self.realms_on();
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
@@ -1113,11 +1166,21 @@ impl MapApp {
                 ui.small("No trade recorded yet: it shows once a month's trade has run (a world just opened keeps none).");
             }
         }
+        // Only where some module keeps realms.
+        if realms {
+            ui.add(egui::Slider::new(&mut l.realms, 0.0..=1.0).text("realms"))
+                .on_hover_text("each province in the colour of the realm that owns it, striped with an enemy's colour where the enemy occupies it; clear where no realm owns the land");
+            ui.add(egui::Slider::new(&mut l.unrest, 0.0..=1.0).text("unrest"))
+                .on_hover_text("how restless each province is: clear when calm, then yellow through orange to red as it nears an uprising; deep crimson where it has risen up");
+        }
         ui.checkbox(&mut l.coasts, "coastlines");
         ui.checkbox(&mut l.rivers, "rivers");
         ui.checkbox(&mut l.borders, "province borders (zoom in)");
         ui.checkbox(&mut l.graticule, "latitude and longitude lines");
         ui.checkbox(&mut l.roads, "roads and sea lanes").on_hover_text("the ways between neighbouring provinces, seat to seat: roads over land, dashed lanes by sea");
+        if realms {
+            ui.checkbox(&mut l.realm_borders, "borders between realms").on_hover_text("thick lines where the realms on either side differ, or where a realm's land meets land nobody owns");
+        }
         ui.separator();
 
         if let Some((c, p)) = self.hover {
@@ -1240,6 +1303,15 @@ impl MapApp {
         });
     }
 
+    /// Whether some module keeps realms in this world.
+    fn realms_on(&self) -> bool {
+        self.owners[sim::fields::known("province.owner").0 as usize].1.is_some()
+    }
+
+    fn names(&self) -> Names<'_> {
+        Names { world: &self.geo, realms: &self.realm_names.names }
+    }
+
     fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {
         let w = &self.geo;
         let (lon, lat) = (w.grid.lon[c].to_degrees(), w.grid.lat[c].to_degrees());
@@ -1275,6 +1347,23 @@ impl MapApp {
                 }
                 if sold + bought > 0.0 {
                     ui.label(format!("last month: sold {} coins' worth, bought {}", group(sold.round() as u64), group(bought.round() as u64)));
+                }
+            }
+            if self.realms_on() {
+                let names = self.names();
+                let at = |v: &[u32]| v.get(p).copied().unwrap_or(NONE);
+                ui.label(match at(&w.owner) {
+                    NONE => "no realm".to_string(),
+                    r => format!("realm: {}", names.realm(r)),
+                });
+                if at(&w.occupier) != NONE {
+                    ui.label(format!("occupied by {}", names.realm(at(&w.occupier))));
+                }
+                let unrest = w.unrest.get(p).copied().unwrap_or(0);
+                if at(&w.uprising) != NONE {
+                    ui.label("risen up");
+                } else if unrest > 0 {
+                    ui.label(format!("unrest {} of {} toward an uprising", group(unrest), group(sim::realms::LINE)));
                 }
             }
             if self.view.drought[p] > 0.0 {
@@ -1367,6 +1456,10 @@ impl MapApp {
         });
         let today = self.day();
         let mut explain = None;
+        if self.realms_on() {
+            self.realm_section(ui, p);
+            ui.separator();
+        }
 
         ui.label(egui::RichText::new("Values").strong());
         let state = self.shown_state.clone();
@@ -1387,6 +1480,7 @@ impl MapApp {
                 });
             }
         };
+        let names = Names { world: &self.geo, realms: &self.realm_names.names };
         egui::Grid::new("values").striped(true).num_columns(4).show(ui, |ui| {
             ui.small("value");
             ui.small("now");
@@ -1398,13 +1492,13 @@ impl MapApp {
                 match id.def().tier {
                     Tier::Province => {
                         ui.label(inspector::field_name(id));
-                        ui.label(inspector::value(id, &data, pi));
+                        ui.label(inspector::value(id, &data, pi, &names));
                         ui.label(&self.owners[id.0 as usize].0);
                         when(ui, id, pi);
                         ui.end_row();
                     }
-                    // In the goods table below; realms, armies and rulers get pages of their own
-                    // (later in step 7).
+                    // In the goods table below; realms and rulers are on the realm's page above;
+                    // armies get theirs later in step 7.
                     Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => {}
                 }
             }
@@ -1596,7 +1690,8 @@ impl MapApp {
                             ui.label(egui::RichText::new(inspector::stage(s.stage)).italics());
                             stage = Some(s.stage);
                         }
-                        ui.label(format!("• {}", inspector::trace_step(s, &self.calendar, &self.geo.goods)));
+                        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+                        ui.label(format!("• {}", inspector::trace_step(s, &self.calendar, &self.geo.goods, &names)));
                     }
                 }
             }
@@ -1618,7 +1713,10 @@ impl MapApp {
         ui.separator();
         ui.label(egui::RichText::new("What happened here").strong());
         ui.horizontal_wrapped(|ui| {
-            for s in [Source::Module(Slot::Population), Source::Module(Slot::Economics), Source::Module(Slot::Weather), Source::Player, Source::Engine] {
+            let running = |slot: Slot| self.owners.iter().any(|o| o.1 == Some(slot));
+            let modules = [Slot::Population, Slot::Economics, Slot::Weather, Slot::Realms, Slot::Characters, Slot::Diplomacy];
+            let sources: Vec<Source> = modules.into_iter().filter(|&m| matches!(m, Slot::Population | Slot::Economics | Slot::Weather) || running(m)).map(Source::Module).chain([Source::Player, Source::Engine]).collect();
+            for s in sources {
                 let mut on = !self.hidden_sources.contains(&s);
                 if ui.checkbox(&mut on, s.name()).changed() {
                     if on {
@@ -1630,11 +1728,12 @@ impl MapApp {
             }
         });
         let mut shown = 0;
+        let names = Names { world: &self.geo, realms: &self.realm_names.names };
         for e in self.log.iter().rev() {
             if e.province.is_some_and(|q| q != p) || (e.province.is_none() && e.source != Source::Player) || self.hidden_sources.contains(&e.source) {
                 continue;
             }
-            ui.label(format!("{} · {} · {}", self.calendar.format(e.day), e.source.name(), e.text(&self.calendar, &self.geo.goods)));
+            ui.label(format!("{} · {} · {}", self.calendar.format(e.day), e.source.name(), e.text(&self.calendar, &self.geo.goods, &names)));
             shown += 1;
             if shown == 150 {
                 ui.small("(older entries not shown)");
@@ -1646,6 +1745,96 @@ impl MapApp {
         }
         if let Some(d) = explain {
             self.explain(d, p);
+        }
+    }
+
+    /// The realm that owns province `p`: who it is, who rules it, how it stands with the others,
+    /// and what happened to it. Clicking a realm goes to its capital, and so to its page.
+    fn realm_section(&mut self, ui: &mut egui::Ui, p: u32) {
+        let w = &self.geo;
+        let Some(r) = w.owner.get(p as usize).copied().filter(|&r| r != NONE) else {
+            ui.label("No realm owns this province.");
+            return;
+        };
+        let names = Names { world: w, realms: &self.realm_names.names };
+        let page = inspector::realm_page(&names, r, self.day(), &self.calendar, self.coin_columns.first().copied());
+        let mut go = None;
+        ui.horizontal(|ui| {
+            let [cr, cg, cb] = layers::realm_color(r, w.params.seed);
+            ui.label(egui::RichText::new("■").size(22.0).color(egui::Color32::from_rgb(cr, cg, cb)));
+            ui.heading(&page.name);
+        });
+        ui.horizontal_wrapped(|ui| {
+            match page.capital {
+                Some(c) if c == p => {
+                    ui.label("Its capital is this province.");
+                }
+                Some(c) => {
+                    ui.label("Capital:");
+                    if ui.small_button(format!("province {c}")).on_hover_text("select the capital").clicked() {
+                        go = Some(c);
+                    }
+                }
+                None => {
+                    ui.label("Dissolved: it has no land left.");
+                }
+            }
+        });
+        for f in &page.facts {
+            ui.label(f);
+        }
+        let person = |ui: &mut egui::Ui, title: &str, who: &Option<inspector::Person>| match who {
+            Some(x) => {
+                ui.label(egui::RichText::new(format!("{title}: {}", x.name)).strong());
+                for l in &x.lines {
+                    ui.label(format!("   {l}"));
+                }
+            }
+            None => {
+                ui.label(format!("{title}: none"));
+            }
+        };
+        // Rulers only where some module keeps them.
+        if self.owners[sim::fields::known("realm.ruler").0 as usize].1.is_some() {
+            person(ui, "Ruler", &page.ruler);
+            person(ui, "Heir", &page.heir);
+        }
+        for (other, text) in &page.relations {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(text);
+                let capital = w.realms.capital.get(*other as usize).copied().filter(|&c| c != NONE);
+                if let Some(c) = capital
+                    && ui.small_button("go").on_hover_text(format!("select {}'s capital", names.realm(*other))).clicked()
+                {
+                    go = Some(c);
+                }
+            });
+        }
+        if !page.past_rulers.is_empty() {
+            egui::CollapsingHeader::new(format!("Earlier rulers ({})", page.past_rulers.len())).id_salt(("earlier rulers", r)).show(ui, |ui| {
+                for l in &page.past_rulers {
+                    ui.label(l);
+                }
+            });
+        }
+        let history: Vec<String> = self
+            .log
+            .iter()
+            .rev()
+            .filter(|e| matches!(&e.what, inspector::Logged::Event(ev) if inspector::realms_in(ev).contains(&r)))
+            .take(100)
+            .map(|e| format!("{} · {}", self.calendar.format(e.day), e.text(&self.calendar, &w.goods, &names)))
+            .collect();
+        egui::CollapsingHeader::new(format!("What happened to {}", page.name)).id_salt(("realm history", r)).show(ui, |ui| {
+            if history.is_empty() {
+                ui.small("Nothing yet, in the days shown.");
+            }
+            for h in &history {
+                ui.label(h);
+            }
+        });
+        if let Some(c) = go {
+            (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
         }
     }
 
@@ -1678,6 +1867,7 @@ struct MapCallback {
     copies: u32,
     tables: Option<Vec<layers::Rgba>>,
     trade: Option<Vec<app::geometry::LineInstance>>,
+    realm: Option<Vec<app::geometry::LineInstance>>,
     /// A changed map's picture, to replace the one on the GPU.
     rebuild: Option<Arc<MapData>>,
     target: wgpu::TextureFormat,
@@ -1702,6 +1892,9 @@ impl egui_wgpu::CallbackTrait for MapCallback {
         }
         if let Some(t) = &self.trade {
             gpu.upload_trade(device, queue, t);
+        }
+        if let Some(t) = &self.realm {
+            gpu.upload_realm_borders(device, queue, t);
         }
         Vec::new()
     }
@@ -1872,11 +2065,11 @@ impl eframe::App for MapApp {
             let (first, last) = cam.visible_copies(w);
             // egui throws a pass away when a layout needs another go (a table shown for the first
             // time): what waits for the GPU stays waiting until a pass that is drawn.
-            let (tables, trade, rebuild) = match ctx.will_discard() {
-                true => (None, None, None),
-                false => (self.pending_tables.take(), self.pending_trade.take(), self.pending_gpu.take()),
+            let (tables, trade, realm, rebuild) = match ctx.will_discard() {
+                true => (None, None, None, None),
+                false => (self.pending_tables.take(), self.pending_trade.take(), self.pending_realm.take(), self.pending_gpu.take()),
             };
-            let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, trade, rebuild, target: self.target };
+            let callback = MapCallback { uniforms, copies: (last - first + 1) as u32, tables, trade, realm, rebuild, target: self.target };
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
             // The brush around the pointer, and the stroke being drawn.
             let to_screen = |lon: f64, lat: f64| {

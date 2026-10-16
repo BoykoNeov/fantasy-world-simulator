@@ -2,12 +2,217 @@
 //! plain language.
 
 use sim::calendar::Calendar;
+use sim::characters::{Succession, ADULT};
+use sim::diplomacy::WarCause;
 use sim::events::{Event, Posted};
 use sim::fields::{FieldData, FieldId, Goods};
+use sim::grid::NONE;
 use sim::module::Slot;
 use sim::requests::{Cause, Request};
 use sim::fields::Tier;
 use sim::sim::{Stage, TraceStep, Traced, NEVER};
+use sim::world::World;
+
+/// Realm names by number, worked out once per world and extended as realms are made
+/// ([`sim::realms::names`] gives each realm the same name whatever comes after it).
+#[derive(Clone, Debug, Default)]
+pub struct RealmNames {
+    seed: u64,
+    pub names: Vec<String>,
+}
+
+impl RealmNames {
+    /// The names of `w`'s realms, worked out again only for another seed or more realms.
+    pub fn update(&mut self, w: &World) {
+        let count = w.realms.count();
+        if self.seed != w.params.seed || self.names.len() < count {
+            *self = RealmNames { seed: w.params.seed, names: sim::realms::names(w.params.seed, count) };
+        }
+    }
+}
+
+/// Names for realms and people in the inspector's words.
+#[derive(Clone, Copy)]
+pub struct Names<'a> {
+    pub world: &'a World,
+    /// Realm names by number, as many as are known ([`RealmNames`]).
+    pub realms: &'a [String],
+}
+
+impl Names<'_> {
+    /// A realm's name; "nobody" for none.
+    pub fn realm(&self, r: u32) -> String {
+        match r {
+            NONE => "nobody".into(),
+            r => self.realms.get(r as usize).cloned().unwrap_or_else(|| format!("realm {r}")),
+        }
+    }
+
+    /// Whether character `c` has every value the words below read.
+    fn known(&self, c: u32) -> bool {
+        let ch = &self.world.characters;
+        let c = c as usize;
+        let lengths = [ch.realm.len(), ch.name.len(), ch.born.len(), ch.crowned.len(), ch.succession.len(), ch.martial.len(), ch.greed.len(), ch.ability.len(), ch.parent.len()];
+        c < ch.count() && lengths.iter().all(|&n| c < n)
+    }
+
+    /// A person's name, with a number for a ruler who shares an earlier ruler's ("Aldric II").
+    pub fn person(&self, c: u32) -> String {
+        if self.known(c) { sim::characters::title(self.world, c) } else { format!("character {c}") }
+    }
+}
+
+/// One person on a realm's page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Person {
+    pub name: String,
+    /// What there is to say about them, a line each.
+    pub lines: Vec<String>,
+}
+
+/// A realm's page: who it is, who rules it, how it stands with the others.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RealmPage {
+    pub name: String,
+    /// Dissolved realms keep their entry, with no land and no capital.
+    pub alive: bool,
+    pub capital: Option<u32>,
+    /// Facts about it, a line each.
+    pub facts: Vec<String>,
+    pub ruler: Option<Person>,
+    pub heir: Option<Person>,
+    /// Earlier rulers, latest first.
+    pub past_rulers: Vec<String>,
+    /// Wars going on, then truces: the other realm, and how they stand.
+    pub relations: Vec<(u32, String)>,
+}
+
+/// Realm `r`'s page on `day`. `coin`: the column of the per-good fields that holds coins, if the
+/// world keeps them. Every value is read with a check, since a realm or person made after the
+/// window opened may lack values no running module keeps.
+pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usize>) -> RealmPage {
+    let w = n.world;
+    let dpy = cal.days_per_year() as f64;
+    let capital = w.realms.capital.get(r as usize).copied().filter(|&c| c != NONE);
+    let mine = |v: &[u32], p: usize| v.get(p).copied() == Some(r);
+    let provinces: Vec<usize> = (0..w.provinces.count).filter(|&p| mine(&w.owner, p)).collect();
+    let people = w.province_population();
+    let plural = |k: usize| if k == 1 { "" } else { "s" };
+    let mut facts = vec![format!(
+        "{} province{}, {} people",
+        provinces.len(),
+        plural(provinces.len()),
+        group(provinces.iter().map(|&p| people.get(p).copied().unwrap_or(0)).sum())
+    )];
+    if let Some(c) = coin
+        && let Some(&coins) = w.realm_stock.get(r as usize * w.goods.stride() + c)
+    {
+        facts.push(format!("treasury: {} coins", group(coins)));
+    }
+    if let Some(&from) = w.realms.broke_from.get(r as usize).filter(|&&f| f != NONE) {
+        facts.push(format!("broke away from {}", n.realm(from)));
+    }
+    let rising = provinces.iter().filter(|&&p| w.uprising.get(p).is_some_and(|&u| u != NONE)).count();
+    if rising > 0 {
+        facts.push(format!("{rising} of its provinces in uprising"));
+    }
+    let lost = provinces.iter().filter(|&&p| w.occupier.get(p).is_some_and(|&o| o != NONE)).count();
+    if lost > 0 {
+        facts.push(format!("{lost} of its provinces held by enemies"));
+    }
+    let taken = (0..w.provinces.count).filter(|&p| mine(&w.occupier, p)).count();
+    if taken > 0 {
+        facts.push(format!("holds {taken} province{} of its enemies", plural(taken)));
+    }
+
+    let ch = &w.characters;
+    let years = |from: f64, to: f64| ((to - from) / dpy).floor().max(0.0) as u64;
+    let ruler_now = w.realms.ruler.get(r as usize).copied().unwrap_or(NONE);
+    let person = |c: u32, ruler: bool| -> Option<Person> {
+        if c == NONE || !n.known(c) {
+            return None;
+        }
+        let k = c as usize;
+        let age = years(ch.born[k], ch.died[k].min(day) as f64);
+        let child = !ruler && (age as f64) < ADULT;
+        let mut lines = vec![format!("{age} years old{}", if child { ", a child" } else { "" })];
+        let traits = sim::characters::traits_in_words(w, c);
+        lines.push(if traits.is_empty() { "no marked traits".to_string() } else { traits.join(", ") });
+        if ruler && ch.crowned[k] != NEVER {
+            let how = Succession::from_u8(ch.succession[k]).describe();
+            lines.push(format!("ruler since {} ({} years): {how}", cal.format(ch.crowned[k]), years(ch.crowned[k] as f64, day as f64)));
+        }
+        if !ruler && ch.parent[k] != NONE && ch.parent[k] == ruler_now {
+            lines.push("the ruler's child".into());
+        }
+        Some(Person { name: n.person(c), lines })
+    };
+    let ruler = person(ruler_now, true);
+    let heir = person(w.realms.heir.get(r as usize).copied().unwrap_or(NONE), false);
+    let mut past: Vec<usize> =
+        (0..ch.count()).filter(|&k| n.known(k as u32) && ch.realm[k] == r && ch.crowned[k] != NEVER && ch.died[k] != NEVER && ch.died[k] <= day).collect();
+    past.sort_by_key(|&k| std::cmp::Reverse((ch.crowned[k], k)));
+    let past_rulers = past
+        .iter()
+        .map(|&k| format!("{}: ruled {} to {}; {}", n.person(k as u32), cal.format(ch.crowned[k]), cal.format(ch.died[k]), Succession::from_u8(ch.succession[k]).describe()))
+        .collect();
+
+    // Wars going on, then truces, latest first.
+    let wars = &w.wars;
+    let day_of = |v: &[u64], k: usize| v.get(k).copied().unwrap_or(NEVER);
+    let mut fighting = Vec::new();
+    let mut truces = Vec::new();
+    let mut truced = std::collections::HashSet::new();
+    for k in (0..wars.count()).rev() {
+        let (Some(&a), Some(&b)) = (wars.attacker.get(k), wars.defender.get(k)) else { continue };
+        let other = if a == r {
+            b
+        } else if b == r {
+            a
+        } else {
+            continue;
+        };
+        let began = cal.format(day_of(&wars.began, k));
+        let rebellion = wars.cause.get(k).is_some_and(|&c| WarCause::from_u8(c) == WarCause::Rebellion);
+        if day_of(&wars.ended, k) == NEVER {
+            // A war with a dissolved realm is over, though its entry ends only at the next month.
+            if !w.realms.alive(a) || !w.realms.alive(b) {
+                continue;
+            }
+            // In a rebellion's war the rebels are the attacker.
+            let text = match (rebellion, a == r) {
+                (true, true) => format!("fighting for its freedom from {} since {began}", n.realm(other)),
+                (true, false) => format!("at war with its rebels, {}, since {began}", n.realm(other)),
+                (false, _) => format!("at war with {} since {began}, declared by {}", n.realm(other), n.realm(a)),
+            };
+            fighting.push((other, text));
+        } else if day_of(&wars.truce_until, k) > day && truced.insert(other) {
+            let winner = match wars.winner.get(k).copied().unwrap_or(NONE) {
+                NONE => "nobody won".to_string(),
+                x => format!("{} won", n.realm(x)),
+            };
+            let until = cal.format(day_of(&wars.truce_until, k));
+            truces.push((other, format!("truce with {} until {until} (the war ended {}: {winner})", n.realm(other), cal.format(day_of(&wars.ended, k)))));
+        }
+    }
+    fighting.extend(truces);
+    RealmPage { name: n.realm(r), alive: capital.is_some(), capital, facts, ruler, heir, past_rulers, relations: fighting }
+}
+
+/// The realms an event is about.
+pub fn realms_in(e: &Event) -> Vec<u32> {
+    match *e {
+        Event::Succession { realm, .. } | Event::Uprising { realm, .. } | Event::Calmed { realm, .. } => vec![realm],
+        Event::DeclareWar { attacker, defender }
+        | Event::WarDeclared { attacker, defender, .. }
+        | Event::Peace { attacker, defender, .. }
+        | Event::WarRefused { attacker, defender, .. } => vec![attacker, defender],
+        Event::ForcePeace { a, b, .. } => vec![a, b],
+        Event::Occupied { by, .. } => vec![by],
+        Event::Rebellion { realm, from, .. } => vec![realm, from],
+        _ => Vec::new(),
+    }
+}
 
 /// 1234567 -> "1,234,567".
 pub fn group(n: u64) -> String {
@@ -103,16 +308,23 @@ pub fn per_good_value(id: FieldId, goods: &Goods, c: usize, amount: u64) -> Stri
     }
 }
 
-/// One value of a field, with its unit.
-pub fn value(id: FieldId, data: &FieldData, i: usize) -> String {
+/// One value of a field, with its unit; realms by name.
+pub fn value(id: FieldId, data: &FieldData, i: usize, names: &Names) -> String {
     let def = id.def();
+    let realm = |v: &[u32]| v.get(i).copied().unwrap_or(NONE);
     match (def.name, data) {
         ("province.center", FieldData::Dir(v)) => {
             let (lon, lat) = sim::grid::dir_to_lonlat(v[i]);
             lat_lon(lat.to_degrees(), lon.to_degrees())
         }
-        ("province.owner", FieldData::U32(v)) if v[i] == sim::grid::NONE => "no realm".into(),
-        ("province.owner", _) => format!("realm {}", data.value(i)),
+        ("province.owner", FieldData::U32(v)) if realm(v) == NONE => "no realm".into(),
+        ("province.owner" | "province.occupier", FieldData::U32(v)) => names.realm(realm(v)),
+        ("province.uprising", FieldData::U32(v)) => match realm(v) {
+            NONE => "calm".into(),
+            seat if seat as usize == i => "risen up".into(),
+            seat => format!("joined the uprising begun in province {seat}"),
+        },
+        ("province.unrest", _) => format!("{} of {} toward an uprising", group(data.value(i) as u64), group(sim::realms::LINE)),
         ("province.lat", _) => format!("{:.1}°", data.value(i).to_degrees()),
         ("province.rain_shortfall", _) => {
             let v = data.value(i);
@@ -179,7 +391,8 @@ pub fn grant(r: &Request, granted: u64, goods: &Goods) -> String {
     format!("{} was given {} of {} asked from the {from} ({share:.0}%), for {}", slot_name(r.requester), group(granted), group(r.take), cause(r.cause))
 }
 
-pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
+pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String {
+    let realm = |r: &u32| names.realm(*r);
     match e {
         Event::Granted { request, granted } => grant(request, *granted, goods),
         Event::Famine { starved, .. } => format!("famine: {} people starved", group(*starved)),
@@ -197,29 +410,29 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods) -> String {
             duration(*days, cal)
         ),
         Event::Arrived { people, cause: c, .. } => format!("{} people arrived: {}", group(*people), cause(*c)),
-        Event::Succession { realm, ruler, how, .. } => format!("realm {realm} has a new ruler, character {ruler}: {}", how.describe()),
-        Event::DeclareWar { attacker, defender } => format!("realm {attacker} is to declare war on realm {defender}"),
+        Event::Succession { realm: r, ruler, how, .. } => format!("{} has a new ruler, {}: {}", realm(r), names.person(*ruler), how.describe()),
+        Event::DeclareWar { attacker, defender } => format!("{} is to declare war on {}", realm(attacker), realm(defender)),
         Event::ForcePeace { a, b, winner } => match *winner {
-            sim::grid::NONE => format!("realms {a} and {b} are to make peace, nobody winning"),
-            w => format!("realms {a} and {b} are to make peace, realm {w} winning"),
+            NONE => format!("{} and {} are to make peace, nobody winning", realm(a), realm(b)),
+            w => format!("{} and {} are to make peace, {} winning", realm(a), realm(b), realm(&w)),
         },
-        Event::WarDeclared { war, attacker, defender, cause } => format!("realm {attacker} declared war on realm {defender} (war {war}): {}", cause.describe()),
+        Event::WarDeclared { attacker, defender, cause, .. } => format!("{} declared war on {}: {}", realm(attacker), realm(defender), cause.describe()),
         // In a rebellion's war the rebels are the attacker.
-        Event::Peace { war, attacker, defender, winner, rebellion: true } => match *winner {
-            w if w == *defender => format!("the rebellion of realm {attacker} is over (war {war}): realm {defender} won and takes back all the rebels' land"),
-            w if w == *attacker => format!("realm {attacker} has won its freedom from realm {defender} (war {war}) and keeps the land it holds"),
-            _ => format!("peace between the rebels of realm {attacker} and realm {defender} (war {war}): nobody won, the rebels stay free"),
+        Event::Peace { attacker, defender, winner, rebellion: true, .. } => match *winner {
+            w if w == *defender => format!("the rebellion of {} is over: {} won and takes back all the rebels' land", realm(attacker), realm(defender)),
+            w if w == *attacker => format!("{} has won its freedom from {} and keeps the land it holds", realm(attacker), realm(defender)),
+            _ => format!("peace between the rebels of {} and {}: nobody won, the rebels stay free", realm(attacker), realm(defender)),
         },
-        Event::Peace { war, attacker, defender, winner, rebellion: false } => match *winner {
-            sim::grid::NONE => format!("peace between realms {attacker} and {defender} (war {war}): nobody won, all occupied land goes back"),
-            w => format!("peace between realms {attacker} and {defender} (war {war}): realm {w} won and keeps the land it holds"),
+        Event::Peace { attacker, defender, winner, rebellion: false, .. } => match *winner {
+            NONE => format!("peace between {} and {}: nobody won, all occupied land goes back", realm(attacker), realm(defender)),
+            w => format!("peace between {} and {}: {} won and keeps the land it holds", realm(attacker), realm(defender), realm(&w)),
         },
-        Event::Occupied { by, .. } => format!("realm {by} took the province (or, if it owns it, freed it)"),
-        Event::WarRefused { attacker, defender, why } => format!("the poke about realms {attacker} and {defender} was turned down: {}", why.describe()),
-        Event::Uprising { province, realm, seat } if province == seat => format!("the province rose up against realm {realm}"),
-        Event::Uprising { realm, seat, .. } => format!("the province joined the uprising against realm {realm} begun in province {seat}"),
-        Event::Calmed { realm, .. } => format!("the uprising against realm {realm} died down"),
-        Event::Rebellion { realm, from, provinces, .. } => format!("{provinces} provinces broke away from realm {from} as realm {realm}"),
+        Event::Occupied { by, .. } => format!("{} took the province (or, if it owns it, freed it)", realm(by)),
+        Event::WarRefused { attacker, defender, why } => format!("the poke about {} and {} was turned down: {}", realm(attacker), realm(defender), why.describe()),
+        Event::Uprising { province, realm: r, seat } if province == seat => format!("the province rose up against {}", realm(r)),
+        Event::Uprising { realm: r, seat, .. } => format!("the province joined the uprising against {} begun in province {seat}", realm(r)),
+        Event::Calmed { realm: r, .. } => format!("the uprising against {} died down", realm(r)),
+        Event::Rebellion { realm: r, from, provinces, .. } => format!("{provinces} provinces broke away from {} as {}", realm(from), realm(r)),
     }
 }
 
@@ -293,9 +506,9 @@ impl LogEntry {
         LogEntry { day, source: Source::Module(owner), province, what: Logged::Rationed(*r, granted) }
     }
 
-    pub fn text(&self, cal: &Calendar, goods: &Goods) -> String {
+    pub fn text(&self, cal: &Calendar, goods: &Goods, names: &Names) -> String {
         match &self.what {
-            Logged::Event(e) => event(e, cal, goods),
+            Logged::Event(e) => event(e, cal, goods, names),
             Logged::Rationed(r, g) => format!("not enough to go round: {}", grant(r, *g, goods)),
         }
     }
@@ -313,7 +526,7 @@ pub fn stage(s: Stage) -> &'static str {
 }
 
 /// One step of a trace, in words.
-pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods) -> String {
+pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods, names: &Names) -> String {
     let who = s.module.map_or("the engine", slot_name);
     match &s.what {
         Traced::Note(n) => format!("{who}: {n}"),
@@ -327,8 +540,8 @@ pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods) -> String {
         }
         Traced::Requested(r) => format!("{}; settled tonight", request(r, goods)),
         Traced::Granted(r, g) => format!("{who} settled it: {}", grant(r, *g, goods)),
-        Traced::Delivered(e) => format!("arrived: {}", event(e, cal, goods)),
-        Traced::Sent(e) => format!("{who} announced: {} (arrives tomorrow)", event(e, cal, goods)),
+        Traced::Delivered(e) => format!("arrived: {}", event(e, cal, goods, names)),
+        Traced::Sent(e) => format!("{who} announced: {} (arrives tomorrow)", event(e, cal, goods, names)),
     }
 }
 

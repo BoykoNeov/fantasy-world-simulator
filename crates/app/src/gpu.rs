@@ -1,7 +1,7 @@
 //! GPU side of the map: layer textures, the line buffer, and the two drawing steps (the map itself,
 //! then lines over it). Plain wgpu, so the picking test can build it without a window.
 
-use crate::geometry::{Kind, LineInstance, KINDS};
+use crate::geometry::{Kind, LineInstance, RealmBorders, KINDS};
 use crate::layers::{self, Rgba, TABLE_LAYERS, TABLE_WIDTH};
 use crate::projection::Camera;
 use eframe::egui_wgpu::wgpu;
@@ -9,6 +9,7 @@ use eframe::egui_wgpu::wgpu::util::DeviceExt as _;
 use sim::sim::Sim;
 use sim::world::World;
 use std::ops::Range;
+use std::sync::Arc;
 
 pub const SHADER: &str = include_str!("map.wgsl");
 
@@ -23,6 +24,7 @@ pub struct MapUniforms {
     pub layers1: [f32; 4],
     pub layers2: [f32; 4],
     pub layers3: [f32; 4],
+    pub layers4: [f32; 4],
     pub ids: [u32; 4],
 }
 
@@ -42,12 +44,18 @@ pub struct LayerSettings {
     pub trade_balance: f32,
     /// Last month's trade, as lines between provinces.
     pub trade: f32,
+    /// Provinces in their realm's colour, striped with an occupier's.
+    pub realms: f32,
+    /// How restless each province is, and where it has risen up.
+    pub unrest: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
     pub graticule: bool,
     /// The ways between provinces: roads and sea lanes.
     pub roads: bool,
+    /// Thick lines between realms (none in a world without realms).
+    pub realm_borders: bool,
 }
 
 impl Default for LayerSettings {
@@ -63,11 +71,14 @@ impl Default for LayerSettings {
             prices: 0.0,
             trade_balance: 0.0,
             trade: 0.0,
+            realms: 0.0,
+            unrest: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
             graticule: true,
             roads: false,
+            realm_borders: true,
         }
     }
 }
@@ -85,6 +96,7 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers1: [l.famine, l.provinces, on(l.coasts), on(l.rivers)],
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
         layers3: [on(l.roads), l.trade, l.trade_balance, 0.0],
+        layers4: [l.realms, l.unrest, on(l.realm_borders), 0.0],
         ids: [hover_province, selected_province, 0, 0],
     }
 }
@@ -101,6 +113,8 @@ pub struct MapData {
     pub tables: Vec<Rgba>,
     pub lines: Vec<LineInstance>,
     pub line_ranges: [Range<u32>; KINDS.len()],
+    /// The province borders, ready to be drawn as borders between realms.
+    pub realm_borders: Arc<RealmBorders>,
 }
 
 impl MapData {
@@ -116,6 +130,7 @@ impl MapData {
         let mut chains = crate::geometry::all_lines(w);
         crate::wobble::warp_borders(&mut chains, w.grid.n, &warp);
         let (lines, line_ranges) = crate::geometry::instances(&chains);
+        let realm_borders = Arc::new(RealmBorders::of(&chains));
         MapData {
             n: w.grid.n,
             provinces: w.provinces.count,
@@ -126,6 +141,7 @@ impl MapData {
             tables: layers::province_tables(w, view, &layers::MarketView::default()),
             lines,
             line_ranges,
+            realm_borders,
         }
     }
 }
@@ -142,6 +158,9 @@ pub struct MapGpu {
     /// Last month's trade lines, replaced when the trade changes; `trade_len` of them are in use.
     pub trade: wgpu::Buffer,
     pub trade_len: u32,
+    /// The borders between realms, replaced when who owns what changes; `realm_len` in use.
+    pub realm: wgpu::Buffer,
+    pub realm_len: u32,
     pub tables: wgpu::Texture,
     table_rows: u32,
 }
@@ -164,9 +183,9 @@ fn array_texture(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, size: 
     )
 }
 
-fn trade_buffer(device: &wgpu::Device, lines: usize) -> wgpu::Buffer {
+fn line_buffer(device: &wgpu::Device, label: &str, lines: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("trade lines"),
+        label: Some(label),
         size: (lines.max(1) * std::mem::size_of::<LineInstance>()) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
@@ -279,20 +298,19 @@ impl MapGpu {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let trade = trade_buffer(device, 1);
-        MapGpu { map_pipeline, layout, line_pipeline, bind_group, uniforms, lines, line_ranges: data.line_ranges.clone(), trade, trade_len: 0, tables, table_rows }
+        let (trade, realm) = (line_buffer(device, "trade lines", 1), line_buffer(device, "realm borders", 1));
+        let line_ranges = data.line_ranges.clone();
+        MapGpu { map_pipeline, layout, line_pipeline, bind_group, uniforms, lines, line_ranges, trade, trade_len: 0, realm, realm_len: 0, tables, table_rows }
     }
 
     /// Put last month's trade lines on the GPU, growing their buffer when they don't fit.
     pub fn upload_trade(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lines: &[LineInstance]) {
-        let size = std::mem::size_of_val(lines) as u64;
-        if size > self.trade.size() {
-            self.trade = trade_buffer(device, lines.len().next_power_of_two());
-        }
-        if !lines.is_empty() {
-            queue.write_buffer(&self.trade, 0, bytemuck::cast_slice(lines));
-        }
-        self.trade_len = lines.len() as u32;
+        self.trade_len = upload_lines(device, queue, &mut self.trade, "trade lines", lines);
+    }
+
+    /// Put the borders between realms on the GPU, growing their buffer when they don't fit.
+    pub fn upload_realm_borders(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lines: &[LineInstance]) {
+        self.realm_len = upload_lines(device, queue, &mut self.realm, "realm borders", lines);
     }
 
     /// Re-upload the per-province tables (after the simulation advanced). The per-cell layers are
@@ -315,8 +333,20 @@ impl MapGpu {
         pass.set_pipeline(&self.line_pipeline);
         pass.set_vertex_buffer(0, self.lines.slice(..));
         let roads = u.layers3[0] > 0.0;
-        let visible = [u.layers1[2] > 0.0, u.layers2[0] > 0.0, u.layers1[3] > 0.0, u.layers2[1] > 0.0, roads, roads, false];
-        for kind in [Kind::Graticule, Kind::Road, Kind::SeaLane, Kind::Province, Kind::River, Kind::Coast] {
+        let visible = [u.layers1[2] > 0.0, u.layers2[0] > 0.0, u.layers1[3] > 0.0, u.layers2[1] > 0.0, roads, roads, false, false];
+        for kind in [Kind::Graticule, Kind::Road, Kind::SeaLane, Kind::Province] {
+            let range = &self.line_ranges[kind as usize];
+            if visible[kind as usize] && !range.is_empty() {
+                pass.draw(0..6 * copies, range.clone());
+            }
+        }
+        // Realm borders under the rivers and coasts, so a river border still shows its river.
+        if u.layers4[2] > 0.0 && self.realm_len > 0 {
+            pass.set_vertex_buffer(0, self.realm.slice(..));
+            pass.draw(0..6 * copies, 0..self.realm_len);
+            pass.set_vertex_buffer(0, self.lines.slice(..));
+        }
+        for kind in [Kind::River, Kind::Coast] {
             let range = &self.line_ranges[kind as usize];
             if visible[kind as usize] && !range.is_empty() {
                 pass.draw(0..6 * copies, range.clone());
@@ -327,4 +357,16 @@ impl MapGpu {
             pass.draw(0..6 * copies, 0..self.trade_len);
         }
     }
+}
+
+/// Write `lines` into `buffer`, replacing it with a larger one when they don't fit. Returns how
+/// many are in use.
+fn upload_lines(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &mut wgpu::Buffer, label: &str, lines: &[LineInstance]) -> u32 {
+    if std::mem::size_of_val(lines) as u64 > buffer.size() {
+        *buffer = line_buffer(device, label, lines.len().next_power_of_two());
+    }
+    if !lines.is_empty() {
+        queue.write_buffer(buffer, 0, bytemuck::cast_slice(lines));
+    }
+    lines.len() as u32
 }

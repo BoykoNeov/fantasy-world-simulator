@@ -1,7 +1,8 @@
 # app: the map view
 
 The window that shows the planet: egui + wgpu over the `sim` crate. Build steps 2 (the map view), 4
-(time controls and the inspector) and 5 (the scenario editor) from the design doc. The simulation code knows nothing about it; the
+(time controls and the inspector) and 5 (the scenario editor) from the design doc, and the window
+pieces of steps 6 and 7. The simulation code knows nothing about it; the
 map only reads the sim's fields.
 
 What exists:
@@ -93,6 +94,32 @@ What exists:
   save that opens at once; open the same world again. The timeline played is saved on the day
   shown.
 
+- **Realms** (step 7, window part 1; only where realms are kept, `--realms`/`--rulers`/`--wars`):
+  - "realms" colours each province by the realm that owns it, a hue from the realm's number
+    (`layers::realm_color`), so a realm keeps its colour while others break away or end. Land
+    nobody owns stays clear. Where an enemy occupies a province, diagonal stripes of the
+    occupier's colour run over it, fixed to the screen. Neighbouring realms can get close
+    colours; the borders between them tell them apart.
+  - "borders between realms" (on by default; a world without realms has none) draws a thick line
+    wherever the realms on either side of a province border differ, or a realm meets land nobody
+    owns. The lines are the province borders themselves, wobble and all, flattened once per map
+    with the two provinces each runs between (`geometry::RealmBorders`); when who owns what
+    changes, the ones between different owners are copied into a buffer of their own, so nothing
+    is worked out again. They don't fade when zoomed out, and rivers and coasts draw over them.
+  - "unrest" shades provinces by how restless they are: clear when calm, yellow through orange to
+    red toward an uprising, deep crimson where one has risen up.
+  - Realm numbers are never blended between days: realm colours, occupiers and unrest show the
+    day on screen.
+  - The inspector opens with the selected province's realm: its colour and name, its capital
+    (click to go there, and so to its page), its provinces and people, its treasury (under
+    markets), the realm it broke away from, provinces in uprising and held by enemies; its ruler
+    (age, traits, since when and how they came to the throne) and heir; its wars and truces (with
+    a button to go to the other realm); earlier rulers; and what happened to it (successions, wars,
+    peace, uprisings, breakaways). The province's own values say "occupied by" a realm by name,
+    "calm" or "risen up", and unrest as "N of 1,000 toward an uprising".
+  - Realms and rulers are named everywhere the inspector and the event log speak of them
+    (`inspector::Names`), and the log can filter by Realms, Characters and Diplomacy.
+  - Hovering says which realm owns a province, who occupies it, and how restless it is.
 - **Modules** (step 6): the module versions running, and what the combination tester found for
   that mix (`crates/sim/data/compatibility.toml`): no problems found, known quirks, or unstable,
   with each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs. The
@@ -104,7 +131,7 @@ What exists:
   all its timelines; the world is generated and run on another thread while the old one stays up.
   If the simulation refuses it anyway, the window says why and keeps the old world.
 
-Not yet: place-name labels (nothing has a name yet) and mipmaps (not needed at current zoom limits).
+Not yet: names written on the map (realms have names now, but only the inspector shows them) and mipmaps (not needed at current zoom limits).
 
 ## Running
 
@@ -118,6 +145,9 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
 - `--modules SLOT=VERSION,...`: any module versions, e.g. `economics=off,population=off` or
   `weather=off` (slots: terrain, climate, economics, population, weather).
+- `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`: realms (with the ways to start
+  weighted as given), rulers and heirs, and wars and truces, as in `simrun`. Realms are off by
+  default until step 7's checks; `--rulers` or `--wars` alone turn them on the default way.
 - `--years Y`: how long to run before showing it (default 20).
 - `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
   on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).
@@ -127,8 +157,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces`, `prices`, `trade`, `balance` (0..1), and `coasts`, `rivers`, `borders`,
-  `graticule`, `roads` (0 or 1).
+  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest` (0..1), and `coasts`,
+  `rivers`, `borders`, `graticule`, `roads`, `realm_borders` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--remake SIZE,SEED,YEARS[,SLOT=VERSION,...]`: once the window is open, make a new world through
@@ -147,7 +177,10 @@ Tests, including one that renders cell ids on the GPU and checks them against th
 within its lookahead, and a poke after it ran ahead gives exactly the future a fresh world gets; an
 edit comes back on the day shown with its new map, undo and redo give the maps before and after,
 a change in the past starts a timeline and leaves the old one as it was, going back and forth
-gives the same days, and a world saved from the window opens again as it was:
+gives the same days, and a world saved from the window opens again as it was. One builds every
+realm's page and every log line from the window's copy of the world after 50 years of successions,
+breakaways and a war, given only what the simulation sends each day: everyone is there and named,
+and no "none" shows as a raw number.
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app
@@ -187,5 +220,11 @@ results are in `bench/results/`.
   economy and both trade layers on (lines and tint): pan 9.7 ms, zoom 12.0 ms, about 1 ms more.
   The static line buffer grew from about 315,000 to 385,000 segments with the roads and sea lanes,
   which are drawn only when switched on. Raw results: `bench/results/step6_window_*.json`.
+- **Re-checked after step 7's window part 1 (Oct 16):** three rounds, oval map, integrated GPU,
+  large world (seed 7) with realms, rulers and wars after 40 years under Economics v0. Realm layers
+  off: pan 9.1–9.2 ms, zoom 11.6 ms (median). Realm colours and borders between realms on: pan
+  11.0–11.7 ms, zoom 13.1–13.6 ms, about 2 ms more, still 75–90 frames a second. One round of
+  each was disturbed by other work on the machine (frames of 100–400 ms, `off_2` and `on_1`) and
+  is left out of those ranges. Raw results: `bench/results/step7_window_*.json`.
 - **The RTX 5090 numbers are not informative.** That day it showed a flat 15.6 ms (about 64 frames a
   second) for this app *and* for the renderer trial's program, so something capped it.
