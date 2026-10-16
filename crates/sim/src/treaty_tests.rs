@@ -491,5 +491,13 @@ fn treaties_survive_saving_loading_and_going_back() {
     }
     sim.goto(today).unwrap();
     assert_eq!(sim.fingerprint(), now, "forward again");
+
+    // A scenario file carries the settings and makes the same world.
+    let text = crate::branch::Timelines::new(sim.fork()).scenario_text();
+    assert!(text.contains("treaties") && text.contains("war_chance"), "the settings are written");
+    let mut read = crate::branch::Timelines::from_scenario_text(&text).unwrap();
+    let back = read.list.swap_remove(read.active).sim;
+    assert_eq!((back.day, back.fingerprint()), (sim.day, sim.fingerprint()));
+    assert_eq!((&back.world.wars, &back.world.relations), (&sim.world.wars, &sim.world.relations));
     assert_eq!(sim.problems, Problems::default());
 }
