@@ -5,7 +5,7 @@
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
-//!        [--armies]
+//!        [--armies] [--treaties]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
@@ -17,7 +17,9 @@
 //! spend coins, and the realms line says where the coins sit. Realms come with unrest: an unrest
 //! line says how many provinces are in uprising and how many realms have broken away. `--armies`
 //! has provinces raise soldiers (turning realms on the same way), and a line says how many serve,
-//! of which kinds, and how many deserted.
+//! of which kinds, and how many deserted. `--treaties` has realms choose war and make peace
+//! themselves (Diplomacy "treaties"; it turns realms, wars and armies on), and the wars line says
+//! why they were declared.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -83,6 +85,11 @@ fn main() {
     if args.iter().any(|a| a == "--armies") {
         config.modules.realms.get_or_insert_with(Default::default);
         config.modules.warfare = Some(Default::default());
+    }
+    if args.iter().any(|a| a == "--treaties") {
+        config.modules.realms.get_or_insert_with(Default::default);
+        config.modules.warfare.get_or_insert_with(Default::default);
+        config.modules.diplomacy.get_or_insert_with(Default::default).treaties = Some(Default::default());
     }
 
     let t = Instant::now();
@@ -223,6 +230,9 @@ fn print_realms(sim: &Sim) {
         let on = (0..wars.count() as u32).filter(|&k| wars.ongoing(k)).count();
         let won = (0..wars.count()).filter(|&k| wars.winner[k] != sim::grid::NONE).count();
         println!("wars: {} declared, {on} going on, {won} won, {} ended with nobody winning", wars.count(), wars.count() - on - won);
+        let of = |c: sim::diplomacy::WarCause| (0..wars.count()).filter(|&k| sim::diplomacy::WarCause::from_u8(wars.cause[k]) == c).count();
+        use sim::diplomacy::WarCause::*;
+        println!("wars declared: {} by pokes, {} by rebels, {} for food, {} for riches", of(Poke), of(Rebellion), of(Food), of(Riches));
     }
     print_armies(sim);
 }

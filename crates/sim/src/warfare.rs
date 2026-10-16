@@ -599,6 +599,7 @@ static V1: Manifest = Manifest {
         "war.attacker",
         "war.defender",
         "war.ended",
+        "war.target",
         "province.area_km2",
         "province.food_capacity",
         "province.grazing_capacity",
@@ -1425,7 +1426,8 @@ impl Troops {
         let winner = rec.iter().filter(|f| !f.broke).max_by_key(|f| (f.engaged.saturating_sub(f.killed), Reverse(f.realm))).map_or(NONE, |f| f.realm);
         let loser = rec.iter().find(|f| f.broke).map_or(NONE, |f| f.realm);
         let killed = rec.iter().map(|f| f.killed).sum();
-        cx.emit(Event::Battle { province: p, winner, loser, killed });
+        let sides = rec.iter().map(|f| (f.realm, f.killed)).collect();
+        cx.emit(Event::Battle { province: p, winner, loser, killed, sides });
         self.st.dirty.extend(rec.iter().map(|f| f.realm));
         if cx.traced(p) {
             cx.note(format!("the battle is over: realm {winner} holds the field, {killed} killed"));
@@ -1537,7 +1539,8 @@ impl Troops {
             }
             let winner = if fleet_broke { foes[0].0 } else { r };
             let loser = if fleet_broke { r } else { foes[0].0 };
-            cx.emit(Event::Battle { province: t, winner, loser, killed: killed.iter().sum() });
+            let fought = sides.iter().zip(&killed).map(|((x, _), &k)| (*x, k)).collect();
+            cx.emit(Event::Battle { province: t, winner, loser, killed: killed.iter().sum(), sides: fought });
             if cx.traced(t) {
                 cx.note(format!("realm {r}'s fleet fought at sea here: {}", if fleet_broke { "it broke" } else { "it won" }));
             }
@@ -1723,7 +1726,22 @@ impl Troops {
             let d = |q: u32| -dot(w.provinces.center[q as usize], cap_center);
             d(a).total_cmp(&d(b)).then(a.cmp(&b))
         });
-        let targets: Vec<(u32, bool)> = defend.into_iter().chain(attack).map(|q| (q, false)).chain(sea.into_iter().map(|q| (q, true))).collect();
+        // The provinces its wars were declared over come first after its own land, while it can
+        // reach them.
+        let wanted: BTreeSet<u32> = (0..w.wars.count())
+            .filter(|&k| w.wars.ended[k] == diplomacy::NEVER && w.wars.attacker[k] == r && w.wars.target.get(k).is_some_and(|&t| t != NONE))
+            .map(|k| w.wars.target[k])
+            .collect();
+        let (attack_wanted, attack): (Vec<u32>, Vec<u32>) = attack.into_iter().partition(|q| wanted.contains(q));
+        let (sea_wanted, sea): (Vec<u32>, Vec<u32>) = sea.into_iter().partition(|q| wanted.contains(q));
+        let targets: Vec<(u32, bool)> = defend
+            .into_iter()
+            .map(|q| (q, false))
+            .chain(attack_wanted.into_iter().map(|q| (q, false)))
+            .chain(sea_wanted.into_iter().map(|q| (q, true)))
+            .chain(attack.into_iter().map(|q| (q, false)))
+            .chain(sea.into_iter().map(|q| (q, true)))
+            .collect();
 
         // Free companies, and how many of the realm's field soldiers each province already holds
         // or expects.

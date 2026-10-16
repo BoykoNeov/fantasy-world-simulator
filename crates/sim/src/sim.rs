@@ -902,7 +902,7 @@ impl Sim {
             Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
             Tier::Army => self.world.armies.province.get(e as usize) == Some(&t.province),
             // A realm's, a character's or a war's own values are not a province's.
-            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War => false,
+            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War | Tier::Relation => false,
         };
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };

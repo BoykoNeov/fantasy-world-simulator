@@ -67,7 +67,7 @@ Loads refuse other format versions,
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
   | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below); or off (the default until step 7's checks) | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
-  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; or off (the default until step 7's checks) | monthly, and on pokes |
+  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; or off (the default until step 7's checks) | monthly, and on pokes |
   | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off (the default until step 7's checks) | daily (raising and eating monthly) |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
@@ -344,12 +344,13 @@ Loads refuse other format versions,
     changes hands only at the peace. A split province keeps its occupier; one with no land, or whose
     occupier is gone, has none.
   - **Who reads whom.** The engine refuses modules that read each other's fields in a circle. Realms
-    keep the land and occupation; the wars read realms; armies will read both and send occupation
+    keep the land and occupation; the wars read realms; armies read both and send occupation
     back by event. So the realms module can't read the wars, and peace changes land by an event
-    (a test builds this order). Later pieces will need a way to read the day before's values without
-    an order between the modules: trade will read the wars, while realms choosing war will read
-    trade's stores and prices. Taxes already have realms reading markets' stores; the loop closes
-    when markets reads owners and wars (trade and realms).
+    (a test builds this order). Diplomacy "treaties" reads stores and people too, and Warfare reads
+    the wars, so Diplomacy can't read the armies (it counts battles from their events). The next
+    piece, trade between realms, needs a way to read the day before's values without an order
+    between the modules: markets will read owners and wars, while realms (taxes) and Diplomacy
+    (wants) read markets' stores.
   - With no pokes and no unrest, worlds with wars on hold the same values as without (a test);
     with unrest, rebels who break away start wars of their own. Wars cost nothing
     measurable per day. `simrun` prints how many wars were declared, go on, were won and ended with
@@ -567,6 +568,67 @@ Loads refuse other format versions,
     against 2.80 ms). Getting there, the engine now sums only the quantities a module's own fields
     hold around its stage, and checks the rest by their flows, which must come to nothing (before,
     every stage summed every quantity: a daily module cost 15 ms a day).
+- **Realms choosing war and peace** (step 7; Diplomacy "treaties", `diplomacy.rs`, tests in
+  `treaty_tests.rs`). Off by default, like the other step 7 slots; `WarParams::treaties` (a
+  scenario file's `[modules.diplomacy.treaties]`), `simrun --treaties` or the window's `--treaties`
+  turns it on. It needs armies (refused without them: with nothing occupied and no battle fought,
+  every war would end with nobody winning). "wars" stays as it was, pokes only; worlds running it
+  come out the same as before this piece (`war_check` one war and 40 years with rebellions, both
+  economies, compared output for output with the build before).
+  - **Opinions** (`relation.*` fields, a new tier of entries, numbers never reused): for each pair
+    of realms whose armies can reach each other, and any two that have fought, what each thinks of
+    the other, from −100 to 100. A new pair starts at 0, rebels and the realm they left at −50. Each
+    month at peace (no truce) each opinion rises 0.5, up to 50; rivals (neighbours within 1.5 times
+    each other's strength) lose 0.3. A war declared: the realm attacked thinks 60 less of the
+    attacker, the attacker 20 less of it. Each battle between them: 5 less, both ways. Each province
+    occupied: its owner 10 less of the occupier. Land lost at a peace: the loser 30 less of the
+    winner. Opinion of trade waits for the trade piece (trade is not a field yet).
+  - **Strength is people**: Diplomacy can't read the armies, since Warfare reads the wars (the
+    engine refuses the circle). A realm's strength is the people of its land.
+  - **Wants**, each month: a realm whose people starved past 1% over the last twelve months
+    (counted from `Famine` events by the land's owner; private state `treaties-1`) wants food, the
+    best-stocked province it can reach of a neighbour's. Every realm likes the richest province it
+    can reach (coins under markets; people and food stores, a year's rations as one person, under
+    Economics v0), by how much richer it is than its own provinces on average, up to 3 times,
+    counted for more under a greedy ruler. A province is in reach when it has a land way to, or
+    faces across one stretch of sea, a province the realm holds or occupies.
+  - **Declaring war**, each month, for each realm: on the realm it wants most of those it can reach,
+    at peace with it (realms keep truces; the player's poke still breaks one), not much stronger
+    (at least 0.8 times as strong), and, if it already fights a war, only when at least twice as
+    strong as all its enemies together, the new one included. The score multiplies what it wants
+    (up to 3), how much stronger it is (up to 3 times), the ruler's warlike trait (half at 0, twice
+    at 100) and its opinion (lower is likelier: ×2.7 at −50, ×0.37 at 50); the monthly chance is the
+    score (at most 10) over 180. A realm with no ruler yet counts as neither warlike nor greedy. The
+    war keeps its cause (`WarCause::Food`, `Riches`) and the province it wants (`war.target`), which
+    the general goes for first after its own land, while it can reach it (tested).
+  - **Peace by treaty**, each month, for each war, rebellions' too: each side's weariness is 100 ×
+    the share of its people living in land the enemy occupies, + 10 a year at war, + 5 a battle lost,
+    + 50 × its soldiers killed over 5% of its people, + 30 × its land's average unrest over the
+    uprising line. At 100 it is worn out: the war ends, won by the less worn side (by nobody when
+    both are worn out within 10 of each other); or when the attacker holds the war's target and the
+    defender is at 50. A rebellion ended by treaty both ways is the user's choice: the realm the
+    rebels left, winning, takes all their land back as when it takes their capital. Each war counts
+    each side's soldiers killed and battles lost (`war.attacker_dead` and the like, from `Battle`
+    events, which now name each side and its dead). "wars" leaves the new war fields empty.
+  - **Measured** (Oct 16, `examples/unrest_check.rs ECONOMICS SEED drought|quiet ... treaties`).
+    Story 1 with realms choosing war (only a war for food counts as the story's war): on Economics
+    v0 the drought realm rises up or declares a war for food on all three seeds (21: uprising after
+    1.4 years and a war for food after 2.9; 3: uprising after 2.9; 7: war for food after 1.0), and
+    the worlds without the drought do neither on seeds 21 and 3; on seed 7 the same realm declares
+    its war for food after 1.0 years without the drought too (its own famine, not the drought's):
+    2 of 3. Under markets the drought realm rises up on 21 and 3 and declares a war for food on 7;
+    without the drought nothing on all three. Over 150 years (seed 21), against armies alone:
+    on Economics v0, 34 wars for food and 115 for riches (about one a realm every 20 years), at most
+    4 wars at once, 4 second wars, 21 realms at the end (20 without), 0.5-1.7% under arms at the
+    decade ends (0.5-1.2%), starved 7.9 per 1,000 a year (8.5); under markets 47 for food and 113
+    for riches, at most 5 at once, 2 second wars, 24 realms at the end (29), starved 7.5 (7.8).
+    Nearly every peace has a winner. Rebellions' wars: 19 put down and 4 won on Economics v0 (22
+    and 3), 50 put down and 5 won under markets (41 and 11). Wars for riches aim at a capital half the time on Economics v0
+    and three times in four under markets (capitals hold the most coins), and few of the richest 5%
+    of provinces change hands at a peace (none on Economics v0, 6 under markets in 150 years):
+    story 2's rich city is rarely taken. Speed (large world, one worker thread, `war_check ...
+    time-treaties`): about 7 ms more on a month's first day under markets (0.24 ms a day averaged),
+    below the noise on Economics v0.
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

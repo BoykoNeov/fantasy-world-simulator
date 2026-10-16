@@ -114,7 +114,7 @@ fn battles(sim: &mut Sim, days: u64) -> (Fought, BTreeMap<u32, u64>) {
     for _ in 0..days {
         for (_, e) in day(sim) {
             match e {
-                Event::Battle { province, winner, loser, killed } => {
+                Event::Battle { province, winner, loser, killed, .. } => {
                     out.insert(province, (winner, loser, killed));
                 }
                 Event::Arrived { province, people, cause: Cause::Returned } => *home.entry(province).or_default() += people,

@@ -23,6 +23,8 @@ pub enum Module {
     Characters = 8,
     /// Warfare: soldiers' deaths and desertions.
     Warfare = 9,
+    /// Diplomacy: realms choosing war.
+    Diplomacy = 10,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

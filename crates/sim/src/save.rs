@@ -59,7 +59,12 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// saying whether it ended a rebellion.
 /// Format 19 (step 7): Warfare "troops": its parameters (the troop tree and kinds) in the
 /// configuration, each army's kind and home, and the causes deserted, equipped and bounty.
-pub const FORMAT_VERSION: u32 = 20;
+/// Format 20 (step 7): armies moving and fighting: each army's role, group, way and siege, Warfare's
+/// private state `armies-1`, and the battle event.
+/// Format 21 (step 7): Diplomacy "treaties": its parameters in the wars', each war's target and
+/// tallies of dead and battles lost, the relation fields, its private state (hunger), and the
+/// battle event naming each side and its dead.
+pub const FORMAT_VERSION: u32 = 21;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

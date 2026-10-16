@@ -32,6 +32,9 @@ pub enum Tier {
     Character,
     /// One entry per war (step 7); numbers are never reused, an ended war keeps its entry.
     War,
+    /// One entry per pair of realms that know each other (step 7, Diplomacy "treaties"): what each
+    /// thinks of the other. Numbers are never reused.
+    Relation,
 }
 
 impl Tier {
@@ -355,6 +358,17 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("army.next", Tier::Army, "province id it is on its way to next, none when standing", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("army.days_left", Tier::Army, "days until it reaches army.next", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("army.siege_days", Tier::Army, "days it has besieged the province it stands in", 0.0, UNBOUNDED) },
+    // Realms choosing war and peace (step 7, Diplomacy "treaties"; "wars" keeps the war fields
+    // too, leaving them empty).
+    FieldDef { default: Default::Empty, ..def("war.target", Tier::War, "province id the war was declared over, none if none", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.attacker_dead", Tier::War, "soldiers the attacker lost in the war's battles", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.defender_dead", Tier::War, "soldiers the defender lost in the war's battles", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.attacker_lost", Tier::War, "battles the attacker lost", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("war.defender_lost", Tier::War, "battles the defender lost", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("relation.a", Tier::Relation, "realm id, the lower of the two", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("relation.b", Tier::Relation, "realm id, the higher of the two", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("relation.a_of_b", Tier::Relation, "what realm a thinks of realm b, -100 to 100", -100.0, 100.0) },
+    FieldDef { default: Default::Empty, ..def("relation.b_of_a", Tier::Relation, "what realm b thinks of realm a, -100 to 100", -100.0, 100.0) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

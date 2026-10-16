@@ -11,9 +11,15 @@
 //!
 //! `famine` sets what a month of famine adds to unrest, to try other settings. `armies`, anywhere
 //! among the arguments, has provinces raise troops too; `quiet` then also prints the people who
-//! starved in each decade (soldiers included) and the share under arms at its end.
+//! starved in each decade (soldiers included) and the share under arms at its end. `treaties`
+//! (with armies) has realms choose war and make peace themselves (Diplomacy "treaties"): `quiet`
+//! then prints the wars each decade (by cause; second wars; the most at once; peaces with a
+//! winner; wars for riches aimed at a capital; provinces that changed hands at a peace, and how
+//! many were among the richest 5%), and `drought` counts a war for food declared by a drought
+//! realm as the story's war (only for food: a war for riches is not the story's).
 
 use sim::config::Config;
+use sim::diplomacy::WarCause;
 use sim::events::Event;
 use sim::module::Slot;
 use sim::sim::Sim;
@@ -22,7 +28,7 @@ use sim::world::WorldParams;
 const FAMINE: f64 = 0.005;
 const WINDOW: usize = 24;
 
-fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool) -> Sim {
+fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties: bool) -> Sim {
     let mut config = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     config.modules.set_choice(Slot::Economics, economics).unwrap();
     let mut realms = sim::realms::RealmParams::default();
@@ -32,8 +38,11 @@ fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool) -> Sim {
     config.modules.realms = Some(realms);
     config.modules.characters = Some(Default::default());
     config.modules.diplomacy = Some(Default::default());
-    if armies {
+    if armies || treaties {
         config.modules.warfare = Some(Default::default());
+    }
+    if treaties {
+        config.modules.diplomacy.as_mut().unwrap().treaties = Some(Default::default());
     }
     Sim::new(&config).unwrap()
 }
@@ -45,6 +54,18 @@ struct Seen {
     uprisings: Vec<(u32, u64)>,
     breakaways: Vec<(u32, u32, u64)>,
     most_famine: Vec<usize>,
+    /// Wars declared: (war, attacker, cause, day).
+    declared: Vec<(u32, u32, WarCause, u64)>,
+    /// Wars for riches whose target was the defender's capital.
+    at_capitals: usize,
+    /// Peaces: (war, whether someone won).
+    peaces: Vec<(u32, bool)>,
+    /// Provinces that changed hands at a peace, and how many were among the richest 5% the day
+    /// before.
+    handed: usize,
+    rich_handed: usize,
+    /// The most wars going on at once, at a month's start.
+    most_at_once: usize,
 }
 
 /// Run to day `end`, keeping what happened.
@@ -53,7 +74,26 @@ fn run(sim: &mut Sim, end: u64, seen: &mut Seen) {
     seen.most_famine.resize(n, 0);
     let mut starved = vec![0u64; n];
     let mut recent: Vec<Vec<bool>> = vec![Vec::new(); n];
+    let coins = sim.world.goods.tree.find("money").and_then(|m| sim.world.goods.columns_under(m)).is_some_and(|c| !c.is_empty());
+    let treaties = sim.config.modules.diplomacy.as_ref().is_some_and(|d| d.treaties.is_some());
     while sim.day < end {
+        // Owners and the richest provinces the day before (coins under markets, people otherwise).
+        let (owners, rich) = if treaties {
+            let w = &sim.world;
+            let people = w.province_population();
+            let worth: Vec<u64> = (0..n).map(|p| if coins { w.stock_under(p, "money").unwrap_or(0) } else { people[p] }).collect();
+            let mut sorted = worth.clone();
+            sorted.sort_unstable();
+            let line = sorted[n - n / 20 - 1];
+            (w.owner.clone(), worth.iter().map(|&v| v > 0 && v >= line).collect())
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        if treaties && sim.calendar.is_month_start(sim.day) {
+            let w = &sim.world;
+            let at_once = (0..w.wars.count()).filter(|&k| w.wars.ongoing(k as u32) && w.realms.alive(w.wars.attacker[k]) && w.realms.alive(w.wars.defender[k])).count();
+            seen.most_at_once = seen.most_at_once.max(at_once);
+        }
         if sim.calendar.is_month_start(sim.day) && sim.day > 0 {
             let people = sim.world.province_population();
             for p in (0..n).filter(|&p| people[p] > 0) {
@@ -73,10 +113,39 @@ fn run(sim: &mut Sim, end: u64, seen: &mut Seen) {
                 Event::Famine { province, starved: s } => starved[province as usize] += s,
                 Event::Uprising { province, seat, .. } if province == seat => seen.uprisings.push((province, p.day)),
                 Event::Rebellion { realm, from, .. } => seen.breakaways.push((realm, from, p.day)),
+                Event::WarDeclared { war, attacker, defender, cause } => {
+                    seen.declared.push((war, attacker, cause, p.day));
+                    let w = &sim.world;
+                    if cause == WarCause::Riches && w.realms.capital.get(defender as usize) == w.wars.target.get(war as usize) {
+                        seen.at_capitals += 1;
+                    }
+                }
+                Event::Peace { war, winner, .. } => {
+                    seen.peaces.push((war, winner != sim::grid::NONE));
+                    let w = &sim.world;
+                    for q in 0..owners.len() {
+                        if w.owner[q] != owners[q] && owners[q] != sim::grid::NONE && w.owner[q] != sim::grid::NONE {
+                            seen.handed += 1;
+                            seen.rich_handed += rich[q] as usize;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
     }
+}
+
+/// Wars realms chose while already fighting another.
+fn second_wars(sim: &Sim, of: &[(u32, u32, WarCause, u64)]) -> usize {
+    let wars = &sim.world.wars;
+    of.iter()
+        .filter(|&&(k, a, c, _)| {
+            let began = wars.began[k as usize];
+            matches!(c, WarCause::Food | WarCause::Riches)
+                && (0..wars.count()).any(|j| j != k as usize && (wars.attacker[j] == a || wars.defender[j] == a) && wars.began[j] <= began && wars.ended[j] > began)
+        })
+        .count()
 }
 
 fn famine_months(most: &[usize], of: impl Iterator<Item = usize>) -> String {
@@ -90,18 +159,19 @@ fn famine_months(most: &[usize], of: impl Iterator<Item = usize>) -> String {
 fn main() {
     let all: Vec<String> = std::env::args().skip(1).collect();
     let armies = all.iter().any(|a| a == "armies");
-    let args: Vec<String> = all.into_iter().filter(|a| a != "armies").collect();
+    let treaties = all.iter().any(|a| a == "treaties");
+    let args: Vec<String> = all.into_iter().filter(|a| a != "armies" && a != "treaties").collect();
     let economics = args.first().map_or("food", |s| s.as_str());
     let seed: u64 = args.get(1).map_or(21, |s| s.parse().expect("seed"));
     let drought = args.get(2).is_some_and(|s| s == "drought");
     let years: i64 = args.get(3).map_or(if drought { 5 } else { 150 }, |s| s.parse().expect("years"));
     let famine: Option<f64> = args.get(4).map(|s| s.parse().expect("famine"));
-    let mut sim = world(economics, seed, famine, armies);
+    let mut sim = world(economics, seed, famine, armies, treaties);
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let year = sim.calendar.days_per_year() as u64;
     let u = sim.config.modules.realms.as_ref().unwrap().unrest.clone().unwrap();
-    println!("{economics}, seed {seed}, {n} provinces, {} realms; a famine month adds {}; armies {armies}", sim.world.realms.count(), u.famine);
+    println!("{economics}, seed {seed}, {n} provinces, {} realms; a famine month adds {}; armies {}; treaties {treaties}", sim.world.realms.count(), u.famine, armies || treaties);
 
     if !drought {
         for decade in 0..(years + 9) / 10 {
@@ -128,7 +198,30 @@ fn main() {
                 people / 1e6,
                 famine_months(&seen.most_famine, 0..n)
             );
+            if treaties {
+                let by = |c: WarCause| seen.declared.iter().filter(|d| d.2 == c).count();
+                let won = seen.peaces.iter().filter(|p| p.1).count();
+                println!(
+                    "    wars declared: {} for food, {} for riches ({} at a capital), {} by rebels, {} by pokes; {} second wars; at most {} at once; {} peaces, {won} with a winner; {} provinces changed hands at a peace, {} of them among the richest 5%",
+                    by(WarCause::Food),
+                    by(WarCause::Riches),
+                    seen.at_capitals,
+                    by(WarCause::Rebellion),
+                    by(WarCause::Poke),
+                    second_wars(&sim, &seen.declared),
+                    seen.most_at_once,
+                    seen.peaces.len(),
+                    seen.handed,
+                    seen.rich_handed
+                );
+            }
         }
+        // Rebellions' wars: put down (the realm the rebels left won) or won by the rebels.
+        let wars = &sim.world.wars;
+        let rebellions: Vec<usize> = (0..wars.count()).filter(|&k| WarCause::from_u8(wars.cause[k]) == WarCause::Rebellion && wars.ended[k] != sim::diplomacy::NEVER).collect();
+        let down = rebellions.iter().filter(|&&k| wars.winner[k] == wars.defender[k]).count();
+        let free = rebellions.iter().filter(|&&k| wars.winner[k] == wars.attacker[k]).count();
+        println!("rebellions' wars ended: {} ({down} put down, {free} won by the rebels, {} with nobody winning)", rebellions.len(), rebellions.len() - down - free);
         return;
     }
 
@@ -156,9 +249,12 @@ fn main() {
         let first = seen.uprisings.iter().filter(|(p, _)| region.contains(p)).map(|&(_, d)| d).min();
         let broke = seen.breakaways.iter().filter(|(_, f, _)| realms.contains(f)).count();
         let rose_in_realms = seen.uprisings.iter().filter(|(p, _)| realms.contains(&s.world.owner[*p as usize]) || region.contains(p)).count();
+        let food_war = seen.declared.iter().filter(|d| d.2 == WarCause::Food && realms.contains(&d.1)).map(|d| d.3).min();
+        let riches_wars = seen.declared.iter().filter(|d| d.2 == WarCause::Riches && realms.contains(&d.1)).count();
         println!(
-            "{name}: first uprising in the region {}; uprisings in its realms {rose_in_realms}; breakaways from them {broke}; famine months in two years, region: {}",
+            "{name}: first uprising in the region {}; first war for food by its realms {}; wars for riches by them {riches_wars}; uprisings in its realms {rose_in_realms}; breakaways from them {broke}; famine months in two years, region: {}",
             first.map_or("none".to_string(), |d| format!("after {:.1} years", (d - from) as f64 / year as f64)),
+            food_war.map_or("none".to_string(), |d| format!("after {:.1} years", (d - from) as f64 / year as f64)),
             famine_months(&seen.most_famine, region.iter().map(|&p| p as usize))
         );
     }

@@ -49,6 +49,8 @@ pub mod terrain;
 #[cfg(test)]
 mod treasury_tests;
 #[cfg(test)]
+mod treaty_tests;
+#[cfg(test)]
 mod unrest_tests;
 pub mod warfare;
 pub mod weather;

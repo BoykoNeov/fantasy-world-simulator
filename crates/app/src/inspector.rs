@@ -210,7 +210,7 @@ pub fn realms_in(e: &Event) -> Vec<u32> {
         Event::ForcePeace { a, b, .. } => vec![a, b],
         Event::Occupied { by, .. } => vec![by],
         Event::Rebellion { realm, from, .. } => vec![realm, from],
-        Event::Battle { winner, loser, .. } => [winner, loser].into_iter().filter(|&r| r != NONE).collect(),
+        Event::Battle { ref sides, .. } => sides.iter().map(|s| s.0).collect(),
         _ => Vec::new(),
     }
 }
@@ -239,7 +239,7 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
                 // Realms', armies' and characters' values are not a province's.
-                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => Vec::new(),
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -287,7 +287,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => None,
     }
 }
 

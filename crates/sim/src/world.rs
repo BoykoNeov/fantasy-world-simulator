@@ -8,7 +8,7 @@
 use crate::biome::{self, Biome};
 use crate::characters::Characters;
 use crate::config::ModuleConfig;
-use crate::diplomacy::Wars;
+use crate::diplomacy::{Relations, Wars};
 use crate::fields::{FieldData, FieldId, Goods, Quantity, Tier, FIELDS};
 use crate::grid::Grid;
 use crate::module::{plan, Manifest, Module, Slot};
@@ -144,6 +144,8 @@ pub struct World {
     pub occupier: Vec<u32>,
     /// Wars, going on and ended.
     pub wars: Wars,
+    /// What realms think of each other (Diplomacy "treaties").
+    pub relations: Relations,
     /// How restless each province is (field `province.unrest`): thousandths of the way to an
     /// uprising.
     pub unrest: Vec<u64>,
@@ -186,6 +188,7 @@ impl World {
             characters: Characters::default(),
             occupier: Vec::new(),
             wars: Wars::default(),
+            relations: Relations::default(),
             unrest: Vec::new(),
             uprising: Vec::new(),
         }
@@ -293,6 +296,15 @@ impl World {
             "army.next" => U32(self.armies.next.clone()),
             "army.days_left" => F32(self.armies.days_left.clone()),
             "army.siege_days" => U32(self.armies.siege_days.clone()),
+            "war.target" => U32(self.wars.target.clone()),
+            "war.attacker_dead" => U64(self.wars.attacker_dead.clone()),
+            "war.defender_dead" => U64(self.wars.defender_dead.clone()),
+            "war.attacker_lost" => U32(self.wars.attacker_lost.clone()),
+            "war.defender_lost" => U32(self.wars.defender_lost.clone()),
+            "relation.a" => U32(self.relations.a.clone()),
+            "relation.b" => U32(self.relations.b.clone()),
+            "relation.a_of_b" => F32(self.relations.a_of_b.clone()),
+            "relation.b_of_a" => F32(self.relations.b_of_a.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -305,7 +317,7 @@ impl World {
             Tier::Cell => Some(self.grid.cells()),
             // The province count is set by the province fields themselves; pops, realms, armies
             // and characters vary.
-            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War => None,
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War | Tier::Relation => None,
             Tier::ProvinceGood | Tier::RealmGood => {
                 let k = self.goods.stride();
                 if !data.len().is_multiple_of(k) {
@@ -396,6 +408,15 @@ impl World {
             ("army.next", U32(v)) => self.armies.next = v,
             ("army.days_left", F32(v)) => self.armies.days_left = v,
             ("army.siege_days", U32(v)) => self.armies.siege_days = v,
+            ("war.target", U32(v)) => self.wars.target = v,
+            ("war.attacker_dead", U64(v)) => self.wars.attacker_dead = v,
+            ("war.defender_dead", U64(v)) => self.wars.defender_dead = v,
+            ("war.attacker_lost", U32(v)) => self.wars.attacker_lost = v,
+            ("war.defender_lost", U32(v)) => self.wars.defender_lost = v,
+            ("relation.a", U32(v)) => self.relations.a = v,
+            ("relation.b", U32(v)) => self.relations.b = v,
+            ("relation.a_of_b", F32(v)) => self.relations.a_of_b = v,
+            ("relation.b_of_a", F32(v)) => self.relations.b_of_a = v,
             _ => return wrong(),
         }
         Ok(())
@@ -416,6 +437,7 @@ impl World {
         let armies = &mut self.armies;
         let people = &mut self.characters;
         let wars = &mut self.wars;
+        let relations = &mut self.relations;
         match (id.def().name, values) {
             ("cell.elevation", F32(x)) => put(&mut self.elevation, at, x),
             ("cell.temperature", F32(x)) => put(&mut self.temperature, at, x),
@@ -491,6 +513,15 @@ impl World {
             ("army.next", U32(x)) => put(&mut armies.next, at, x),
             ("army.days_left", F32(x)) => put(&mut armies.days_left, at, x),
             ("army.siege_days", U32(x)) => put(&mut armies.siege_days, at, x),
+            ("war.target", U32(x)) => put(&mut wars.target, at, x),
+            ("war.attacker_dead", U64(x)) => put(&mut wars.attacker_dead, at, x),
+            ("war.defender_dead", U64(x)) => put(&mut wars.defender_dead, at, x),
+            ("war.attacker_lost", U32(x)) => put(&mut wars.attacker_lost, at, x),
+            ("war.defender_lost", U32(x)) => put(&mut wars.defender_lost, at, x),
+            ("relation.a", U32(x)) => put(&mut relations.a, at, x),
+            ("relation.b", U32(x)) => put(&mut relations.b, at, x),
+            ("relation.a_of_b", F32(x)) => put(&mut relations.a_of_b, at, x),
+            ("relation.b_of_a", F32(x)) => put(&mut relations.b_of_a, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -556,7 +587,7 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province, pop, realm, army, character and war fields agree on their lengths (after a
+    /// Check that province, pop, realm, army, character, war and relation fields agree on their lengths (after a
     /// load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
@@ -572,6 +603,7 @@ impl World {
                 Tier::Army => self.armies.count(),
                 Tier::Character => self.characters.count(),
                 Tier::War => self.wars.count(),
+                Tier::Relation => self.relations.count(),
                 Tier::Cell => continue,
             };
             if len != want {

@@ -6,7 +6,7 @@
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
 //!            [--open FILE] [--modules SLOT=VERSION,...] [--remake SIZE,SEED,YEARS[,SLOT=VERSION...]]
-//!            [--realms settled=W,city=W,frontier=W] [--rulers] [--wars] [--armies]
+//!            [--realms settled=W,city=W,frontier=W] [--rulers] [--wars] [--armies] [--treaties]
 //!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
@@ -25,8 +25,9 @@
 //! new world through the New world section once the window is open, as a player would (the
 //! versions given change those of the world shown). `--realms` switches realms on, with the ways
 //! to start weighted as given (`--realms settled=1` is the default way); `--rulers` gives every
-//! realm a ruler and heir, `--wars` keeps wars and truces, and `--armies` has provinces raise
-//! troops (each turns realms on the default way if `--realms` isn't given), as in `simrun`.
+//! realm a ruler and heir, `--wars` keeps wars and truces, `--armies` has provinces raise troops,
+//! and `--treaties` has realms choose war and make peace themselves (with wars and armies; each
+//! turns realms on the default way if `--realms` isn't given), as in `simrun`.
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
@@ -252,6 +253,11 @@ impl Options {
                 "--armies" => {
                     o.config.modules.realms.get_or_insert_with(Default::default);
                     o.config.modules.warfare = Some(Default::default());
+                }
+                "--treaties" => {
+                    o.config.modules.realms.get_or_insert_with(Default::default);
+                    o.config.modules.warfare.get_or_insert_with(Default::default);
+                    o.config.modules.diplomacy.get_or_insert_with(Default::default).treaties = Some(Default::default());
                 }
                 "--bench" => o.bench = true,
                 "--out" => o.out_dir = value(&mut i),
@@ -1517,7 +1523,7 @@ impl MapApp {
                     }
                     // In the goods table below; realms and rulers are on the realm's page above;
                     // armies get theirs later in step 7.
-                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War => {}
+                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => {}
                 }
             }
         });

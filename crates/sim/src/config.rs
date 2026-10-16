@@ -83,8 +83,10 @@ pub struct ModuleConfig {
     /// and out of [`CHOICES`] until step 7's checks, as realms are.
     #[serde(default)]
     pub characters: Option<RulerParams>,
-    /// Diplomacy v0, "wars": wars, peace and truces between realms, by the player's pokes (step 7).
-    /// Needs realms. Off by default and out of [`CHOICES`] until step 7's checks, as realms are.
+    /// Diplomacy v0, "wars": wars, peace and truces between realms, by the player's pokes (step 7);
+    /// v1, "treaties", when its parameters hold [`crate::diplomacy::TreatyParams`]: realms choose war
+    /// and make peace themselves (needs armies). Needs realms. Off by default and out of [`CHOICES`]
+    /// until step 7's checks, as realms are.
     #[serde(default)]
     pub diplomacy: Option<WarParams>,
     /// Warfare v1, "troops": provinces raise soldiers who eat and desert (step 7). Needs realms. Off
@@ -149,7 +151,7 @@ impl ModuleConfig {
             out.push(Box::new(Rulers { params: params.clone() }));
         }
         if let Some(params) = &self.diplomacy {
-            out.push(Box::new(WarState { params: params.clone() }));
+            out.push(Box::new(WarState::new(params.clone())));
         }
         if let Some(params) = &self.warfare {
             // Soldiers use up goods and are paid for only where the world keeps them.

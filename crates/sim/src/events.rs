@@ -57,9 +57,10 @@ pub enum Event {
     /// `capital` its capital and `provinces` provinces. It is at war with `from` from the next day.
     Rebellion { realm: u32, from: u32, capital: u32, provinces: u32 },
     /// A battle in `province` is over: `winner` held the field (or nobody, [`crate::grid::NONE`],
-    /// when a peace ended it), `loser` broke first (or nobody), and `killed` soldiers died in it.
-    /// The owner of provinces adds to the unrest where it was fought.
-    Battle { province: u32, winner: u32, loser: u32, killed: u64 },
+    /// when a peace ended it), `loser` broke first (or nobody), and `killed` soldiers died in it:
+    /// `sides` gives each realm that fought and the soldiers it lost, which sum to `killed`. The
+    /// owner of provinces adds to the unrest where it was fought.
+    Battle { province: u32, winner: u32, loser: u32, killed: u64, sides: Vec<(u32, u64)> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

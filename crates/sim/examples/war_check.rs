@@ -13,7 +13,10 @@
 //! armies and without: quiet days (no month's start) at peace, then the days of a year of war
 //! between two rivals. Run it with `RAYON_NUM_THREADS=1` to time one worker thread.
 //!
-//! cargo run --release -p sim --example war_check -- [food|markets] [seed] [one|long|time] [years]
+//! `time-treaties` times what Diplomacy "treaties" adds on the days it works (a month's first), on
+//! two large worlds alike but for it, after a year.
+//!
+//! cargo run --release -p sim --example war_check -- [food|markets] [seed] [one|long|time|time-treaties] [years]
 
 use sim::config::Config;
 use sim::events::Event;
@@ -79,7 +82,7 @@ fn one(economics: &str, seed: u64, years: i64) {
         sim.run_days(1);
         for p in &sim.event_log.entries[seen..] {
             match p.event {
-                Event::Battle { province, winner, loser, killed } => {
+                Event::Battle { province, winner, loser, killed, .. } => {
                     battles += 1;
                     if killed == 0 {
                         println!("  day {}: a battle in {province} ({winner} over {loser}) killed nobody", p.day);
@@ -288,6 +291,37 @@ fn time(economics: &str, seed: u64) {
     println!("armies add {:.3} ms a day in peace and {:.3} ms a day in war", runs[1].1 - runs[0].1, runs[1].2 - runs[0].2);
 }
 
+/// What Diplomacy "treaties" costs: two large worlds alike but for it (realms without unrest,
+/// rulers, armies; "treaties" with no chance of war, so no war tells them apart), timed on the
+/// days its month's work falls on.
+fn time_treaties(economics: &str, seed: u64) {
+    let large = WorldParams::preset(sim::world::Size::Large, seed);
+    let mut runs = Vec::new();
+    for treaties in [false, true] {
+        let mut c = config(economics, seed, false, true);
+        c.world = large.clone();
+        if treaties {
+            c.modules.diplomacy.as_mut().unwrap().treaties = Some(sim::diplomacy::TreatyParams { war_chance: 0.0, ..Default::default() });
+        }
+        let mut sim = Sim::new(&c).unwrap();
+        sim.run_days(364);
+        let (mut spent, mut months) = (0.0, 0);
+        while months < 24 {
+            if sim.calendar.is_month_start(sim.day) {
+                let t = std::time::Instant::now();
+                sim.run_days(1);
+                spent += t.elapsed().as_secs_f64() * 1000.0;
+                months += 1;
+            } else {
+                sim.run_days(1);
+            }
+        }
+        println!("{}: a month's first day {:.2} ms; {} realms, {} relations", if treaties { "treaties" } else { "wars" }, spent / months as f64, sim.world.realms.count(), sim.world.relations.count());
+        runs.push(spent / months as f64);
+    }
+    println!("treaties add {:.2} ms a month, {:.3} ms a day on average", runs[1] - runs[0], (runs[1] - runs[0]) * 12.0 / 364.0);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let economics = args.first().map_or("food", |s| s.as_str());
@@ -298,6 +332,7 @@ fn main() {
         "one" => one(economics, seed, years),
         "long" => long(economics, seed, years),
         "time" => time(economics, seed),
-        other => panic!("no {other}: one, long or time"),
+        "time-treaties" => time_treaties(economics, seed),
+        other => panic!("no {other}: one, long, time or time-treaties"),
     }
 }
