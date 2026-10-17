@@ -117,6 +117,11 @@ pub struct TradeParams {
     /// in scenario files written before).
     #[serde(default)]
     pub war_stops: f64,
+    /// Share of the trade with a besieged province (`province.besieger`, kept by Warfare's sieges
+    /// in depth) that the siege stops: 1 none goes, 0 as if there were no siege (as in scenario
+    /// files written before).
+    #[serde(default)]
+    pub siege_stops: f64,
     /// Coins to carry one unit of each good one day overland.
     pub carriage: BTreeMap<String, f64>,
 }
@@ -266,7 +271,7 @@ static V1: Manifest = Manifest {
     // Who owns, occupies and rises up in each province, which realms are dissolved, and the wars,
     // for trade across borders: as the day began, since Realms and Diplomacy read what this module
     // keeps (coins and stores) and so run after it.
-    reads_earlier: &["province.owner", "province.occupier", "province.uprising", "realm.capital", "war.attacker", "war.defender", "war.ended"],
+    reads_earlier: &["province.owner", "province.occupier", "province.uprising", "realm.capital", "war.attacker", "war.defender", "war.ended", "province.besieger"],
     // Realms' stores too: their coins are the treasuries, and coins keep one keeper, so a realm's
     // taxes and spending are moves between two stores this module keeps.
     owns: &["province.stock", "province.price", "province.workers", "realm.stock"],
@@ -412,8 +417,8 @@ impl Resolved {
         let mut carriage = vec![0.0; kept.stride()];
         if let Some(t) = &p.trade {
             let share = |x: f64| (0.0..=1.0).contains(&x);
-            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && share(t.war_stops) && t.sea_share >= 0.0 && t.money_response >= 0.0 && t.money_range >= 1.0 && t.toll >= 0.0 && t.toll.is_finite()) {
-                return Err("trade: change, most_sold, most_spent and war_stops must be between 0 and 1, sea_share, money_response and toll at least 0, money_range at least 1".into());
+            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && share(t.war_stops) && share(t.siege_stops) && t.sea_share >= 0.0 && t.money_response >= 0.0 && t.money_range >= 1.0 && t.toll >= 0.0 && t.toll.is_finite()) {
+                return Err("trade: change, most_sold, most_spent, war_stops and siege_stops must be between 0 and 1, sea_share, money_response and toll at least 0, money_range at least 1".into());
             }
             for (name, &x) in &t.carriage {
                 let c = column(name)?;
@@ -851,12 +856,16 @@ pub struct Borders {
     pub collects: Vec<u32>,
     /// Each realm's enemies, sorted, by the one rule for war ([`crate::diplomacy::enemies_in`]).
     pub enemies: Vec<Vec<u32>>,
+    /// Whether enemies besiege each province (`province.besieger`).
+    pub besieged: Vec<bool>,
 }
 
 impl Borders {
     pub fn read(e: &crate::world::Earlier, provinces: usize) -> Borders {
         let (owner, occupier, uprising) = (e.u32s("province.owner"), e.u32s("province.occupier"), e.u32s("province.uprising"));
         let capital = e.u32s("realm.capital");
+        let besieger = e.u32s("province.besieger");
+        let besieged = (0..provinces).map(|p| besieger.get(p).is_some_and(|&b| b != NONE)).collect();
         let enemies = crate::diplomacy::enemies_in(capital, e.u32s("war.attacker"), e.u32s("war.defender"), e.u64s("war.ended"));
         let alive = |r: u32| capital.get(r as usize).is_some_and(|&c| c != NONE);
         let of = |v: &[u32], p: usize| v.get(p).copied().filter(|&r| r != NONE);
@@ -870,7 +879,7 @@ impl Borders {
                 collects[p] = own.unwrap_or(NONE);
             }
         }
-        Borders { trades_as, collects, enemies }
+        Borders { trades_as, collects, enemies, besieged }
     }
 
     /// Whether realms `a` and `b` are at war (nobody is at war with nobody, or with itself).
@@ -988,6 +997,10 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
                 let (rs, rd) = (b.trades_as[from], b.trades_as[to]);
                 if b.at_war(rs, rd) {
                     stays = 1.0 - t.war_stops;
+                }
+                // Into or out of a besieged province, only what the siege leaves.
+                if t.siege_stops > 0.0 && (b.besieged.get(from).copied().unwrap_or(false) || b.besieged.get(to).copied().unwrap_or(false)) {
+                    stays *= 1.0 - t.siege_stops;
                 }
                 let c = b.collects[to];
                 if c != NONE && c != rs && t.toll > 0.0 {
@@ -1488,7 +1501,7 @@ mod tests {
     /// for its realm, at war if `war`.
     fn borders(realms: [u32; 2], war: bool) -> Borders {
         let enemies = if war { vec![vec![1], vec![0]] } else { vec![Vec::new(); 2] };
-        Borders { trades_as: realms.to_vec(), collects: realms.to_vec(), enemies }
+        Borders { trades_as: realms.to_vec(), collects: realms.to_vec(), enemies, besieged: vec![false; 2] }
     }
 
     /// The setting of `food_goes_where_it_is_dear_and_coins_come_back`: food plenty in 0, short in 1.
@@ -1504,6 +1517,28 @@ mod tests {
 
     fn units(deals: &[Deal]) -> u64 {
         deals.iter().flat_map(|d| d.goods.iter().map(|g| g.1)).sum()
+    }
+
+    #[test]
+    fn a_siege_cuts_trade_into_and_out_of_the_province_besieged() {
+        let (p, r, _) = shipped();
+        let t = TradeParams { toll: 0.0, war_stops: 0.0, siege_stops: 1.0, ..p.trade.clone().unwrap() };
+        let (stock, wanted) = food_gap();
+        let ways = [way(0, 1, Some(2.0), None)];
+        let open = units(&deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, Some(&borders([0, 1], false))));
+        assert!(open > 0);
+        // Either end besieged: nothing goes, or what the siege leaves.
+        for end in 0..2 {
+            let mut b = borders([0, 1], false);
+            b.besieged[end] = true;
+            assert_eq!(deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, Some(&b)), []);
+            let half = TradeParams { siege_stops: 0.5, ..t.clone() };
+            let some = units(&deals(&r, &p, &half, &stock, &wanted, &[1000, 1000], &ways, Some(&b)));
+            assert!((some as f64 - open as f64 / 2.0).abs() <= 2.0, "{some} of {open}");
+            // As in scenario files written before: a siege stops nothing.
+            let none = TradeParams { siege_stops: 0.0, ..t.clone() };
+            assert_eq!(units(&deals(&r, &p, &none, &stock, &wanted, &[1000, 1000], &ways, Some(&b))), open);
+        }
     }
 
     #[test]

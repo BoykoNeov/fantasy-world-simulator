@@ -70,6 +70,36 @@ siege_max_days = 180.0
 free_siege = 0.5
 siege_min_share = 0.01
 
+# Logistics and support (build step 8): four parts, each switched on by its own table here, off
+# while it is absent (Warfare "campaigns" is "troops" with all four). Off in new worlds for now.
+# With the shipped numbers, they read:
+#
+# [supply]          # supply lines and foraging
+# reach_days = 10.0     # fed from home along a line this many days' march from their own land
+# carry_loss = 0.02     # of the food carried, lost each day of the way
+# forage_take = 2.0     # beyond, foragers take this many times what they eat (first, on enemy land)
+# camp_disease = 0.01   # away from their own land, this share of the soldiers die each month
+#
+# [seasons]         # winter
+# start_lat = 25.0      # winter from this many degrees from the equator,
+# full_span = 30.0      # full this many degrees further,
+# deepest = 0.05        # deepest at this share of the year in the north (half a year later south)
+# road_slow = 2.0       # in the deepest winter: marches take this many times as long,
+# deaths = 0.03         # this share of soldiers away from home die each month,
+# forage_loss = 0.75    # foragers find this share less,
+# no_attack = 0.6       # and no new attack begins on a province whose winter is deeper than this
+#
+# [pay]             # soldiers' pay, where the world keeps coins
+# wage = 1.0            # coins each soldier, guards too, a month, into the soldier's home province
+# unpaid_desert = 0.25  # of the soldiers left unpaid, the share who desert home
+#
+# [sieges]          # sieges in depth
+# raising = 0.0         # a besieged province raises this share of its soldiers
+# strip = 0.25          # the besiegers strip this share of its food store each month (first)
+# starving_days = 30.0  # with food for fewer days than this it is starving,
+# starving_speed = 3.0  # and each day of its siege counts this many
+# plunder = 0.2         # where the world keeps coins: the share of its coins its taker carries off
+
 # The troop tree, written like the goods tree. Its leaves are the kinds; the classes split troops on
 # land from those at sea (fleets).
 [tree]
