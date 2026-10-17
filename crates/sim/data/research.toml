@@ -1,0 +1,162 @@
+# Research "tree" (build step 9): realms study techs and learn them. The defaults a new world gets;
+# a world's own copy is saved with it, so editing this file changes new worlds only.
+#
+# Each month a realm studies the tech it has chosen. A tech costs `years` of study for a realm as
+# big as the world's middle realm (by people) with an ordinary ruler. Bigger realms learn faster,
+# but less than in proportion (people to the power `size_power`, at most `size_cap` times as fast);
+# an able ruler speeds study up, an inept one slows it down. A tech that neighbouring realms or trade
+# partners already know is cheaper. When a tech is learned the realm chooses its next one at random
+# among those whose `needs` it knows, the cheapest most often.
+#
+# This wave, knowledge is only produced: what techs do to harvests, troops or trade comes later.
+
+# How fast every realm studies: a middle-sized realm with an ordinary ruler studies this many years
+# of a tech's cost each year.
+speed = 0.6
+# How much faster a bigger realm studies: its people against the middle realm's, to this power
+# (0: every realm alike; 1: in proportion to its people)...
+size_power = 0.5
+# ...and at most this many times as fast as the middle realm.
+size_cap = 2.0
+# A ruler of the highest ability (100) studies this share faster, one of the lowest (0) this share
+# slower; an ordinary one (50), or none, neither.
+ruler_effect = 0.25
+# A tech every neighbour (and trade partner) knows costs this share less; one some of them know, in
+# proportion.
+neighbour_discount = 0.5
+# A trade partner counts this much against a neighbour's 1 in that share (a realm that is both counts
+# as a neighbour). 0: trade passes on no knowledge. Partners are the realms it traded with across
+# its border last month, so only an economy with trade has them.
+trade_weight = 0.5
+# In a world with coins, this share of the people are scholars, each paid `wage` coins a year from
+# the treasury, a twelfth each month, into their provinces. A realm short of coins pays what it has
+# (after everything else it pays), and scholars unpaid don't study. Without coins, knowledge comes
+# from the people and costs nothing.
+scholar_share = 0.005
+wage = 24.0
+
+# The six fields of knowledge, each tech in one.
+fields = ["farming", "crafts", "trade", "war", "sea", "learning"]
+
+# The techs, by name: their field, their cost in years of study, and the techs a realm must know
+# before it can study them. About 300 years in all, so no realm learns them all in 150 years.
+
+[techs.irrigation]
+field = "farming"
+years = 6.0
+needs = []
+
+[techs.heavy_plough]
+field = "farming"
+years = 10.0
+needs = ["irrigation", "iron_working"]
+
+[techs.crop_rotation]
+field = "farming"
+years = 15.0
+needs = ["heavy_plough"]
+
+[techs.selective_breeding]
+field = "farming"
+years = 20.0
+needs = ["crop_rotation", "writing"]
+
+[techs.bronze_working]
+field = "crafts"
+years = 6.0
+needs = []
+
+[techs.iron_working]
+field = "crafts"
+years = 12.0
+needs = ["bronze_working"]
+
+[techs.water_mills]
+field = "crafts"
+years = 15.0
+needs = ["iron_working", "irrigation"]
+
+[techs.blast_furnace]
+field = "crafts"
+years = 22.0
+needs = ["water_mills", "mathematics"]
+
+[techs.coinage]
+field = "trade"
+years = 6.0
+needs = ["bronze_working"]
+
+[techs.roads]
+field = "trade"
+years = 10.0
+needs = []
+
+[techs.banking]
+field = "trade"
+years = 16.0
+needs = ["coinage", "mathematics"]
+
+[techs.guilds]
+field = "trade"
+years = 18.0
+needs = ["coinage", "iron_working", "roads"]
+
+[techs.horse_riding]
+field = "war"
+years = 6.0
+needs = []
+
+[techs.fortification]
+field = "war"
+years = 10.0
+needs = ["bronze_working"]
+
+[techs.siege_engines]
+field = "war"
+years = 15.0
+needs = ["fortification", "mathematics"]
+
+[techs.standing_army]
+field = "war"
+years = 20.0
+needs = ["coinage", "iron_working", "roads"]
+
+[techs.sailing]
+field = "sea"
+years = 5.0
+needs = []
+
+[techs.shipbuilding]
+field = "sea"
+years = 10.0
+needs = ["sailing", "bronze_working"]
+
+[techs.navigation]
+field = "sea"
+years = 15.0
+needs = ["shipbuilding", "astronomy"]
+
+[techs.cartography]
+field = "sea"
+years = 22.0
+needs = ["navigation"]
+
+[techs.writing]
+field = "learning"
+years = 5.0
+needs = []
+
+[techs.mathematics]
+field = "learning"
+years = 10.0
+needs = ["writing"]
+
+[techs.astronomy]
+field = "learning"
+years = 14.0
+needs = ["mathematics"]
+
+[techs.philosophy]
+field = "learning"
+years = 25.0
+needs = ["astronomy"]
