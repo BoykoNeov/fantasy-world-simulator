@@ -18,7 +18,8 @@
 //! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...] [campaigns]
 //!
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
-//! `campaigns` switches on the four parts of logistics (supply, winter, pay, sieges).
+//! `campaigns` switches on the four parts of logistics; `supply`, `seasons`, `pay` and `sieges`
+//! switch on one each, and `massing` the fifth part, armies acting together.
 //!
 //! The probe (logistics piece 1, reads only, so the world is the same): for every rich river city,
 //! month by month while a realm is at war with its owner, what stands in the way of that realm
@@ -34,6 +35,12 @@
 //!
 //! And: sieges begun, the best share of a siege's days reached, sieges cut off by a peace,
 //! recruits the city raised while besieged, battles in it, and the garrison against the room.
+//!
+//! And each group the generals make (its target read from Warfare's saved state), from its first
+//! member joining until it sets off or breaks up: its days waiting while members still march in,
+//! while all are there but too weak or too few for the target, or strong enough (waiting for
+//! winter or ships); and why it ended: set off, target gone (taken, freed, peace), no front left
+//! to gather on, its members all lost, or broken up and planned again with its target still there.
 
 use sim::config::Config;
 use sim::diplomacy::{TreatyParams, WarParams};
@@ -45,7 +52,7 @@ use sim::warfare::{TroopParams, FIELD};
 use sim::world::{World, WorldParams, RIVER_MIN_FLOW};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn config(seed: u64, set: &[(String, f64)], campaigns: bool) -> Config {
+fn config(seed: u64, set: &[(String, f64)], parts: &[String]) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
@@ -53,9 +60,23 @@ fn config(seed: u64, set: &[(String, f64)], campaigns: bool) -> Config {
     c.modules.characters = Some(Default::default());
     c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
     c.modules.warfare = Some(Default::default());
-    if campaigns {
-        let t = c.modules.warfare.as_mut().unwrap();
-        (t.supply, t.seasons, t.pay, t.sieges) = (Some(Default::default()), Some(Default::default()), Some(Default::default()), Some(Default::default()));
+    let t = c.modules.warfare.as_mut().unwrap();
+    let on = |p: &str| parts.iter().any(|x| x == p || x == "campaigns");
+    if on("supply") {
+        t.supply = Some(Default::default());
+    }
+    if on("seasons") {
+        t.seasons = Some(Default::default());
+    }
+    if on("pay") {
+        t.pay = Some(Default::default());
+    }
+    if on("sieges") {
+        t.sieges = Some(Default::default());
+    }
+    // Armies acting together: a fifth part, not in "campaigns".
+    if parts.iter().any(|x| x == "massing") {
+        t.massing = Some(Default::default());
     }
     for (k, v) in set {
         sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
@@ -290,8 +311,161 @@ fn garrison_raised(w: &World, p: usize) -> u64 {
     (0..arm.count()).filter(|&a| arm.home[a] == p as u32 && arm.realm[a] == o).map(|a| arm.size[a]).sum()
 }
 
-fn run(seed: u64, years: i64, set: &[(String, f64)], campaigns: bool) -> bool {
-    let mut sim = Sim::new(&config(seed, set, campaigns)).unwrap();
+/// Why a group of the general's ended: set off for its target, or broke up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum End {
+    /// Set off for its target.
+    Launched,
+    /// Its target was taken, freed, or no longer an enemy's (the war ended).
+    TargetGone,
+    /// No province of its realm next to the target was left to gather in.
+    FrontLost,
+    /// Its companies were all killed, sent home or deserted.
+    MembersLost,
+    /// Broken up with its target still there, its soldiers too weak for the enemies there now (or
+    /// too few to besiege it): the general couldn't find enough, and planned again.
+    ReplannedWeak,
+    /// Broken up with its target still there and its soldiers strong enough: planned again.
+    ReplannedOther,
+    /// Still gathering when the run ended.
+    Running,
+}
+
+/// A group's life, from its first member joining to its end.
+#[derive(Clone)]
+struct Life {
+    realm: u32,
+    target: u32,
+    start: u64,
+    /// Days some member was still marching in to gather; days all were there but too weak for the
+    /// enemies in the target (or too few to besiege it); days all were there and strong enough.
+    marching: u32,
+    short: u32,
+    enough: u32,
+    end: Option<(u64, End)>,
+    /// Its members the day before.
+    members: Vec<usize>,
+}
+
+/// The groups in the world's Warfare state now (a save file, read).
+fn groups_now(sim: &Sim) -> BTreeMap<u32, sim::warfare::GroupView> {
+    let bytes = sim.save();
+    let file: sim::save::SaveFile = postcard::from_bytes(&bytes[12..]).expect("a save");
+    let st = file.snapshots[0].module_state.iter().find(|m| m.slot == Slot::Warfare).expect("armies are on");
+    sim::warfare::groups_in_state(&st.bytes).expect("Warfare's state").into_iter().map(|g| (g.number, g)).collect()
+}
+
+/// The strength of enemies of realm `r` standing in province `t`, land troops, and of companies `of`.
+fn strength_at(w: &World, k: &Kit, r: u32, t: u32, enemies: &[Vec<u32>]) -> f64 {
+    let arm = &w.armies;
+    let foes = &enemies[r as usize];
+    (0..arm.count())
+        .filter(|&a| arm.size[a] > 0 && arm.next[a] == NONE && arm.province[a] == t && !k.ship[arm.kind[a] as usize] && foes.binary_search(&arm.realm[a]).is_ok())
+        .map(|a| arm.size[a] as f64 * k.strength[arm.kind[a] as usize])
+        .sum()
+}
+
+/// A day's look at the general's groups: new ones (their targets read from Warfare's state), each
+/// one's day, and the ones that ended.
+fn groups_day(sim: &Sim, k: &Kit, lives: &mut BTreeMap<u32, Life>) {
+    let w = &sim.world;
+    let arm = &w.armies;
+    let mut now: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+    for a in 0..arm.count() {
+        if arm.size[a] > 0 && arm.group[a] != NONE {
+            now.entry(arm.group[a]).or_default().push(a);
+        }
+    }
+    if now.keys().any(|g| !lives.contains_key(g)) {
+        let views = groups_now(sim);
+        for g in now.keys() {
+            if !lives.contains_key(g)
+                && let Some(v) = views.get(g)
+            {
+                lives.insert(*g, Life { realm: v.realm, target: v.target, start: sim.day, marching: 0, short: 0, enough: 0, end: None, members: Vec::new() });
+            }
+        }
+    }
+    let enemies = sim::diplomacy::enemies(w);
+    let people = w.province_population();
+    for (g, life) in lives.iter_mut().filter(|(_, l)| l.end.is_none()) {
+        let (r, t) = (life.realm, life.target);
+        let Some(members) = now.get(g) else {
+            // Gone without setting off: why.
+            let (o, occ) = (w.owner[t as usize], w.occupier[t as usize]);
+            let foes = enemies.get(r as usize).cloned().unwrap_or_default();
+            let valid = if o == r { occ != NONE || strength_at(w, k, r, t, &enemies) > 0.0 } else { o != NONE && foes.binary_search(&o).is_ok() && occ != r };
+            let staging = |q: u32| (w.owner[q as usize] == r && w.occupier[q as usize] == NONE) || w.occupier[q as usize] == r;
+            let front = w.routes.of(t).any(|l| staging(l.other(t)));
+            let lost = life.members.iter().all(|&a| arm.size[a] == 0 || arm.group[a] != *g);
+            let why = if !valid {
+                End::TargetGone
+            } else if !front {
+                End::FrontLost
+            } else if lost && life.members.iter().all(|&a| arm.size[a] == 0) {
+                End::MembersLost
+            } else {
+                let defending = o == r;
+                let need = k.p.outmatch * if defending { 1.0 } else { 1.0 + k.p.home_edge } * strength_at(w, k, r, t, &enemies);
+                let least = ((k.p.siege_min_share * people[t as usize] as f64).ceil() as u64).max(1);
+                let land: Vec<usize> = life.members.iter().copied().filter(|&a| !k.ship[arm.kind[a] as usize]).collect();
+                let have: f64 = land.iter().map(|&a| arm.size[a] as f64 * k.strength[arm.kind[a] as usize]).sum();
+                let soldiers: u64 = land.iter().map(|&a| arm.size[a]).sum();
+                if have < need || soldiers < least { End::ReplannedWeak } else { End::ReplannedOther }
+            };
+            life.end = Some((sim.day, why));
+            continue;
+        };
+        life.members = members.clone();
+        if members.iter().any(|&a| arm.next[a] != NONE && arm.dest[a] == t) {
+            life.end = Some((sim.day, End::Launched));
+            continue;
+        }
+        if members.iter().any(|&a| arm.next[a] != NONE) {
+            life.marching += 1;
+            continue;
+        }
+        let defending = w.owner[t as usize] == r;
+        let need = k.p.outmatch * if defending { 1.0 } else { 1.0 + k.p.home_edge } * strength_at(w, k, r, t, &enemies);
+        let least = ((k.p.siege_min_share * people[t as usize] as f64).ceil() as u64).max(1);
+        let land: Vec<usize> = members.iter().copied().filter(|&a| !k.ship[arm.kind[a] as usize]).collect();
+        let have: f64 = land.iter().map(|&a| arm.size[a] as f64 * k.strength[arm.kind[a] as usize]).sum();
+        let soldiers: u64 = land.iter().map(|&a| arm.size[a]).sum();
+        if have < need || soldiers < least {
+            life.short += 1;
+        } else {
+            life.enough += 1;
+        }
+    }
+}
+
+/// The groups' lives summed up, for those aimed at `targets` (all groups if `None`).
+fn groups_report(what: &str, lives: &BTreeMap<u32, Life>, end: u64, targets: Option<&BTreeSet<u32>>) {
+    let these: Vec<&Life> = lives.values().filter(|l| targets.is_none_or(|t| t.contains(&l.target))).collect();
+    let mut ends: BTreeMap<End, usize> = BTreeMap::new();
+    let mut days: Vec<u64> = Vec::new();
+    let (mut marching, mut short, mut enough) = (0u64, 0u64, 0u64);
+    let mut short_at_replan = 0;
+    for l in &these {
+        let (stop, why) = l.end.unwrap_or((end, End::Running));
+        *ends.entry(why).or_default() += 1;
+        days.push(stop - l.start);
+        marching += l.marching as u64;
+        short += l.short as u64;
+        enough += l.enough as u64;
+        short_at_replan += (matches!(why, End::ReplannedWeak | End::ReplannedOther) && l.short > 0) as usize;
+    }
+    days.sort_unstable();
+    let median = days.get(days.len() / 2).copied().unwrap_or(0);
+    let mean = if days.is_empty() { 0.0 } else { days.iter().sum::<u64>() as f64 / days.len() as f64 };
+    println!(
+        "  groups {what}: {} groups; ended {ends:?}; days to the end: median {median}, mean {mean:.0}; days waiting: members still marching in {marching}, all there but too weak or too few {short}, all there and strong enough {enough}; replanned after waiting too weak {short_at_replan}",
+        these.len()
+    );
+}
+
+fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
+    let mut sim = Sim::new(&config(seed, set, parts)).unwrap();
     let kit = Kit::new(sim.settings.warfare.as_ref().expect("armies are on"));
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
@@ -305,6 +479,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], campaigns: bool) -> bool {
     let mut probe = vec![Probe::default(); n];
     let mut last_sieges: BTreeMap<(usize, u32), u32> = BTreeMap::new();
     let mut last_garrison: BTreeMap<usize, u64> = BTreeMap::new();
+    let mut lives: BTreeMap<u32, Life> = BTreeMap::new();
     for year in 1..=years {
         let end = sim.calendar.year_start(start + year);
         while sim.day < end {
@@ -363,6 +538,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], campaigns: bool) -> bool {
                 }
             }
             last_sieges = today;
+            groups_day(&sim, &kit, &mut lives);
             if sim.calendar.is_month_start(sim.day) {
                 probe_month(w, &kit, &mouth, &mut probe);
             }
@@ -474,6 +650,9 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], campaigns: bool) -> bool {
     }
     println!("  probe, all rich river cities together: {totals:?}");
     println!("  probe, months a war named a rich river city its target, by what stood in the way: {target_totals:?}");
+    let rich_cities: BTreeSet<u32> = mouth.iter().filter(|m| t[m.0].longest >= 10).map(|m| m.0 as u32).collect();
+    groups_report("aimed at rich river cities", &lives, sim.day, Some(&rich_cities));
+    groups_report("aimed anywhere", &lives, sim.day, None);
     let cities = mouth.iter().filter(|m| t[m.0].longest >= 10).count();
     println!("  {cities} rich river cities; story 2 {}", if passed { "passes" } else { "does not pass" });
     println!("  for comparison: {handed_all} provinces changed hands at a peace, {rich_handed} of them among the richest 2% at the time");
@@ -488,7 +667,7 @@ fn main() {
     let seeds: Vec<u64> = args.iter().skip(1).filter_map(|a| a.parse().ok()).collect();
     let seeds = if seeds.is_empty() { vec![21, 7, 1] } else { seeds };
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
-    let campaigns = args.iter().any(|a| a == "campaigns");
-    let passed = seeds.iter().filter(|&&s| run(s, years, &set, campaigns)).count();
+    let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing"].contains(&a.as_str())).cloned().collect();
+    let passed = seeds.iter().filter(|&&s| run(s, years, &set, &parts)).count();
     println!("story 2 passes on {passed} of {} seeds", seeds.len());
 }

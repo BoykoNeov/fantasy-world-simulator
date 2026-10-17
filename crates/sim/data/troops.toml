@@ -75,7 +75,7 @@ siege_min_share = 0.01
 # With the shipped numbers, they read:
 #
 # [supply]          # supply lines and foraging
-# reach_days = 10.0     # fed from home along a line this many days' march from their own land
+# reach_ways = 2        # fed from home along a line up to this many provinces beyond their own land
 # carry_loss = 0.02     # of the food carried, lost each day of the way
 # forage_take = 2.0     # beyond, foragers take this many times what they eat (first, on enemy land)
 # camp_disease = 0.01   # away from their own land, this share of the soldiers die each month
@@ -99,6 +99,10 @@ siege_min_share = 0.01
 # starving_days = 30.0  # with food for fewer days than this it is starving,
 # starving_speed = 3.0  # and each day of its siege counts this many
 # plunder = 0.2         # where the world keeps coins: the share of its coins its taker carries off
+#
+# [massing]         # armies acting together (a fifth part, not yet in "campaigns")
+# join_days = 60        # a group not set off this many days after it was formed is given up
+# mass_share = 0.6      # no group takes more than this share of its realm's free soldiers
 
 # The troop tree, written like the goods tree. Its leaves are the kinds; the classes split troops on
 # land from those at sea (fleets).

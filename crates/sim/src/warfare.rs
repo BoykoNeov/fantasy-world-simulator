@@ -338,6 +338,9 @@ pub struct TroopParams {
     pub pay: Option<crate::logistics::PayParams>,
     #[serde(default)]
     pub sieges: Option<crate::logistics::SiegeParams>,
+    /// Several armies acting together: a fifth part, off in files that don't name it.
+    #[serde(default)]
+    pub massing: Option<crate::logistics::MassingParams>,
 }
 
 impl Default for TroopParams {
@@ -891,7 +894,7 @@ impl Module for Troops {
     fn check(&self, goods: &Goods) -> Result<(), String> {
         let r = self.params.resolve()?;
         let p = &self.params;
-        crate::logistics::check(p.supply.as_ref(), p.seasons.as_ref(), p.pay.as_ref(), p.sieges.as_ref())?;
+        crate::logistics::check(p.supply.as_ref(), p.seasons.as_ref(), p.pay.as_ref(), p.sieges.as_ref(), p.massing.as_ref())?;
         if self.coins {
             let wanted = r.kinds.iter().filter_map(|k| k.good.as_ref().map(|g| g.0.as_str())).chain([self.params.money.as_str()]);
             for name in wanted {
@@ -2063,6 +2066,10 @@ impl Troops {
     fn command(&mut self, w: &mut World, cx: &mut Ctx) {
         let res = self.resolved();
         let dirty = std::mem::take(&mut self.st.dirty);
+        if !self.more.formed.is_empty() {
+            let groups = &self.st.groups;
+            self.more.formed.retain(|k, _| groups.get(k).is_some_and(|g| !g.launched));
+        }
         let day = cx.day;
         self.st.rest.retain(|_, d| *d > day);
         let enemies = diplomacy::enemies(w);
@@ -2352,13 +2359,37 @@ impl Troops {
                 }
                 continue;
             }
+            // Massing: a group still gathering `join_days` after it was formed goes with what has
+            // gathered if that outmatches the defence, and is otherwise broken up.
+            if let (Some(m), Some(k)) = (&self.params.massing, group)
+                && self.more.formed.get(&k).is_some_and(|&d| day >= d + m.join_days as u64)
+            {
+                self.try_launch(w, res, k, need, least);
+                if !self.st.groups.get(&k).is_some_and(|g| g.launched) {
+                    pool.extend(self.dissolve(w, k).into_iter().filter(|&a| free(self, w, a)));
+                    land_pool = None;
+                    if cx.traced(t) {
+                        cx.note(format!("realm {r}'s group {k} waited too long for its companies: broken up"));
+                    }
+                }
+                continue;
+            }
             let members: Vec<u32> = group.map_or(Vec::new(), |k| self.st.groups[&k].members.clone());
             let (troops, ships): (Vec<u32>, Vec<u32>) = members.iter().partition(|&&a| !res.kind(w.armies.kind[a as usize]).ship);
             let have = Self::strength(w, res, &troops);
             let have_n: u64 = troops.iter().map(|&a| w.armies.size[a as usize]).sum();
             let mut adds: Sends = Vec::new();
             if have < need || have_n < least || members.is_empty() {
-                match self.recruit(w, res, r, foes, &gather, (&lp.0, lp.1, lp.2), &room, need - have, least.saturating_sub(have_n), false) {
+                let chosen = self.recruit(w, res, r, foes, &gather, (&lp.0, lp.1, lp.2), &room, need - have, least.saturating_sub(have_n), false);
+                // Massing: no group takes more than a share of the realm's free soldiers.
+                let chosen = match (&self.params.massing, chosen) {
+                    (Some(m), Some(c)) => {
+                        let added: u64 = c.iter().map(|(a, _)| w.armies.size[*a as usize]).sum();
+                        ((have_n + added) as f64 <= m.mass_share * (lp.2 + have_n) as f64).then_some(c)
+                    }
+                    (_, c) => c,
+                };
+                match chosen {
                     Some(chosen) => adds.extend(chosen),
                     None => {
                         if let Some(k) = group {
@@ -2425,6 +2456,9 @@ impl Troops {
                 let k = self.st.next_group;
                 self.st.next_group += 1;
                 self.st.groups.insert(k, Group { realm: r, target: t, members: Vec::new(), gather: gather.clone(), launched: false, sea: by_sea });
+                if self.params.massing.is_some() {
+                    self.more.formed.insert(k, day);
+                }
                 k
             });
             if let Some(g) = self.st.groups.get_mut(&k) {
@@ -2575,11 +2609,16 @@ impl Troops {
             return;
         }
         let arm = &w.armies;
-        let gathered = g.members.iter().all(|&a| !arm.moving(a as usize) && g.gather.contains(&arm.province[a as usize]));
-        if !gathered {
+        let there = |a: &u32| !arm.moving(*a as usize) && g.gather.contains(&arm.province[*a as usize]);
+        // Massing: the companies already gathered may set off without the rest; otherwise all wait.
+        let present: Vec<u32> = if self.params.massing.is_some() {
+            g.members.iter().copied().filter(there).collect()
+        } else if g.members.iter().all(there) {
+            g.members.clone()
+        } else {
             return;
-        }
-        let troops: Vec<u32> = g.members.iter().copied().filter(|&a| !res.kind(arm.kind[a as usize]).ship).collect();
+        };
+        let troops: Vec<u32> = present.iter().copied().filter(|&a| !res.kind(arm.kind[a as usize]).ship).collect();
         let soldiers: u64 = troops.iter().map(|&a| arm.size[a as usize]).sum();
         if troops.is_empty() || Self::strength(w, res, &troops) < need || soldiers < least {
             return;
@@ -2587,7 +2626,7 @@ impl Troops {
         if g.sea {
             // Across the sea, the ships at each province must carry the soldiers there.
             let mut lack: BTreeMap<u32, f64> = BTreeMap::new();
-            for &a in &g.members {
+            for &a in &present {
                 let k = res.kind(arm.kind[a as usize]);
                 let size = arm.size[a as usize] as f64;
                 *lack.entry(arm.province[a as usize]).or_default() += if k.ship { -size * k.carry } else { size };
@@ -2596,10 +2635,15 @@ impl Troops {
                 return;
             }
         }
-        let pace = g.members.iter().map(|&a| res.kind(arm.kind[a as usize]).speed).fold(f64::INFINITY, f64::min) as f32;
-        for &a in &g.members {
+        let pace = present.iter().map(|&a| res.kind(arm.kind[a as usize]).speed).fold(f64::INFINITY, f64::min) as f32;
+        // Those still on their way leave the group (massing), free for the general once they arrive.
+        for &a in g.members.iter().filter(|a| !present.contains(a)) {
+            self.leave_group(w, a);
+        }
+        for &a in &present {
             self.send(w, res, a, vec![(g.target, g.sea)], Some(pace));
         }
+        self.more.formed.remove(&k);
         if let Some(g) = self.st.groups.get_mut(&k) {
             g.launched = true;
         }
@@ -2657,6 +2701,33 @@ fn kind_weights(w: &World, prov: usize, res: &Resolved) -> Vec<u64> {
             (k.weight * land * shore * 1e6).round() as u64
         })
         .collect()
+}
+
+/// A group of companies as Warfare's saved state holds it: for programs that look inside it (the
+/// story 2 probe), reading only.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupView {
+    pub number: u32,
+    pub realm: u32,
+    /// The province it goes for.
+    pub target: u32,
+    pub members: Vec<u32>,
+    /// The provinces where it gathers.
+    pub gather: Vec<u32>,
+    /// Set off for the target.
+    pub launched: bool,
+    /// Crossing the sea.
+    pub sea: bool,
+}
+
+/// The groups in Warfare's saved state (`Module::save_state`'s bytes, as a save file holds them).
+pub fn groups_in_state(bytes: &[u8]) -> Result<Vec<GroupView>, String> {
+    let (st, _): (State, _) = postcard::take_from_bytes(bytes).map_err(|e| format!("Warfare state: {e}"))?;
+    Ok(st
+        .groups
+        .into_iter()
+        .map(|(number, g)| GroupView { number, realm: g.realm, target: g.target, members: g.members, gather: g.gather, launched: g.launched, sea: g.sea })
+        .collect())
 }
 
 /// The provinces where Warfare's saved state has a battle going on (for tests).

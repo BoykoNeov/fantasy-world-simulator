@@ -4,8 +4,8 @@
 //!
 //! - **Supply** (`modules.warfare.supply`): each month, a company standing outside its realm's own
 //!   land (land it holds that no enemy occupies) is fed from its home province along a supply line
-//!   while it stands within `reach_days` of that land, losing `carry_loss` of the food a day of the
-//!   way; beyond, it forages where it stands, taking `forage_take` times what it eats. On an enemy's
+//!   while it stands at most `reach_ways` provinces beyond that land (counted in ways crossed,
+//!   the fewest it takes), losing `carry_loss` of the food a day of the way; beyond, it forages where it stands, taking `forage_take` times what it eats. On an enemy's
 //!   land foragers take before the people there (the highest priority); elsewhere they share a
 //!   shortage alike. Outside its own land a company loses `camp_disease` of its soldiers a month
 //!   to camp disease. `army.supply` says how each is fed: 0 at home, 1 along a line, 2 foraging.
@@ -27,6 +27,13 @@
 //!   siege carries `plunder` of its coins into its treasury. Besiegers on enemy land eat before
 //!   the people there.
 //!
+//! - **Massing** (`modules.warfare.massing`), a fifth part, not in "campaigns" yet: a group the
+//!   general gathers against a target sets off as soon as the companies already gathered outmatch
+//!   the defence, instead of waiting for every member to march in (those still on their way leave
+//!   the group, free for the general); a group that hasn't set off `join_days` after it was formed
+//!   is broken up and planned again; and no group takes more than `mass_share` of its realm's free
+//!   soldiers (the pool and the group's own).
+//!
 //! The code is in [`crate::warfare`]'s `Troops` (its `impl` here), so the army fields stay with
 //! their owner.
 
@@ -46,9 +53,9 @@ use std::collections::{BTreeMap, BinaryHeap};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SupplyParams {
-    /// Companies within this many days' march of their realm's own land are fed along a supply
-    /// line from home; further out they forage.
-    pub reach_days: f64,
+    /// Companies at most this many provinces beyond their realm's own land (ways crossed, the
+    /// fewest it takes) are fed along a supply line from home; further out they forage.
+    pub reach_ways: u32,
     /// Share of the food carried along a supply line lost for each day of the way.
     pub carry_loss: f64,
     /// Foragers take this many times what they eat from the land they stand in.
@@ -59,7 +66,7 @@ pub struct SupplyParams {
 
 impl Default for SupplyParams {
     fn default() -> Self {
-        SupplyParams { reach_days: 10.0, carry_loss: 0.02, forage_take: 2.0, camp_disease: 0.01 }
+        SupplyParams { reach_ways: 2, carry_loss: 0.02, forage_take: 2.0, camp_disease: 0.01 }
     }
 }
 
@@ -106,6 +113,22 @@ impl Default for PayParams {
     }
 }
 
+/// Several armies acting together (`modules.warfare.massing`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MassingParams {
+    /// A group that hasn't set off this many days after it was formed is broken up.
+    pub join_days: u32,
+    /// No group takes more than this share of its realm's free soldiers.
+    pub mass_share: f64,
+}
+
+impl Default for MassingParams {
+    fn default() -> Self {
+        MassingParams { join_days: 60, mass_share: 0.6 }
+    }
+}
+
 /// Sieges in depth (`modules.warfare.sieges`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -135,11 +158,13 @@ fn share(x: f64) -> bool {
 }
 
 /// Check the parts switched on.
-pub(crate) fn check(sup: Option<&SupplyParams>, sea: Option<&SeasonParams>, pay: Option<&PayParams>, sie: Option<&SiegeParams>) -> Result<(), String> {
+pub(crate) fn check(sup: Option<&SupplyParams>, sea: Option<&SeasonParams>, pay: Option<&PayParams>, sie: Option<&SiegeParams>, mass: Option<&MassingParams>) -> Result<(), String> {
+    if let Some(m) = mass
+        && !(m.mass_share > 0.0 && m.mass_share <= 1.0)
+    {
+        return Err("massing: a group takes more than none and at most all of the free soldiers (above 0, up to 1)".into());
+    }
     if let Some(s) = sup {
-        if !(s.reach_days.is_finite() && s.reach_days >= 0.0) {
-            return Err("supply: the reach of a supply line is zero days or more".into());
-        }
         if !(share(s.carry_loss) && share(s.camp_disease)) {
             return Err("supply: the food lost a day and camp disease go from 0 to 1".into());
         }
@@ -174,7 +199,8 @@ pub(crate) fn check(sup: Option<&SupplyParams>, sea: Option<&SeasonParams>, pay:
     Ok(())
 }
 
-/// How deep the winter is, from 0 (none) to 1, at latitude `lat` (degrees) and `year_part` of the
+/// How deep the winter is, from 0 (none) to 1, at latitude `lat` in degrees (the provinces keep
+/// theirs in radians) and `year_part` of the
 /// way through the year.
 pub fn winter(p: &SeasonParams, lat: f32, year_part: f64) -> f64 {
     let far = ((lat.abs() as f64 - p.start_lat) / p.full_span).clamp(0.0, 1.0);
@@ -200,6 +226,8 @@ pub(crate) struct More {
     pub eating: BTreeMap<u64, Vec<(u32, u64)>>,
     /// Wages asked, by realm << 32 | home province: the companies and their soldiers then.
     pub paying: BTreeMap<u64, Vec<(u32, u64)>>,
+    /// Massing: the day each group still gathering was formed, by group number.
+    pub formed: BTreeMap<u32, u64>,
 }
 
 /// How a request for food was made, in a tag's high bits (the low ones hold a province).
@@ -217,18 +245,19 @@ fn tag(how: u64, province: u32) -> u64 {
     how << 32 | province as u64
 }
 
-/// Days from land each province is, for realm `r`: the quickest way from land it holds that no
-/// enemy occupies, through land it may pass (see [`allowed_for`]), up to `limit` days. Provinces
-/// further, or not reached, are left out.
-fn reach(w: &World, r: u32, foes: &[u32], own: &[u32], limit: f64) -> BTreeMap<u32, f64> {
+/// How far beyond land realm `r` holds (that no enemy occupies) each province is, through land it
+/// may pass (see [`allowed_for`]): the fewest ways crossed, up to `limit`, and the days of the
+/// quickest such way, which supplies are carried along. Provinces further, or not reached, are
+/// left out.
+fn reach(w: &World, r: u32, foes: &[u32], own: &[u32], limit: u32) -> BTreeMap<u32, f64> {
     let n = w.provinces.count;
-    let limit = (limit * 1000.0).round() as u64;
-    let mut dist: BTreeMap<u32, u64> = BTreeMap::new();
+    // Fewest ways first, then fewest days (thousandths).
+    let mut dist: BTreeMap<u32, (u32, u64)> = BTreeMap::new();
     let mut heap = BinaryHeap::new();
     for &p in own {
         if (p as usize) < n {
-            dist.insert(p, 0);
-            heap.push(Reverse((0u64, p)));
+            dist.insert(p, (0, 0));
+            heap.push(Reverse(((0u32, 0u64), p)));
         }
     }
     crate::warfare::work::add(crate::warfare::work::SEARCHES, 1);
@@ -243,14 +272,14 @@ fn reach(w: &World, r: u32, foes: &[u32], own: &[u32], limit: f64) -> BTreeMap<u
             if !allowed_for(w, r, foes, q) {
                 continue;
             }
-            let nd = d + ((days as f64 * 1000.0).round() as u64).max(1);
-            if nd <= limit && dist.get(&q).is_none_or(|&x| nd < x) {
+            let nd = (d.0 + 1, d.1 + ((days as f64 * 1000.0).round() as u64).max(1));
+            if nd.0 <= limit && dist.get(&q).is_none_or(|&x| nd < x) {
                 dist.insert(q, nd);
                 heap.push(Reverse((nd, q)));
             }
         }
     }
-    dist.into_iter().map(|(p, d)| (p, d as f64 / 1000.0)).collect()
+    dist.into_iter().map(|(p, d)| (p, d.1 as f64 / 1000.0)).collect()
 }
 
 impl Troops {
@@ -262,7 +291,7 @@ impl Troops {
     /// How deep the winter is in province `p` today (0 with winter off).
     pub(crate) fn winter_at(&self, w: &World, cal: &crate::calendar::Calendar, day: u64, p: u32) -> f64 {
         match (&self.params.seasons, w.provinces.lat.get(p as usize)) {
-            (Some(s), Some(&lat)) => winter(s, lat, year_part(cal, day)),
+            (Some(s), Some(&lat)) => winter(s, lat.to_degrees(), year_part(cal, day)),
             _ => 0.0,
         }
     }
@@ -280,7 +309,7 @@ impl Troops {
         let (cal, day, seed) = (cx.calendar, cx.day, cx.seed);
         let part = year_part(cal, day);
         let winter_at = |w: &World, p: u32| match (&seasons, w.provinces.lat.get(p as usize)) {
-            (Some(s), Some(&lat)) => winter(s, lat, part),
+            (Some(s), Some(&lat)) => winter(s, lat.to_degrees(), part),
             _ => 0.0,
         };
         self.st.eating.clear();
@@ -332,7 +361,7 @@ impl Troops {
             let (how, from, status) = if at_home_land {
                 (STANDING, at, 0u8)
             } else if let Some(s) = &supply {
-                let line = lines.entry(realm).or_insert_with(|| reach(w, realm, foes, own.get(&realm).map_or(&[][..], |v| &v[..]), s.reach_days));
+                let line = lines.entry(realm).or_insert_with(|| reach(w, realm, foes, own.get(&realm).map_or(&[][..], |v| &v[..]), s.reach_ways));
                 match line.get(&at) {
                     Some(&d) => {
                         // What arrives after `d` days of losing `carry_loss` a day.
