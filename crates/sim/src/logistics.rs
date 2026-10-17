@@ -158,10 +158,10 @@ pub(crate) fn check(sup: Option<&SupplyParams>, sea: Option<&SeasonParams>, pay:
             return Err("winter: marches take at least as long (1 or more times)".into());
         }
     }
-    if let Some(p) = pay {
-        if !(p.wage.is_finite() && p.wage >= 0.0 && share(p.unpaid_desert)) {
-            return Err("pay: the wage is zero coins or more, and deserting goes from 0 to 1".into());
-        }
+    if let Some(p) = pay
+        && !(p.wage.is_finite() && p.wage >= 0.0 && share(p.unpaid_desert))
+    {
+        return Err("pay: the wage is zero coins or more, and deserting goes from 0 to 1".into());
     }
     if let Some(s) = sie {
         if !(share(s.raising) && share(s.strip) && share(s.plunder)) {

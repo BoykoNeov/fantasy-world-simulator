@@ -180,11 +180,11 @@ fn supply_lines_feed_companies_from_home_and_foragers_take_first_on_enemy_land()
             let w = &sim.world;
             let enemies = sim::diplomacy::enemies(w);
             // How each company is fed: at home on its own land, else along a line or foraging.
-            for a in 0..w.armies.count().min(stood.len()) {
+            for (a, &at) in stood.iter().enumerate().take(w.armies.count()) {
                 if w.armies.size[a] == 0 {
                     continue;
                 }
-                let at = stood[a] as usize;
+                let at = at as usize;
                 let home_land = w.owner[at] == w.armies.realm[a] && w.occupier[at] == NONE;
                 match w.armies.supply[a] {
                     0 => assert!(home_land, "company {a} fed as at home away from it"),
