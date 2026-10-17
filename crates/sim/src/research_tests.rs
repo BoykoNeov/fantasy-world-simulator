@@ -203,9 +203,10 @@ fn trade_partners_come_from_last_months_trade_and_only_with_trade() {
     let mut cx = crate::module::Ctx { day: 40, seed: 1, calendar: &sim.calendar, goods: &goods, slot: Slot::Research, out: &mut out, trace: None };
     r.handle(&mut sim.world, &Event::Trade { a: 3, b: 1, a_to_b: 10, b_to_a: 0 }, &mut cx);
     assert!(r.partners().contains(&(1, 3)));
+    // Kept with the trade weighted 0 too (the weight is a live setting; costs apply it).
     let mut none = Research::new(ResearchParams { trade_weight: 0.0, ..ResearchParams::default() }, true);
-    none.handle(&mut sim.world, &Event::Trade { a: 3, b: 1, a_to_b: 10, b_to_a: 0 }, &mut cx);
-    assert!(none.partners().is_empty());
+    none.handle(&mut sim.world, &Event::Trade { a: 1, b: 3, a_to_b: 10, b_to_a: 0 }, &mut cx);
+    assert!(none.partners().contains(&(1, 3)));
 
     // In a running world with trade, realms trade and the module hears of it.
     let mut sim = world("markets", 1);

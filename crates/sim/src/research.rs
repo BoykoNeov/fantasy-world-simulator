@@ -511,7 +511,9 @@ impl Module for Research {
                     w.realm_knowledge[realm] += (r.tag as u128 * granted as u128 / r.take as u128) as u64;
                 }
             }
-            Event::Trade { a, b, .. } if self.params.trade_weight > 0.0 => {
+            // Kept whatever the trade weight, so a weight raised mid-month counts this month's
+            // partners at once; the weight is used only in what a tech costs.
+            Event::Trade { a, b, .. } => {
                 self.st.partners.insert((a.min(b), a.max(b)));
             }
             // Land changed hands, or rebels took theirs.
