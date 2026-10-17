@@ -92,7 +92,9 @@ pub struct ModuleConfig {
     #[serde(default)]
     pub diplomacy: Option<WarParams>,
     /// Warfare v1, "troops": provinces raise soldiers, and armies and fleets move and fight (step
-    /// 7). Needs realms. On by default, off in files that don't name it, as realms are.
+    /// 7); "campaigns" (the default since step 8's wave) is "troops" with sieges in depth on. Needs
+    /// realms. Off in files that don't name it, as realms are, and its parts off in files that don't
+    /// name them.
     #[serde(default)]
     pub warfare: Option<TroopParams>,
     /// Research v1, "tree": realms study and learn techs (step 9). Needs realms. Off by default
@@ -132,7 +134,7 @@ impl Default for ModuleConfig {
             realms: Some(RealmParams::default()),
             characters: Some(RulerParams::default()),
             diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
-            warfare: Some(TroopParams::default()),
+            warfare: Some(campaigns(TroopParams::default())),
             research: None,
             culture: None,
             terrain_params: TerrainParams::default(),
@@ -143,6 +145,15 @@ impl Default for ModuleConfig {
             province_params: ProvinceParams::default(),
         }
     }
+}
+
+/// Warfare "campaigns": `t` with sieges in depth on (kept with its numbers if on already). The other
+/// parts stay as they are: they are switched on alone (story 2 over 9 worlds: sieges alone took a
+/// rich city in a normal war on 6, with armies acting together or all four parts 3, with all five
+/// 2).
+fn campaigns(mut t: TroopParams) -> TroopParams {
+    t.sieges = t.sieges.take().or_else(|| Some(Default::default()));
+    t
 }
 
 impl ModuleConfig {
@@ -220,7 +231,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Realms, &["basic", "off"]),
     (Slot::Characters, &["rulers", "off"]),
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
-    (Slot::Warfare, &["troops", "campaigns", "off"]),
+    (Slot::Warfare, &["campaigns", "troops", "off"]),
     (Slot::Research, &["off", "tree"]),
     (Slot::Culture, &["off", "assimilation"]),
 ];
@@ -254,7 +265,7 @@ impl ModuleConfig {
             },
             Slot::Warfare => match &self.warfare {
                 None => "off",
-                Some(t) if t.supply.is_some() && t.seasons.is_some() && t.pay.is_some() && t.sieges.is_some() => "campaigns",
+                Some(t) if t.sieges.is_some() => "campaigns",
                 Some(_) => "troops",
             },
             Slot::Research => on(self.research.is_some(), "tree"),
@@ -296,13 +307,14 @@ impl ModuleConfig {
                 self.warfare = match version {
                     "off" => None,
                     _ => {
-                        // "campaigns" is "troops" with the four parts of logistics on.
+                        // "campaigns" is "troops" with sieges in depth on; "troops" has every part
+                        // of logistics off.
                         let mut t = self.warfare.take().unwrap_or_default();
-                        let c = version == "campaigns";
-                        t.supply = if c { t.supply.take().or_else(|| Some(Default::default())) } else { None };
-                        t.seasons = if c { t.seasons.take().or_else(|| Some(Default::default())) } else { None };
-                        t.pay = if c { t.pay.take().or_else(|| Some(Default::default())) } else { None };
-                        t.sieges = if c { t.sieges.take().or_else(|| Some(Default::default())) } else { None };
+                        if version == "campaigns" {
+                            t = campaigns(t);
+                        } else {
+                            (t.supply, t.seasons, t.pay, t.sieges, t.massing) = (None, None, None, None, None);
+                        }
                         Some(t)
                     }
                 }

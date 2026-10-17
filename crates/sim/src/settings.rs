@@ -346,13 +346,13 @@ pub static GROUPS: &[Group] = &[
     },
     // The first wave of modules built side by side (Oct 17): a block of groups each. Whoever builds
     // a module adds its settings inside its own block only.
-    // --- Logistics and support (the four parts of Warfare "campaigns") ---
+    // --- Logistics and support (the five parts of Warfare; "campaigns" has sieges in depth) ---
     Group {
         title: "Supply lines and foraging",
         at: "modules.warfare.supply",
         help: "Soldiers near their realm's land are fed from home along supply lines; further out they forage, taking food from the land they stand in. On an enemy's land foragers take before the people there.",
         specs: &[
-            live("modules.warfare.supply.reach_days", "Supply line reach", "Companies within this many days' march of their realm's own land are fed from their home province along a supply line; further out they forage from the land they stand in. Longer: armies stay fed deeper in enemy land. 0: every company away from its own land forages.", 0.0, 365.0, "days"),
+            live("modules.warfare.supply.reach_ways", "Supply line reach", "Companies at most this many provinces beyond their realm's own land (counted in borders crossed, the fewest it takes) are fed from their home province along a supply line; further out they forage from the land they stand in. More: armies stay fed deeper in enemy land. 0: every company away from its own land forages. Counted in provinces, not days, so it means the same on a world of big provinces as of small ones.", 0.0, 20.0, "provinces"),
             live("modules.warfare.supply.carry_loss", "Lost on the way", "Share of the food sent along a supply line lost for each day of the way (spoiled, or eaten by the carriers). Higher makes long supply lines cost the home provinces more food.", 0.0, 0.5, "share a day"),
             live("modules.warfare.supply.forage_take", "Foragers take", "Foragers take this many times what they eat from the land they stand in; the rest is wasted. Higher strips the land, and its people's food, faster.", 1.0, 10.0, "times"),
             live("modules.warfare.supply.camp_disease", "Camp disease", "Share of a company's soldiers who die of camp disease each month while away from their own land. Higher makes long campaigns costly.", 0.0, 1.0, "share a month"),
@@ -391,6 +391,15 @@ pub static GROUPS: &[Group] = &[
             live("modules.warfare.sieges.starving_days", "Starving below", "A besieged province whose food would last its people fewer than this many days is starving: its siege goes faster.", 0.0, 3650.0, "days"),
             live("modules.warfare.sieges.starving_speed", "Starving sieges", "Each day a starving province is besieged counts this many days of its siege. 1: hunger doesn't hasten a fall.", 1.0, 100.0, "times"),
             live("modules.warfare.sieges.plunder", "Plunder", "Where the world keeps coins: the share of a province's coins the realm that takes it by siege carries off into its treasury.", 0.0, 1.0, "share"),
+        ],
+    },
+    Group {
+        title: "Armies acting together",
+        at: "modules.warfare.massing",
+        help: "Soldiers from many provinces march to gather against a target: the ones already there set off as soon as together they outmatch the defence, without waiting for the rest, and a gathering that drags on is given up and planned again.",
+        specs: &[
+            live("modules.warfare.massing.join_days", "Longest wait to gather", "A group gathering against a target that hasn't set off this many days after it was formed is given up and planned again. Fewer: armies give up sooner on slow gatherings.", 0.0, 3650.0, "days"),
+            live("modules.warfare.massing.mass_share", "Most sent at one target", "No group takes more than this share of its realm's free soldiers (those not in another group), so one target can't draw in a whole realm's armies. 1: no limit.", 0.01, 1.0, "share"),
         ],
     },
     // --- end of logistics ---
@@ -452,6 +461,7 @@ pub static SECTIONS: &[Section] = &[
     Section { key: "modules.warfare.supply", label: "Supply lines and foraging", help: "Soldiers are fed from home along supply lines, or forage beyond them. Off: soldiers eat where they stand, as they share food with the people there." },
     Section { key: "modules.warfare.seasons", label: "Winter", help: "Winter slows armies, kills soldiers in camp and stops new attacks far from the equator. Off: war is the same all year." },
     Section { key: "modules.warfare.pay", label: "Soldiers' pay", help: "Realms pay their soldiers wages from the treasury, where the world keeps coins. Off: soldiers serve unpaid." },
+    Section { key: "modules.warfare.massing", label: "Armies acting together", help: "Soldiers gathered against a target set off once together they outmatch the defence, without waiting for stragglers; slow gatherings are given up. Off: a group waits until every company has marched in." },
     Section { key: "modules.warfare.sieges", label: "Sieges in depth", help: "Besieged provinces raise no soldiers, lose their trade and stores, and fall faster when starving. Off: a siege only counts days." },
     // --- end of logistics ---
     // --- Research ---
@@ -559,6 +569,7 @@ pub fn everything() -> ModuleConfig {
             seasons: Some(Default::default()),
             pay: Some(Default::default()),
             sieges: Some(Default::default()),
+            massing: Some(Default::default()),
             ..TroopParams::default()
         }),
         research: Some(ResearchParams::default()),
@@ -604,6 +615,7 @@ pub fn defaults_for(c: &Config) -> Config {
         p.seasons = p.seasons.take().filter(|_| x.seasons.is_some());
         p.pay = p.pay.take().filter(|_| x.pay.is_some());
         p.sieges = p.sieges.take().filter(|_| x.sieges.is_some());
+        p.massing = p.massing.take().filter(|_| x.massing.is_some());
     }
     // --- Research: its parts ---
     let research = on(m.research.is_some(), all.research);

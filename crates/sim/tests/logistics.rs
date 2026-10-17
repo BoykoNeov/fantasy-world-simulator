@@ -1,7 +1,8 @@
-//! Logistics and support (build step 8), the four parts of Warfare "campaigns": sieges in depth,
-//! supply lines and foraging, winter and soldiers' pay. Each part is switched on alone in a world
-//! at war and checked day by day; then all four together through saves, going back and settings
-//! changes, and every logistics setting at the ends of its range.
+//! Logistics and support (build step 8), the parts of Warfare: sieges in depth, supply lines and
+//! foraging, winter, soldiers' pay, and armies acting together (Warfare "campaigns", the default,
+//! has sieges in depth). Each part is switched on alone in a world at war and checked day by
+//! day; then all together through saves, going back and settings changes, and every logistics
+//! setting at the ends of its range.
 
 use sim::config::Config;
 use sim::diplomacy::WarParams;
@@ -9,7 +10,7 @@ use sim::edit::{Edit, SettingChange};
 use sim::events::Event;
 use sim::fields::{known, Quantity};
 use sim::grid::NONE;
-use sim::logistics::{winter, PayParams, SeasonParams, SiegeParams, SupplyParams};
+use sim::logistics::{winter, MassingParams, PayParams, SeasonParams, SiegeParams, SupplyParams};
 use sim::markets::MarketParams;
 use sim::realms::RealmParams;
 use sim::requests::{Cause, Priority};
@@ -36,6 +37,7 @@ fn config(seed: u64, markets: bool, parts: impl FnOnce(&mut TroopParams)) -> Con
 
 fn all_parts(t: &mut TroopParams) {
     (t.supply, t.seasons, t.pay, t.sieges) = (Some(SupplyParams::default()), Some(SeasonParams::default()), Some(PayParams::default()), Some(SiegeParams::default()));
+    t.massing = Some(MassingParams::default());
 }
 
 fn land_of(w: &World, r: u32) -> usize {
@@ -62,6 +64,45 @@ fn at_war(c: &Config) -> (Sim, u32, u32) {
     let (a, b) = rivals(&sim.world, 4);
     sim.poke(Event::DeclareWar { attacker: a, defender: b });
     (sim, a, b)
+}
+
+/// The general's groups in a world's Warfare state, by number.
+fn groups(sim: &Sim) -> BTreeMap<u32, sim::warfare::GroupView> {
+    let bytes = sim.save();
+    let file: sim::save::SaveFile = postcard::from_bytes(&bytes[12..]).unwrap();
+    let st = file.snapshots[0].module_state.iter().find(|m| m.slot == sim::module::Slot::Warfare).unwrap();
+    sim::warfare::groups_in_state(&st.bytes).unwrap().into_iter().map(|g| (g.number, g)).collect()
+}
+
+#[test]
+fn massed_groups_set_off_without_stragglers_and_give_up_a_slow_gathering() {
+    let join_days = 20;
+    let c = config(17, false, |t| t.massing = Some(MassingParams { join_days, ..MassingParams::default() }));
+    let (mut sim, ..) = at_war(&c);
+    let mut seen: BTreeMap<u32, u64> = BTreeMap::new();
+    let mut before = groups(&sim);
+    let (mut launched, mut without_stragglers) = (0, 0);
+    for _ in 0..2 * 364 {
+        sim.run_days(1);
+        let now = groups(&sim);
+        for (k, g) in &now {
+            let first = *seen.entry(*k).or_insert(sim.day);
+            // Nobody waits to gather much longer than join_days (the general looks at least monthly).
+            assert!(g.launched || sim.day - first <= join_days as u64 + 31, "group {k} gathering since day {first}, now {}", sim.day);
+            if let Some(was) = before.get(k)
+                && g.launched
+                && !was.launched
+            {
+                launched += 1;
+                if g.members.len() < was.members.len() {
+                    without_stragglers += 1;
+                }
+            }
+        }
+        before = now;
+    }
+    assert_eq!(sim.problems, Problems::default());
+    assert!(launched > 5 && without_stragglers > 0, "{launched} groups set off, {without_stragglers} without their stragglers");
 }
 
 fn year_part(sim: &Sim, day: u64) -> f64 {
@@ -162,10 +203,8 @@ fn sieges_in_depth_stop_raising_strip_stores_hasten_starving_sieges_cut_trade_an
 
 #[test]
 fn supply_lines_feed_companies_from_home_and_foragers_take_first_on_enemy_land() {
-    // Ways on this small world take a month or more (on a large one a week): a line reaches
-    // further than the default's ten days, or no company would be fed along one.
-    for reach in [0.0, 100.0] {
-        let c = config(12, false, |t| t.supply = Some(SupplyParams { reach_days: reach, ..SupplyParams::default() }));
+    for reach in [0, 2] {
+        let c = config(12, false, |t| t.supply = Some(SupplyParams { reach_ways: reach, ..SupplyParams::default() }));
         let (mut sim, ..) = at_war(&c);
         let (mut lined, mut foraging, mut first, mut attrition) = (0, 0, 0, false);
         for _ in 0..2 * 364 {
@@ -189,7 +228,7 @@ fn supply_lines_feed_companies_from_home_and_foragers_take_first_on_enemy_land()
                 match w.armies.supply[a] {
                     0 => assert!(home_land, "company {a} fed as at home away from it"),
                     1 => {
-                        assert!(!home_land && reach > 0.0);
+                        assert!(!home_land && reach > 0);
                         lined += 1;
                     }
                     _ => {
@@ -211,7 +250,7 @@ fn supply_lines_feed_companies_from_home_and_foragers_take_first_on_enemy_land()
             }
         }
         assert_eq!(sim.problems, Problems::default());
-        if reach == 0.0 {
+        if reach == 0 {
             assert!(foraging > 0 && first > 0 && lined == 0, "reach {reach}: {foraging} foraging, {first} taken first, {lined} along a line");
         } else {
             assert!(lined > 0, "nobody fed along a line");
@@ -223,7 +262,7 @@ fn supply_lines_feed_companies_from_home_and_foragers_take_first_on_enemy_land()
 #[test]
 fn winter_slows_marches_and_no_new_attack_begins_in_deep_winter() {
     // Winter almost everywhere, deep: marches take up to three times as long.
-    let seasons = SeasonParams { start_lat: 0.0, full_span: 20.0, road_slow: 3.0, ..SeasonParams::default() };
+    let seasons = SeasonParams { start_lat: 10.0, full_span: 20.0, road_slow: 3.0, ..SeasonParams::default() };
     let c = config(13, false, |t| t.seasons = Some(seasons.clone()));
     let (mut sim, ..) = at_war(&c);
     let (mut checked, mut launched, mut slowed) = (0, 0, 0);
@@ -242,16 +281,16 @@ fn winter_slows_marches_and_no_new_attack_begins_in_deep_winter() {
             }
             // Still on the same way: a day covered 1 / (1 + 2 × winter) of a day's march.
             if next != NONE && arm.next[a] == next && arm.province[a] == at {
-                let want = 1.0 / (1.0 + 2.0 * winter(&seasons, w.provinces.lat[at as usize], part));
+                let want = 1.0 / (1.0 + 2.0 * winter(&seasons, w.provinces.lat[at as usize].to_degrees(), part));
                 assert!(((left - arm.days_left[a]) as f64 - want).abs() < 1e-3, "company {a}: {left} → {}, want {want}", arm.days_left[a]);
                 checked += 1;
-                slowed += (want < 0.99) as u32;
+                slowed += (want < 0.6) as u32;
             }
             // Newly set off, in a group, for an enemy's province it doesn't occupy: an attack.
             let d = arm.dest[a] as usize;
             let realm = arm.realm[a];
             if dest != arm.dest[a] && arm.group[a] != NONE && w.owner[d] != realm && w.occupier[d] != realm && enemies[realm as usize].binary_search(&w.owner[d]).is_ok() {
-                let deep = winter(&seasons, w.provinces.lat[d], part);
+                let deep = winter(&seasons, w.provinces.lat[d].to_degrees(), part);
                 assert!(deep <= seasons.no_attack, "company {a} set off for province {d} in a winter of {deep:.2}");
                 launched += 1;
             }
@@ -330,10 +369,10 @@ fn campaigns_survive_saving_loading_going_back_and_settings_changes() {
     // same.
     let changes: Vec<SettingChange> = sim::settings::items(&c)
         .into_iter()
-        .filter(|i| i.key.starts_with("modules.warfare.supply") || i.key.starts_with("modules.warfare.seasons") || i.key.starts_with("modules.warfare.pay") || i.key.starts_with("modules.warfare.sieges") || i.key == "modules.markets.trade.siege_stops")
+        .filter(|i| ["supply", "seasons", "pay", "sieges", "massing"].iter().any(|p| i.key.starts_with(&format!("modules.warfare.{p}"))) || i.key == "modules.markets.trade.siege_stops")
         .map(|i| SettingChange { key: i.key, value: i.value })
         .collect();
-    assert_eq!(changes.len(), 4 + 7 + 2 + 5 + 1);
+    assert_eq!(changes.len(), 4 + 7 + 2 + 5 + 1 + 2);
     same.edit(Edit::Settings { changes }).unwrap();
     same.run_days(200);
     assert_eq!(same.fingerprint(), print, "settings changed to what they were");
@@ -349,7 +388,7 @@ fn every_logistics_setting_works_at_the_ends_of_its_range() {
         base.world = WorldParams { n: 24, provinces: 40, seed: 16, land_fraction: 0.4, radius_km: 6371.0 };
         base.modules.realms = Some(RealmParams { provinces_per_realm: 6.0, unrest: None, ..RealmParams::default() });
         for i in sim::settings::items(&base) {
-            let ours = ["modules.warfare.supply", "modules.warfare.seasons", "modules.warfare.pay", "modules.warfare.sieges", "modules.markets.trade.siege_stops"];
+            let ours = ["modules.warfare.supply", "modules.warfare.seasons", "modules.warfare.pay", "modules.warfare.sieges", "modules.warfare.massing", "modules.markets.trade.siege_stops"];
             if ours.iter().any(|k| i.key.starts_with(k)) {
                 for end in [i.spec.min, i.spec.max] {
                     cases.push((i.key.clone(), end, base.clone()));

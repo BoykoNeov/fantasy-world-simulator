@@ -1,5 +1,5 @@
-//! Logistics' checks (build step 8): Warfare "campaigns" (troops with supply lines, winter, pay and
-//! sieges in depth) against plain "troops".
+//! Logistics' checks (build step 8): Warfare with all five parts of logistics on (supply lines,
+//! winter, pay, sieges in depth and armies acting together) against plain "troops".
 //!
 //! `long` runs story 1's world (200 provinces, every module on, realms choosing their wars) for the
 //! years given, once with each, and prints each decade: realms alive, wars begun, provinces that
@@ -8,7 +8,7 @@
 //! by foragers and besiegers, the days provinces were besieged and occupied, the treasuries' share
 //! of the coins; and the processor time a day.
 //!
-//! `story1` runs story 1 in full (as `tests/stories.rs` does) with the four parts on: a drought
+//! `story1` runs story 1 in full (as `tests/stories.rs` does) with the five parts on: a drought
 //! over the province that grows the most food after three years, then five years watched, with and
 //! without the drought, on seeds 21, 3 and 7 and both economies.
 //!
@@ -28,9 +28,11 @@ use sim::world::WorldParams;
 fn config(economics: &str, seed: u64, campaigns: bool) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     c.modules.set_choice(Slot::Economics, economics).unwrap();
+    c.modules.set_choice(Slot::Warfare, "troops").unwrap();
     if campaigns {
         let t = c.modules.warfare.as_mut().expect("armies are on by default");
         (t.supply, t.seasons, t.pay, t.sieges) = (Some(SupplyParams::default()), Some(SeasonParams::default()), Some(PayParams::default()), Some(SiegeParams::default()));
+        t.massing = Some(Default::default());
     }
     c
 }
@@ -81,7 +83,7 @@ fn long(economics: &str, seed: u64, years: i64, campaigns: bool) {
     let stock = known("province.stock");
     let mut d = Decade::default();
     let t = cpu_ms();
-    println!("{economics}, seed {seed}, {}:", if campaigns { "campaigns" } else { "troops" });
+    println!("{economics}, seed {seed}, {}:", if campaigns { "all five parts" } else { "troops" });
     println!("  year realms wars handed battles killed starved under_arms% attrition deserted wages plunder foraged besieged_days occupied_days treasury%");
     let mut last_attrition = 0i64;
     for year in 1..=years {
@@ -204,7 +206,7 @@ fn main() {
                 let runs: Vec<(bool, bool)> = [21, 3, 7].into_iter().map(|seed| story1(economics, seed)).collect();
                 let with = runs.iter().filter(|r| r.0).count();
                 let quiet = runs.iter().filter(|r| !r.1).count();
-                println!("story 1 in full, {economics}, campaigns: with the drought {with} of 3, quiet without it {quiet} of 3 ({}): {runs:?}", if with >= 2 && quiet >= 2 { "passes" } else { "fails" });
+                println!("story 1 in full, {economics}, all five parts: with the drought {with} of 3, quiet without it {quiet} of 3 ({}): {runs:?}", if with >= 2 && quiet >= 2 { "passes" } else { "fails" });
             }
         }
         _ => {

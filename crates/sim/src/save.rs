@@ -78,7 +78,10 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 26 (Research merged): Research's settings and its tech tree in the configuration.
 /// Format 27 (Logistics merged): Warfare keeps `province.besieger`; its four parts and markets' `siege_stops` in the configuration.
 /// Format 28 (Culture merged): Culture's settings and state, unrest from foreign rule in Realms'.
-pub const FORMAT_VERSION: u32 = 28;
+/// Format 29 (logistics follow-up): supply reach counted in provinces crossed (`reach_ways`, was
+/// `reach_days`), armies acting together (Warfare's `massing` part, its groups' formation days in
+/// Warfare's state); new worlds get Warfare "campaigns" (sieges in depth on).
+pub const FORMAT_VERSION: u32 = 29;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
