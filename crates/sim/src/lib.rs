@@ -56,8 +56,10 @@ pub mod save;
 pub mod scenario;
 pub mod settings;
 pub mod sim;
+pub mod speed;
 pub mod taxonomy;
 pub mod terrain;
+pub mod timing;
 #[cfg(test)]
 mod treasury_tests;
 #[cfg(test)]

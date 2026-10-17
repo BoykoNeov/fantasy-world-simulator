@@ -885,6 +885,24 @@ other problems do):
 cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim --bin combos -- --check
 ```
 
+The speed table (Oct 17: the user relaxed the hard 1.5 ms a day limit into "aim for good speed,
+and keep a table"): how long a simulated day takes for each mix of module versions, and where the
+time goes. Each mix runs on a medium world (2,000 provinces) on one worker thread, measured young
+(year 2) and busy (year 30, realms grown and at war), 91 days each, the cheapest of three tries;
+for each, the day's time, the same as a multiple of the simplest mix (people, food and droughts,
+measured in the same run, so multiples compare across machines), the engine's own time between
+modules, and each module's own work and the engine's checks around it (conservation sums, copies
+for "last changed", contracts), most costly first (`timing.rs`, `speed.rs`). Every accepted mix
+runs, terrain and climate at their defaults (they shape the map once, not its days; `--map` adds
+them); `--pairs` runs the tester's small set, `--only MIX` one mix. It prints the mixes that got
+more than a fifth slower than in the shipped table (`data/speed.toml`), and `--write` saves the new
+one, which the window shows beside the tester's verdict. Times are the clock's: measure on a quiet
+machine, and never while other builds run.
+
+```
+cmd //v:on //c "start /belownormal /b /wait cargo run --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p sim --bin speed -- --write & exit !errorlevel!"
+```
+
 Headless run with timing and maps (sizes: small, medium, large, huge):
 
 ```

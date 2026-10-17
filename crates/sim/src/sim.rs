@@ -140,7 +140,7 @@ pub enum CommandKind {
 pub const NEVER: u64 = u64::MAX;
 
 /// The parts of a day, as the inspector's trace names them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Stage {
     Generate,
     Init,
@@ -271,6 +271,8 @@ pub struct Sim {
     pub last_change: Vec<Vec<u64>>,
     /// What was found so far while a day is replayed with tracing on.
     trace: Option<Trace>,
+    /// Where the days' time goes, while measuring speed (see [`crate::timing`]); `None` normally.
+    pub timing: Option<Box<crate::timing::Timing>>,
 }
 
 impl Sim {
@@ -349,6 +351,7 @@ impl Sim {
             checkpoints: Vec::new(),
             last_change: vec![Vec::new(); crate::fields::FIELDS.len()],
             trace: None,
+            timing: None,
         })
     }
 
@@ -364,8 +367,13 @@ impl Sim {
     /// Run one day, then arrive at the next: apply the edits logged for it. Returns whether anything
     /// ran (false = an idle day).
     pub fn step_day(&mut self) -> bool {
+        let began = self.timing.is_some().then(std::time::Instant::now);
         let ran = self.run_day();
-        self.arrive() || ran
+        let ran = self.arrive() || ran;
+        if let (Some(t), Some(began)) = (&mut self.timing, began) {
+            t.day(began.elapsed());
+        }
+        ran
     }
 
     /// Arrive at the start of today: keep a checkpoint if a year starts, then apply the edits logged
@@ -906,7 +914,11 @@ impl Sim {
         let trace = self.trace.as_ref().map(|t| t.province);
         let goods = self.world.goods.clone();
         let mut cx = Ctx { day: self.day, seed: self.world.params.seed, calendar: &self.calendar, goods: &goods, slot, out: &mut out, trace };
+        let began = self.timing.is_some().then(std::time::Instant::now);
         f(self.modules[i].as_mut(), &mut self.world, &mut cx);
+        if let (Some(t), Some(began)) = (&mut self.timing, began) {
+            t.module_call(slot, began.elapsed());
+        }
         out
     }
 
@@ -914,6 +926,17 @@ impl Sim {
     /// runs, conservation; then field contracts. Then note what changed, and take in what the
     /// modules sent.
     fn stage(&mut self, kind: Stage, actors: &[usize], body: impl FnOnce(&mut Self) -> Vec<(usize, Outbox)>) {
+        if let Some(t) = &mut self.timing {
+            t.begin_stage(kind);
+        }
+        self.stage_checked(kind, actors, body);
+        if let Some(t) = &mut self.timing {
+            let slots: Vec<Slot> = actors.iter().map(|&i| self.modules[i].manifest().slot).collect();
+            t.end_stage(&slots);
+        }
+    }
+
+    fn stage_checked(&mut self, kind: Stage, actors: &[usize], body: impl FnOnce(&mut Self) -> Vec<(usize, Outbox)>) {
         let conserve = kind.running();
         let owned_by_actors = |s: &Self, id: FieldId| s.plan.owner[id.0 as usize].is_some_and(|o| actors.contains(&o));
         let guard: Vec<(FieldId, u64)> = if self.strict {

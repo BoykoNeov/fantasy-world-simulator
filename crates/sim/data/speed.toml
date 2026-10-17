@@ -1,0 +1,25 @@
+# How long a simulated day takes for each mix of module versions, and where the time goes:
+# written by `speed --write`, read by the window. Milliseconds depend on the machine;
+# `times_base` (a multiple of the base mix, measured in the same run) compares across
+# machines. See crates/sim/src/speed.rs.
+#
+# Not measured yet: the first table is measured on a quiet machine once the first wave of modules
+# is merged.
+
+base = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=off characters=off diplomacy=off warfare=off"
+mix = []
+
+[about]
+machine = ""
+threads = 0
+commit = ""
+date = ""
+
+[settings]
+n = 256
+provinces = 2000
+seed = 7
+young_year = 2
+busy_year = 30
+days = 91
+rounds = 3

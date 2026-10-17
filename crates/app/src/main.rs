@@ -1370,6 +1370,7 @@ impl MapApp {
         let line: Vec<String> = versions.iter().map(|(slot, v)| format!("{slot} {v}")).collect();
         ui.small(line.join(" · "));
         Self::verdict_line(ui, verdict, tested_on, "running");
+        Self::speed_line(ui, &self.config.modules);
         Self::changed_note(ui, self.changed_count.1);
     }
 
@@ -1457,6 +1458,32 @@ impl MapApp {
         }
     }
 
+    /// How long a day takes with these versions, from the speed table shipped with the simulation
+    /// (`speed --write`), and the module that takes most of it.
+    fn speed_line(ui: &mut egui::Ui, modules: &sim::config::ModuleConfig) {
+        static TABLE: std::sync::OnceLock<Result<sim::speed::Table, String>> = std::sync::OnceLock::new();
+        let table = TABLE.get_or_init(sim::speed::Table::shipped);
+        let mix = sim::combos::Mix::of(modules);
+        match table.as_ref().map(|t| (t, t.row(&mix))) {
+            Ok((t, Some(row))) => {
+                let Some(busy) = &row.busy else { return };
+                let top = busy.modules.first().map_or(String::new(), |m| format!(", most of it {}", m.module));
+                let young = row.young.as_ref().map_or(String::new(), |y| format!(" ({:.2} ms in a young world)", y.ms));
+                let s = &t.settings;
+                ui.small(format!("speed: about {:.2} ms a simulated day once busy{young}, {:.1}× the simplest mix{top}", busy.ms, busy.times_base)).on_hover_text(format!(
+                    "Measured on a world of {} provinces (face {}), at years {} and {}, on one thread, on {} ({}). Bigger worlds and more threads change the milliseconds; the multiple of the simplest mix compares across machines.",
+                    s.provinces, s.n, s.young_year, s.busy_year, t.about.machine, t.about.date
+                ));
+            }
+            Ok((_, None)) => {
+                ui.small("speed: not measured yet for these versions");
+            }
+            Err(e) => {
+                ui.small(format!("the speed table can't be read: {e}"));
+            }
+        }
+    }
+
     /// Make another world: its size, seed and module versions, with what the combination tester
     /// found for those versions, shown as they are picked.
     fn new_world_section(&mut self, ui: &mut egui::Ui) {
@@ -1521,6 +1548,7 @@ impl MapApp {
             let verdict = self.table.as_ref().map(|t| t.verdict_for(m)).map_err(|e| e.clone());
             let refused = matches!(verdict, Ok(Some((Verdict::Refused, _))));
             Self::verdict_line(ui, &verdict, &tested_on(&self.table), "new world");
+            Self::speed_line(ui, m);
             Self::changed_line(ui, &nw.config);
             if let Some((since, _)) = &nw.making {
                 ui.horizontal(|ui| {
