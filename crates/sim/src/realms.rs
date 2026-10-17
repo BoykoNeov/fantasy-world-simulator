@@ -100,10 +100,20 @@ pub struct RealmParams {
     pub frontier: f64,
     /// About how many provinces a realm over settled land (or on the frontier) is made from.
     pub provinces_per_realm: f64,
+    /// About how many realms start over settled land and on the frontier together (city-states
+    /// come on top, and settled land none reaches starts its own); 0 makes them
+    /// `provinces_per_realm` each instead. Scenario files written before
+    /// it was a setting get 0.
+    #[serde(default)]
+    pub realm_count: u32,
     /// On the frontier, the share of each realm's settled land left unclaimed at the start.
     pub unclaimed_share: f64,
     /// Each month, the chance that a settled province nobody owns is claimed by a realm next to it.
     pub claim_per_month: f64,
+    /// The largest city-state, in provinces: each has from one up to this many. City-states hold no
+    /// empty land. Scenario files written before it was a setting get 3.
+    #[serde(default = "city_state_max")]
+    pub city_state_max: u32,
     /// Taxes and spending, in a world that keeps coins. Scenario files written before taxes get
     /// the defaults.
     #[serde(default)]
@@ -121,8 +131,10 @@ impl Default for RealmParams {
             city_states: 0.0,
             frontier: 0.0,
             provinces_per_realm: 25.0,
+            realm_count: 0,
             unclaimed_share: 0.6,
             claim_per_month: 0.005,
+            city_state_max: city_state_max(),
             taxes: TaxParams::default(),
             unrest: Some(UnrestParams::default()),
         }
@@ -182,8 +194,9 @@ impl Default for TaxParams {
     }
 }
 
-/// The largest city-state, in provinces. City-states hold no empty land.
-pub const CITY_STATE_MAX: u32 = 3;
+fn city_state_max() -> u32 {
+    3
+}
 
 /// The three ways to start, as the areas the settled land is split into.
 const SETTLED: u8 = 0;
@@ -258,6 +271,9 @@ impl Module for Founding {
         }
         if !(0.0..=1.0).contains(&p.claim_per_month) {
             return Err("the chance to claim goes from 0 to 1".into());
+        }
+        if p.city_state_max < 1 {
+            return Err("a city-state holds at least one province".into());
         }
         let t = &p.taxes;
         if ![t.per_month, t.spent_per_month].iter().all(|x| (0.0..=1.0).contains(x)) {
@@ -661,9 +677,13 @@ pub fn found(w: &World, params: &RealmParams, seed: u64) -> (Vec<u32>, Vec<u32>)
     let settled: Vec<bool> = (0..n).map(|p| w.provinces.cells[p] > 0 && people[p] > 0).collect();
     let way = ways(w, params, seed, &settled);
 
+    // With a number of realms asked for, realms over settled land and on the frontier are made the
+    // size that gives that many.
+    let big = (0..n).filter(|&p| settled[p] && way[p] != CITY).count();
+    let per_realm = if params.realm_count > 0 { (big as f64 / params.realm_count as f64).max(1.0) } else { params.provinces_per_realm };
     let mut starts: Vec<Start> = Vec::new();
     let quota = |way: u8, k: usize| match way {
-        CITY => 1 + (draw(seed, Rng::Realms, 0, k as u64, purpose("city-state size")) % CITY_STATE_MAX as u64) as u32,
+        CITY => 1 + (draw(seed, Rng::Realms, 0, k as u64, purpose("city-state size")) % params.city_state_max as u64) as u32,
         _ => u32::MAX,
     };
     for wy in [SETTLED, CITY, FRONTIER] {
@@ -671,7 +691,7 @@ pub fn found(w: &World, params: &RealmParams, seed: u64) -> (Vec<u32>, Vec<u32>)
         if cands.is_empty() {
             continue;
         }
-        let per = if wy == CITY { (1 + CITY_STATE_MAX) as f64 / 2.0 } else { params.provinces_per_realm };
+        let per = if wy == CITY { (1 + params.city_state_max) as f64 / 2.0 } else { per_realm };
         let k = ((cands.len() as f64 / per).round() as usize).clamp(1, cands.len());
         for p in spread(w, &cands, k, &people, seed, wy) {
             let q = quota(wy, starts.len());

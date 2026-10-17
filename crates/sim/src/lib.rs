@@ -43,6 +43,7 @@ pub mod rng;
 pub mod routes;
 pub mod save;
 pub mod scenario;
+pub mod settings;
 pub mod sim;
 pub mod taxonomy;
 pub mod terrain;

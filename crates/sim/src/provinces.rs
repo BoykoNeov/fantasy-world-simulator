@@ -18,7 +18,35 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 /// Provinces v0: organic growth from fertile seeds.
-pub struct ProvinceGrowth;
+pub struct ProvinceGrowth {
+    pub params: ProvinceParams,
+}
+
+/// How provinces grow. A step of growth from one cell to the next costs `plain_step`, plus up to
+/// `fertile_step` more on fertile land, plus `climb_step` for each metre up or down, times how
+/// rough the country is there; stepping onto or off a big river costs `river_crossing` more.
+/// Provinces meet where their growth meets, so costly steps make borders.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ProvinceParams {
+    /// Province centres are picked with a weight of this plus the land's fertility (0 to 1, the
+    /// most fertile cell 1): near 0, nearly every centre lies on good land; large, they spread by
+    /// area alone. Steps through land of more weight cost more (`fertile_step`).
+    pub poor_land_weight: f64,
+    pub plain_step: f64,
+    pub fertile_step: f64,
+    pub climb_step: f64,
+    pub river_crossing: f64,
+    /// How strongly rough country bends growth: the cost of a step is scaled by
+    /// `exp(roughness * noise)`, with the noise roughly in [-1, 1].
+    pub roughness: f64,
+}
+
+impl Default for ProvinceParams {
+    fn default() -> Self {
+        ProvinceParams { poor_land_weight: 0.15, plain_step: 500.0, fertile_step: 1500.0, climb_step: 6.0, river_crossing: 6000.0, roughness: 1.6 }
+    }
+}
 
 static V0: Manifest = Manifest::generation(Slot::Provinces, "growth", crate::fields::Tier::Province,
     &["cell.elevation", "cell.food_yield", "cell.river_flow", "cell.biome"],
@@ -34,7 +62,7 @@ impl SimModule for ProvinceGrowth {
     }
     fn generate(&self, w: &mut World) {
         let p = &w.params;
-        let of_cell = generate(&w.grid, &w.elevation, &w.food_per_cell, &w.river_flow, p.provinces, p.seed);
+        let of_cell = generate(&w.grid, &w.elevation, &w.food_per_cell, &w.river_flow, p.provinces, p.seed, &self.params);
         w.provinces = aggregate(w, of_cell);
     }
 }
@@ -71,15 +99,9 @@ pub const UPLAND_M: f32 = 500.0;
 /// Lowland bears a little ore too, at this fraction of upland's.
 const LOWLAND_ORE: f64 = 0.1;
 
-/// How strongly the smooth roughness field bends growth: the cost of a step is scaled by
-/// `exp(ROUGHNESS * noise)`, with the noise roughly in [-1, 1].
-const ROUGHNESS: f64 = 1.6;
-/// Extra cost of stepping onto or off a big river, against a typical step of about 1,500.
-const RIVER_CROSSING: u64 = 6_000;
-
 /// `fertility[c]` is food per year in a cell (any non-negative scale); sea is `elevation < 0`.
 /// `river_flow` marks the big rivers that make natural borders.
-pub fn generate(grid: &Grid, elevation: &[f32], fertility: &[f64], river_flow: &[u64], target: usize, seed: u64) -> Vec<u32> {
+pub fn generate(grid: &Grid, elevation: &[f32], fertility: &[f64], river_flow: &[u64], target: usize, seed: u64, p: &ProvinceParams) -> Vec<u32> {
     let cells = grid.cells();
     let mut of_cell = vec![NONE; cells];
     let land: Vec<usize> = (0..cells).filter(|&c| elevation[c] >= 0.0).collect();
@@ -89,7 +111,7 @@ pub fn generate(grid: &Grid, elevation: &[f32], fertility: &[f64], river_flow: &
 
     // Weighted sampling without replacement: the `target` smallest `-ln(u) / w` win.
     let max_f = land.iter().map(|&c| fertility[c]).fold(0.0, f64::max).max(1e-12);
-    let weight = |c: usize| 0.15 + fertility[c] / max_f;
+    let weight = |c: usize| p.poor_land_weight + fertility[c] / max_f;
     let mut ranked: Vec<(f64, usize)> = land
         .iter()
         .map(|&c| (-(1.0 - unit(seed, Module::Provinces, 0, c as u64, purpose("seed"))).ln() / weight(c), c))
@@ -115,7 +137,7 @@ pub fn generate(grid: &Grid, elevation: &[f32], fertility: &[f64], river_flow: &
         .par_iter()
         .map(|&d| {
             let at = |f: f64| [d[0] * f, d[1] * f, d[2] * f];
-            (ROUGHNESS * (fbm(at(freq), 2, broad_key) + fbm(at(4.0 * freq), 2, fine_key))).exp()
+            (p.roughness * (fbm(at(freq), 2, broad_key) + fbm(at(4.0 * freq), 2, fine_key))).exp()
         })
         .collect();
     let spacing = grid.mean_area().sqrt();
@@ -127,9 +149,9 @@ pub fn generate(grid: &Grid, elevation: &[f32], fertility: &[f64], river_flow: &
         let len = crate::grid::dot(grid.center[from], grid.center[to]).clamp(-1.0, 1.0).acos() / spacing;
         let jitter = draw(seed, Module::Provinces, 0, (from as u64) << 32 | to as u64, purpose("step")) % 1000;
         let slope = (elevation[to] - elevation[from]).abs() as f64;
-        let fertile = weight(to) * 1500.0;
-        let crossing = if river(from) != river(to) { RIVER_CROSSING } else { 0 };
-        ((500.0 + fertile + slope * 6.0) * rough[to] * len) as u64 + jitter / 2 + crossing
+        let fertile = weight(to) * p.fertile_step;
+        let crossing = if river(from) != river(to) { p.river_crossing.round() as u64 } else { 0 };
+        ((p.plain_step + fertile + slope * p.climb_step) * rough[to] * len) as u64 + jitter / 2 + crossing
     };
     let grow = |heap: &mut BinaryHeap<Reverse<(u64, u32, u32)>>, of_cell: &mut [u32], cost: &mut [u64]| {
         while let Some(Reverse((c, cell, id))) = heap.pop() {
@@ -330,9 +352,9 @@ mod tests {
     #[test]
     fn every_land_cell_gets_a_province_and_provinces_are_connected() {
         let g = Grid::new(24);
-        let elevation = crate::terrain::generate(&g, 5, 0.4);
+        let elevation = crate::terrain::generate(&g, 5, 0.4, &Default::default());
         let fertility: Vec<f64> = (0..g.cells()).map(|c| if elevation[c] >= 0.0 { (c % 5) as f64 } else { 0.0 }).collect();
-        let of_cell = generate(&g, &elevation, &fertility, &vec![0; g.cells()], 60, 5);
+        let of_cell = generate(&g, &elevation, &fertility, &vec![0; g.cells()], 60, 5, &ProvinceParams::default());
         for c in 0..g.cells() {
             assert_eq!(elevation[c] >= 0.0, of_cell[c] != NONE, "cell {c}");
         }

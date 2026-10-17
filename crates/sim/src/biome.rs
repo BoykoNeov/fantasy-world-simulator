@@ -3,9 +3,53 @@
 use crate::module::{Manifest, Module, Slot};
 use crate::world::World;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Biomes v0: the lookup below.
-pub struct Biomes;
+pub struct Biomes {
+    pub params: BiomeParams,
+}
+
+/// Where each biome begins: limits of yearly mean temperature (°C), rain (mm a year) and height
+/// (m), tried in the order of [`BiomeParams::classify`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BiomeParams {
+    /// Colder than this: ice cap.
+    pub ice_below_c: f64,
+    /// Higher than this: alpine.
+    pub alpine_above_m: f64,
+    /// Colder than this: tundra.
+    pub tundra_below_c: f64,
+    /// Drier than this: desert; and warmer than `hot_desert_c` and drier than `hot_desert_rain_mm`.
+    pub desert_rain_mm: f64,
+    pub hot_desert_c: f64,
+    pub hot_desert_rain_mm: f64,
+    /// Colder than this: boreal forest.
+    pub boreal_below_c: f64,
+    /// Colder than this: temperate land, grassland if drier than `grassland_rain_mm`, else forest.
+    pub temperate_below_c: f64,
+    pub grassland_rain_mm: f64,
+    /// Warmer land drier than this is savanna, wetter tropical forest.
+    pub savanna_rain_mm: f64,
+}
+
+impl Default for BiomeParams {
+    fn default() -> Self {
+        BiomeParams {
+            ice_below_c: -10.0,
+            alpine_above_m: 3200.0,
+            tundra_below_c: -2.0,
+            desert_rain_mm: 250.0,
+            hot_desert_c: 18.0,
+            hot_desert_rain_mm: 400.0,
+            boreal_below_c: 4.0,
+            temperate_below_c: 19.0,
+            grassland_rain_mm: 650.0,
+            savanna_rain_mm: 1400.0,
+        }
+    }
+}
 
 static V0: Manifest =
     Manifest::generation(Slot::Biomes, "lookup", crate::fields::Tier::Cell, &["cell.elevation", "cell.temperature", "cell.rainfall"], &["cell.biome", "cell.biome_set"]);
@@ -18,7 +62,7 @@ impl Module for Biomes {
         &V0
     }
     fn generate(&self, w: &mut World) {
-        w.biome = generate(&w.elevation, &w.temperature, &w.rainfall);
+        w.biome = generate(&w.elevation, &w.temperature, &w.rainfall, &self.params);
         // Biomes the editor painted win on land. A new world has none.
         if w.biome_set.len() != w.biome.len() {
             w.biome_set = vec![NOT_SET; w.biome.len()];
@@ -59,44 +103,34 @@ pub const ALL: [Biome; 10] = [
     Biome::Alpine,
 ];
 
-impl Biome {
-    pub fn classify(elevation_m: f32, temperature_c: f32, rainfall_mm: f32) -> Biome {
+impl BiomeParams {
+    pub fn classify(&self, elevation_m: f32, temperature_c: f32, rainfall_mm: f32) -> Biome {
+        let p = self;
+        let lim = |x: f64| x as f32;
         let (t, r) = (temperature_c, rainfall_mm);
         if elevation_m < 0.0 {
             Biome::Ocean
-        } else if t < -10.0 {
+        } else if t < lim(p.ice_below_c) {
             Biome::IceCap
-        } else if elevation_m > 3200.0 {
+        } else if elevation_m > lim(p.alpine_above_m) {
             Biome::Alpine
-        } else if t < -2.0 {
+        } else if t < lim(p.tundra_below_c) {
             Biome::Tundra
-        } else if r < 250.0 || (t > 18.0 && r < 400.0) {
+        } else if r < lim(p.desert_rain_mm) || (t > lim(p.hot_desert_c) && r < lim(p.hot_desert_rain_mm)) {
             Biome::Desert
-        } else if t < 4.0 {
+        } else if t < lim(p.boreal_below_c) {
             Biome::BorealForest
-        } else if t < 19.0 {
-            if r < 650.0 { Biome::Grassland } else { Biome::TemperateForest }
-        } else if r < 1400.0 {
+        } else if t < lim(p.temperate_below_c) {
+            if r < lim(p.grassland_rain_mm) { Biome::Grassland } else { Biome::TemperateForest }
+        } else if r < lim(p.savanna_rain_mm) {
             Biome::Savanna
         } else {
             Biome::TropicalForest
         }
     }
+}
 
-    /// Food a square kilometre of this biome yields per year, in rations (one ration feeds one
-    /// person for one day), with pre-modern farming and herding.
-    pub fn food_per_km2(self) -> f64 {
-        match self {
-            Biome::Ocean | Biome::IceCap => 0.0,
-            Biome::Tundra | Biome::Alpine => 60.0,
-            Biome::Desert => 30.0,
-            Biome::BorealForest => 180.0,
-            Biome::TemperateForest => 780.0,
-            Biome::Grassland => 900.0,
-            Biome::Savanna => 480.0,
-            Biome::TropicalForest => 360.0,
-        }
-    }
+impl Biome {
 
     /// Share of the food this biome yields that comes better from herds than from fields: all of it
     /// where crops won't grow, little of it in good farming country.
@@ -134,10 +168,10 @@ impl Biome {
     }
 }
 
-pub fn generate(elevation: &[f32], temperature: &[f32], rainfall: &[f32]) -> Vec<Biome> {
+pub fn generate(elevation: &[f32], temperature: &[f32], rainfall: &[f32], p: &BiomeParams) -> Vec<Biome> {
     (0..elevation.len())
         .into_par_iter()
-        .map(|c| Biome::classify(elevation[c], temperature[c], rainfall[c]))
+        .map(|c| p.classify(elevation[c], temperature[c], rainfall[c]))
         .collect()
 }
 
@@ -147,13 +181,14 @@ mod tests {
 
     #[test]
     fn classic_examples() {
-        assert_eq!(Biome::classify(-5.0, 20.0, 1000.0), Biome::Ocean);
-        assert_eq!(Biome::classify(100.0, 26.0, 2500.0), Biome::TropicalForest);
-        assert_eq!(Biome::classify(100.0, 25.0, 150.0), Biome::Desert);
-        assert_eq!(Biome::classify(100.0, 12.0, 900.0), Biome::TemperateForest);
-        assert_eq!(Biome::classify(100.0, 12.0, 450.0), Biome::Grassland);
-        assert_eq!(Biome::classify(100.0, -20.0, 300.0), Biome::IceCap);
-        assert_eq!(Biome::classify(4000.0, 0.0, 800.0), Biome::Alpine);
+        let b = BiomeParams::default();
+        assert_eq!(b.classify(-5.0, 20.0, 1000.0), Biome::Ocean);
+        assert_eq!(b.classify(100.0, 26.0, 2500.0), Biome::TropicalForest);
+        assert_eq!(b.classify(100.0, 25.0, 150.0), Biome::Desert);
+        assert_eq!(b.classify(100.0, 12.0, 900.0), Biome::TemperateForest);
+        assert_eq!(b.classify(100.0, 12.0, 450.0), Biome::Grassland);
+        assert_eq!(b.classify(100.0, -20.0, 300.0), Biome::IceCap);
+        assert_eq!(b.classify(4000.0, 0.0, 800.0), Biome::Alpine);
     }
 
     #[test]

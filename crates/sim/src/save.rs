@@ -64,11 +64,17 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 21 (step 7): Diplomacy "treaties": its parameters in the wars', each war's target and
 /// tallies of dead and battles lost, the relation fields, its private state (hunger), and the
 /// battle event naming each side and its dead.
-pub const FORMAT_VERSION: u32 = 21;
+/// Format 22: settings: the map-making slots' settings (terrain, climate, biomes, rivers,
+/// farmland, provinces) and the largest city-state in the configuration, and the edit that changes
+/// settings while the world runs.
+pub const FORMAT_VERSION: u32 = 22;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
     pub config: Config,
+    /// The modules' settings in force at the snapshot: the configuration's, with the settings
+    /// edits applied by then.
+    pub settings: crate::config::ModuleConfig,
     pub modules: Vec<ModuleRecord>,
     pub commands: Vec<Command>,
     pub snapshots: Vec<Snapshot>,
@@ -147,6 +153,7 @@ impl Sim {
         };
         let file = SaveFile {
             config: self.config.clone(),
+            settings: (*self.settings).clone(),
             modules: self.manifests().iter().map(|m| ModuleRecord::of(m)).collect(),
             commands: self.commands.clone(),
             snapshots: vec![Snapshot { day: self.day, fields, module_state, engine }],
@@ -173,7 +180,10 @@ impl Sim {
             return err(format!("save format {format}; this build reads format {FORMAT_VERSION}"));
         }
         let file: SaveFile = postcard::from_bytes(&bytes[12..]).map_err(|e| LoadError(format!("damaged save: {e}")))?;
-        let mut sim = Sim::assemble_with(&file.config, build(&file.config))?;
+        // The modules run with the settings in force at the snapshot.
+        let now = Config { modules: file.settings.clone(), ..file.config.clone() };
+        let mut sim = Sim::assemble_with(&file.config, build(&now))?;
+        sim.settings = std::sync::Arc::new(file.settings);
 
         let here: Vec<ModuleRecord> = sim.manifests().iter().map(|m| ModuleRecord::of(m)).collect();
         if here != file.modules {

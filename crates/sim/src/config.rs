@@ -1,23 +1,23 @@
 //! A world's configuration: its parameters, its calendar, and which version fills each module
 //! slot, with that version's parameters. Chosen at world creation and stored in every save.
 
-use crate::biome::Biomes;
+use crate::biome::{BiomeParams, Biomes};
 use crate::calendar::{Calendar, CalendarDef};
 use crate::characters::{RulerParams, Rulers};
 use crate::diplomacy::{WarParams, WarState};
-use crate::climate::{LatitudeClimate, NullClimate};
+use crate::climate::{ClimateParams, LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
-use crate::hydrology::Rivers;
+use crate::hydrology::{RiverParams, Rivers};
 use crate::markets::{MarketParams, Markets};
 use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
-use crate::provinces::ProvinceGrowth;
+use crate::provinces::{ProvinceGrowth, ProvinceParams};
 use crate::realms::{Founding, RealmParams};
 use crate::taxonomy::TreeDef;
-use crate::terrain::{NoiseTerrain, NullTerrain};
+use crate::terrain::{NoiseTerrain, NullTerrain, TerrainParams};
 use crate::warfare::{TroopParams, Troops};
 use crate::weather::Droughts;
-use crate::world::{Fertility, WorldParams};
+use crate::world::{FarmlandParams, Fertility, WorldParams};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -93,6 +93,21 @@ pub struct ModuleConfig {
     /// by default and out of [`CHOICES`] until step 7's checks, as realms are.
     #[serde(default)]
     pub warfare: Option<TroopParams>,
+    /// The settings of the slots that make the map, used once, when the world is made (and again
+    /// where an edit makes the map anew). Scenario files written before they were settings get the
+    /// numbers the modules had then, so they make the same world.
+    #[serde(default)]
+    pub terrain_params: TerrainParams,
+    #[serde(default)]
+    pub climate_params: ClimateParams,
+    #[serde(default)]
+    pub biome_params: BiomeParams,
+    #[serde(default)]
+    pub river_params: RiverParams,
+    #[serde(default)]
+    pub farmland_params: FarmlandParams,
+    #[serde(default)]
+    pub province_params: ProvinceParams,
 }
 
 impl Default for ModuleConfig {
@@ -108,6 +123,12 @@ impl Default for ModuleConfig {
             characters: None,
             diplomacy: None,
             warfare: None,
+            terrain_params: TerrainParams::default(),
+            climate_params: ClimateParams::default(),
+            biome_params: BiomeParams::default(),
+            river_params: RiverParams::default(),
+            farmland_params: FarmlandParams::default(),
+            province_params: ProvinceParams::default(),
         }
     }
 }
@@ -118,17 +139,17 @@ impl ModuleConfig {
     pub fn build(&self) -> Vec<Box<dyn Module>> {
         let mut out: Vec<Box<dyn Module>> = vec![
             match self.terrain {
-                TerrainVersion::Null => Box::new(NullTerrain),
-                TerrainVersion::Noise => Box::new(NoiseTerrain),
+                TerrainVersion::Null => Box::new(NullTerrain { params: self.terrain_params.clone() }),
+                TerrainVersion::Noise => Box::new(NoiseTerrain { params: self.terrain_params.clone() }),
             },
             match self.climate {
-                ClimateVersion::Null => Box::new(NullClimate),
-                ClimateVersion::Latitude => Box::new(LatitudeClimate),
+                ClimateVersion::Null => Box::new(NullClimate { params: self.climate_params.clone() }),
+                ClimateVersion::Latitude => Box::new(LatitudeClimate { params: self.climate_params.clone() }),
             },
-            Box::new(Biomes),
-            Box::new(Rivers),
-            Box::new(Fertility),
-            Box::new(ProvinceGrowth),
+            Box::new(Biomes { params: self.biome_params.clone() }),
+            Box::new(Rivers { params: self.river_params.clone() }),
+            Box::new(Fertility { params: self.farmland_params.clone() }),
+            Box::new(ProvinceGrowth { params: self.province_params.clone() }),
         ];
         if let Some(params) = &self.economics {
             out.push(Box::new(Food { params: params.clone() }));

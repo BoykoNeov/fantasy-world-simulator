@@ -15,6 +15,9 @@ impl Sim {
     /// An exact copy of this simulation, sharing its checkpoints and map changes.
     pub fn fork(&self) -> Sim {
         let mut s = Sim::assemble(&self.config).expect("this simulation's own configuration");
+        // The modules run with the settings in force, which settings edits may have changed.
+        s.modules = self.settings.build();
+        s.settings = self.settings.clone();
         for (m, from) in s.modules.iter_mut().zip(&self.modules) {
             m.load_state(&from.save_state()).expect("the same module's state");
         }

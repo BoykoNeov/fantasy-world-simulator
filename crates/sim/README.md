@@ -28,6 +28,21 @@ What exists:
   economics version keeps. Modules list the goods they ask for in their manifest, and a
   configuration whose goods can't serve one is refused.
 - **Events** (`events.rs`): sent on day N, delivered on day N+1, in a documented priority order.
+- **Settings** (`settings.rs`, Oct 17): every number of every module's parameters, and of the world
+  (map detail, provinces, land share, planet radius), described in plain words with its range,
+  unit, and whether it may change while the world runs or only when a world is made. Values are
+  read and set by their key in the configuration (`modules.markets.trade.change`), through its
+  serialised form, so a new parameter needs only its line there; what isn't a setting is listed
+  with the reason, and a test fails for any value in neither list (the rule is in the project's
+  `CLAUDE.md`). The map-making slots have settings of their own (terrain, climate, biome limits,
+  evaporation, food per km² of each biome, how provinces are divided), defaults equal to the
+  numbers they had, so old scenario files make the same worlds. Realms gained the largest
+  city-state and a number of realms to start with (about that many, plus one for each island none
+  reaches; 0 keeps "provinces per realm"). A live change is an edit (`Edit::Settings`): it goes into
+  the command log, and the engine makes the modules again with the new settings, each keeping its
+  state; going back, taking it back, branching, saves (format 22) and scenario files all keep the
+  settings of each day (`Sim::settings`; `Sim::config` stays the configuration the world was made
+  with). Tests in `tests/settings.rs`.
 - **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and each
   class of goods changed only by what was reported (summing those held in fields the stage's
   modules own; the others, which they can't change, must have no flows reported), and clamps values
@@ -759,7 +774,10 @@ Other options are `--seed`, `--n` (cube face size), `--provinces`, `--width` (ma
 with the ways to start weighted as given), `--rulers` (rulers on, and realms the default way if
 `--realms` isn't given), `--wars`, `--armies` (troops on, realms likewise), `--save FILE`, `--load FILE` (continue a saved
 world for `--years` more years), `--scenario FILE` (open a scenario's played timeline and continue it)
-and `--write-scenario FILE`.
+and `--write-scenario FILE`. `--set KEY=VALUE` (repeatable) changes any setting of the world made,
+e.g. `--set modules.province_params.climb_step=30 --set modules.realms.realm_count=12`;
+`--settings` lists every setting of the world the other options pick, with its key, value, range
+and explanation, and stops.
 
 **Markets** (Oct 15, below-normal priority, machine partly busy): on the large world (5,092
 provinces, seeds 1 and 7, 10 years) an average day takes 0.34–0.42 ms against 0.24 ms for Economics

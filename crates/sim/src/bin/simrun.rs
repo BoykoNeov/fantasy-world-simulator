@@ -5,7 +5,7 @@
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
-//!        [--armies] [--treaties]
+//!        [--armies] [--treaties] [--set KEY=VALUE ...] [--settings]
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
@@ -20,6 +20,10 @@
 //! of which kinds, and how many deserted. `--treaties` has realms choose war and make peace
 //! themselves (Diplomacy "treaties"; it turns realms, wars and armies on), and the wars line says
 //! why they were declared.
+//!
+//! `--set KEY=VALUE` changes one setting of the world to be made (any number of times; after the
+//! modules are switched on, so their settings are there). `--settings` lists every setting of the
+//! world the other options pick, with its key, value, range and explanation, and stops.
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -90,6 +94,31 @@ fn main() {
         config.modules.realms.get_or_insert_with(Default::default);
         config.modules.warfare.get_or_insert_with(Default::default);
         config.modules.diplomacy.get_or_insert_with(Default::default).treaties = Some(Default::default());
+    }
+    for (i, _) in args.iter().enumerate().filter(|(_, a)| *a == "--set") {
+        let kv = args.get(i + 1).expect("--set KEY=VALUE");
+        let (key, value) = kv.split_once('=').unwrap_or_else(|| panic!("--set {kv}: expected KEY=VALUE"));
+        let value: f64 = value.parse().unwrap_or_else(|_| panic!("--set {kv}: the value is a number"));
+        sim::settings::set(&mut config, key, value).unwrap_or_else(|e| panic!("--set {kv}: {e}"));
+    }
+    let params = config.world.clone();
+    if args.iter().any(|a| a == "--settings") {
+        let items = sim::settings::items(&config);
+        for g in sim::settings::GROUPS {
+            let mine: Vec<_> = items.iter().filter(|i| sim::settings::group_of(&i.key).is_some_and(|x| std::ptr::eq(x, g))).collect();
+            if mine.is_empty() {
+                continue;
+            }
+            println!("
+{}: {}", g.title, g.help);
+            for i in mine {
+                let s = i.spec;
+                let when = if s.when == sim::settings::When::Live { "" } else { ", new world only" };
+                println!("  {} = {} ({} to {} {}{when})
+      {}: {}", i.key, i.value, s.min, s.max, s.unit, i.label(), s.help);
+            }
+        }
+        return;
     }
 
     let t = Instant::now();

@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::edit::Edit;
 use crate::grid::NONE;
 use crate::module::Slot;
-use crate::realms::{names, RealmParams, CITY_STATE_MAX};
+use crate::realms::{names, RealmParams};
 use crate::sim::{Problems, Sim};
 use crate::world::{World, WorldParams};
 use std::collections::BTreeSet;
@@ -114,9 +114,9 @@ fn city_states_hold_one_to_three_provinces_all_settled() {
         assert!(provinces_of(w, r).iter().all(|&p| settled[p as usize]), "city-state {r} holds empty land");
     }
     let sizes: Vec<usize> = alive(w).iter().map(|&r| provinces_of(w, r).len()).collect();
-    assert!(sizes.iter().all(|&n| (1..=CITY_STATE_MAX as usize).contains(&n)), "{sizes:?}");
+    assert!(sizes.iter().all(|&n| (1..=RealmParams::default().city_state_max as usize).contains(&n)), "{sizes:?}");
     assert!(sizes.iter().any(|&n| n > 1), "{sizes:?}");
-    assert!(sizes.len() as f64 >= settled.iter().filter(|&&s| s).count() as f64 / CITY_STATE_MAX as f64);
+    assert!(sizes.len() as f64 >= settled.iter().filter(|&&s| s).count() as f64 / RealmParams::default().city_state_max as f64);
 }
 
 #[test]
@@ -149,8 +149,8 @@ fn a_mix_starts_each_way_in_areas_of_its_own() {
     check_realms(w);
     let settled = settled(w);
     let sizes: Vec<usize> = alive(w).iter().map(|&r| provinces_of(w, r).iter().filter(|&&p| settled[p as usize]).count()).collect();
-    assert!(sizes.iter().any(|&n| n > CITY_STATE_MAX as usize), "a realm bigger than a city-state: {sizes:?}");
-    assert!(sizes.iter().filter(|&&n| n <= CITY_STATE_MAX as usize).count() >= 5, "city-states: {sizes:?}");
+    assert!(sizes.iter().any(|&n| n > RealmParams::default().city_state_max as usize), "a realm bigger than a city-state: {sizes:?}");
+    assert!(sizes.iter().filter(|&&n| n <= RealmParams::default().city_state_max as usize).count() >= 5, "city-states: {sizes:?}");
     assert!(unowned_settled(w) > 0, "a frontier");
     // The areas are large: settled neighbours start the same way far more often than the third
     // of the time they would if each province's way were drawn alone. (This world's provinces
@@ -312,4 +312,22 @@ fn edits_leave_worlds_without_realms_alone() {
     sim.edit(Edit::Merge { from: p, into: q }).unwrap();
     sim.edit(Edit::SeaLevel { rise_m: 200.0 }).unwrap();
     assert!(sim.world.realms.count() == 0 && sim.world.owner.iter().all(|&o| o == NONE));
+}
+
+#[test]
+fn a_number_of_realms_asked_for_starts_whatever_the_province_count() {
+    // Land none of the realms asked for reaches (islands) starts realms of its own; one realm
+    // asked for shows how many that makes at most.
+    let count = |realm_count: u32, provinces: usize| {
+        let mut c = config(RealmParams { realm_count, ..RealmParams::default() }, 3);
+        c.world.provinces = provinces;
+        let sim = Sim::new(&c).unwrap();
+        check_realms(&sim.world);
+        alive(&sim.world).len()
+    };
+    for provinces in [120, 400] {
+        let (one, six, twenty) = (count(1, provinces), count(6, provinces), count(20, provinces));
+        assert!(six >= 5 && six <= one + 6, "{provinces} provinces: {one} realms for 1 asked, {six} for 6");
+        assert!(twenty > six + 8, "{provinces} provinces: {six} realms for 6 asked, {twenty} for 20");
+    }
 }

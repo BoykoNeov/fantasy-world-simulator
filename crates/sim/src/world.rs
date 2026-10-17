@@ -59,11 +59,59 @@ impl WorldParams {
 /// regions, nearly every path a few cells long counts as a river.
 pub const RIVER_MIN_FLOW: u64 = 20_000_000;
 
-/// How much more food a cell yields when a river runs through it.
-const RIVER_FOOD_BONUS: f64 = 1.6;
-
 /// Farmland v0: food per cell from its biome, its area and whether a river runs through it.
-pub struct Fertility;
+pub struct Fertility {
+    pub params: FarmlandParams,
+}
+
+/// Food a square kilometre of each biome yields per year, in rations (one ration feeds one person
+/// for one day), with pre-modern farming and herding; ice and sea yield none. A cell with a big
+/// river through it yields `river_bonus` times as much.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FarmlandParams {
+    pub river_bonus: f64,
+    pub tundra: f64,
+    pub alpine: f64,
+    pub desert: f64,
+    pub boreal_forest: f64,
+    pub temperate_forest: f64,
+    pub grassland: f64,
+    pub savanna: f64,
+    pub tropical_forest: f64,
+}
+
+impl Default for FarmlandParams {
+    fn default() -> Self {
+        FarmlandParams {
+            river_bonus: 1.6,
+            tundra: 60.0,
+            alpine: 60.0,
+            desert: 30.0,
+            boreal_forest: 180.0,
+            temperate_forest: 780.0,
+            grassland: 900.0,
+            savanna: 480.0,
+            tropical_forest: 360.0,
+        }
+    }
+}
+
+impl FarmlandParams {
+    pub fn food_per_km2(&self, b: Biome) -> f64 {
+        match b {
+            Biome::Ocean | Biome::IceCap => 0.0,
+            Biome::Tundra => self.tundra,
+            Biome::Alpine => self.alpine,
+            Biome::Desert => self.desert,
+            Biome::BorealForest => self.boreal_forest,
+            Biome::TemperateForest => self.temperate_forest,
+            Biome::Grassland => self.grassland,
+            Biome::Savanna => self.savanna,
+            Biome::TropicalForest => self.tropical_forest,
+        }
+    }
+}
 
 static FERTILITY: Manifest =
     Manifest::generation(Slot::Fertility, "biome yield", crate::fields::Tier::Cell, &["cell.biome", "cell.river_flow", "cell.elevation"], &["cell.food_yield"]);
@@ -76,8 +124,8 @@ impl Module for Fertility {
         let km2_per_sr = w.params.radius_km * w.params.radius_km;
         w.food_per_cell = (0..w.grid.cells())
             .map(|i| {
-                let river = if w.river_flow[i] >= RIVER_MIN_FLOW && w.elevation[i] >= 0.0 { RIVER_FOOD_BONUS } else { 1.0 };
-                w.biome[i].food_per_km2() * w.grid.area[i] * km2_per_sr * river
+                let river = if w.river_flow[i] >= RIVER_MIN_FLOW && w.elevation[i] >= 0.0 { self.params.river_bonus } else { 1.0 };
+                self.params.food_per_km2(w.biome[i]) * w.grid.area[i] * km2_per_sr * river
             })
             .collect();
     }

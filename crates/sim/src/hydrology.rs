@@ -13,7 +13,24 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 /// Rivers v0: drainage tree and yearly flow.
-pub struct Rivers;
+pub struct Rivers {
+    pub params: RiverParams,
+}
+
+/// How much rain dries off before it can run into rivers: `evaporation_mm` a year, and
+/// `evaporation_per_c` more for each degree of yearly mean temperature above freezing.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct RiverParams {
+    pub evaporation_mm: f64,
+    pub evaporation_per_c: f64,
+}
+
+impl Default for RiverParams {
+    fn default() -> Self {
+        RiverParams { evaporation_mm: 200.0, evaporation_per_c: 25.0 }
+    }
+}
 
 static V0: Manifest = Manifest::generation(Slot::Rivers, "drainage", crate::fields::Tier::Cell,
     &["cell.elevation", "cell.temperature", "cell.rainfall"],
@@ -26,7 +43,7 @@ impl Module for Rivers {
     }
     fn generate(&self, w: &mut World) {
         let drainage = drainage(&w.grid, &w.elevation);
-        let mut runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km);
+        let mut runoff = runoff(&w.grid, &w.elevation, &w.temperature, &w.rainfall, w.params.radius_km, &self.params);
         // Springs of rivers the editor drew. A new world has none.
         if w.spring.len() != runoff.len() {
             w.spring = vec![0; runoff.len()];
@@ -110,7 +127,7 @@ pub fn accumulate(d: &Drainage, input: &[u64]) -> Vec<u64> {
 
 /// Yearly runoff per cell in thousands of cubic metres (1 mm of water over 1 km²): rainfall minus a
 /// simple evaporation that grows with temperature. Sea cells contribute nothing.
-pub fn runoff(grid: &Grid, elevation: &[f32], temperature: &[f32], rainfall: &[f32], radius_km: f64) -> Vec<u64> {
+pub fn runoff(grid: &Grid, elevation: &[f32], temperature: &[f32], rainfall: &[f32], radius_km: f64, p: &RiverParams) -> Vec<u64> {
     let km2_per_sr = radius_km * radius_km;
     (0..grid.cells())
         .into_par_iter()
@@ -118,7 +135,7 @@ pub fn runoff(grid: &Grid, elevation: &[f32], temperature: &[f32], rainfall: &[f
             if elevation[c] < 0.0 {
                 return 0;
             }
-            let evaporation = 200.0 + 25.0 * temperature[c].max(0.0) as f64;
+            let evaporation = p.evaporation_mm + p.evaporation_per_c * temperature[c].max(0.0) as f64;
             let mm = (rainfall[c] as f64 - evaporation).max(0.0);
             (mm * grid.area[c] * km2_per_sr).round() as u64
         })

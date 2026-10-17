@@ -15,12 +15,13 @@
 //! A day on which nothing is due and nothing is queued costs almost nothing.
 
 use crate::calendar::Calendar;
-use crate::config::Config;
+use crate::config::{Config, ModuleConfig};
 use crate::events::{delivery_order, Event, EventKind, EventLog, Posted};
 use crate::fields::{known, quantity_total, FieldData, FieldId, Tier};
-use crate::edit::{Edit, MapChange};
+use crate::edit::{Edit, MapChange, SettingChange};
 use crate::module::{goods_kept, plan, ConfigError, Ctx, Flows, Manifest, Module, Outbox, Plan, Slot};
 use crate::requests::{Cause, Request};
+use crate::settings::{self, When};
 use crate::world::{Fingerprint, World};
 use crate::fields::Quantity;
 use serde::{Deserialize, Serialize};
@@ -203,6 +204,8 @@ pub struct Checkpoint {
     pub(crate) edits_done: usize,
     fields: Vec<(FieldId, FieldData)>,
     modules: Vec<Vec<u8>>,
+    /// The modules' settings in force (see [`Sim::settings`]).
+    settings: Arc<ModuleConfig>,
     pending: Vec<Posted>,
     year_flows: Flows,
     history: Vec<YearSummary>,
@@ -216,7 +219,11 @@ pub struct Checkpoint {
 pub struct Sim {
     pub world: World,
     pub calendar: Calendar,
+    /// The configuration the world was made with. Settings changed since are in `settings`.
     pub config: Config,
+    /// The modules' settings in force today: the configuration's, with the settings edits applied
+    /// so far ([`Edit::Settings`]). The modules run with these.
+    pub settings: Arc<ModuleConfig>,
     pub(crate) modules: Vec<Box<dyn Module>>,
     pub plan: Plan,
     /// The day about to run; day 0 is the first day of the calendar's first year.
@@ -310,6 +317,7 @@ impl Sim {
             world,
             calendar,
             config: config.clone(),
+            settings: Arc::new(config.modules.clone()),
             modules,
             plan,
             day: 0,
@@ -542,6 +550,7 @@ impl Sim {
             edits_done: self.edits_done,
             fields: self.running_fields().map(|id| (id, self.world.field(id))).collect(),
             modules: self.modules.iter().map(|m| m.save_state()).collect(),
+            settings: self.settings.clone(),
             pending: self.pending.clone(),
             year_flows: self.year_flows.clone(),
             history: self.history.clone(),
@@ -565,6 +574,11 @@ impl Sim {
         }
         for (id, data) in &c.fields {
             self.world.set_field(*id, data.clone()).expect("a checkpoint of this world");
+        }
+        // Settings changed since: the modules as they were then (their state is put back below).
+        if self.settings != c.settings {
+            self.modules = c.settings.build();
+            self.settings = c.settings.clone();
         }
         for (m, bytes) in self.modules.iter_mut().zip(&c.modules) {
             m.load_state(bytes).expect("a checkpoint of this world");
@@ -676,6 +690,9 @@ impl Sim {
     /// people and food changed only by what the edit declared, clamp values into their contracts,
     /// and note what changed.
     fn apply_edit(&mut self, edit: &Edit) -> Result<(), String> {
+        if let Edit::Settings { changes } = edit {
+            return self.change_settings(changes);
+        }
         for &f in edit.sets() {
             if self.plan.owner[known(f).0 as usize].is_none() {
                 let what = match f {
@@ -743,6 +760,34 @@ impl Sim {
             self.record_changes(Stage::Edit, id, &old);
         }
         self.year_flows.merge(&flows);
+        Ok(())
+    }
+
+    /// Change settings from today on: the modules are made again with the new settings, each
+    /// keeping its state. Refused, changing nothing, if any change isn't a setting that may change
+    /// while the world runs, is out of its range, or makes settings a module refuses.
+    fn change_settings(&mut self, changes: &[SettingChange]) -> Result<(), String> {
+        let mut c = Config { modules: (*self.settings).clone(), ..self.config.clone() };
+        for ch in changes {
+            let s = settings::spec(&ch.key).ok_or_else(|| format!("{} is not a setting", ch.key))?;
+            if s.when != When::Live {
+                return Err(format!("{} is set when a world is made, not while it runs", s.label));
+            }
+            settings::set(&mut c, &ch.key, ch.value)?;
+        }
+        let mut modules = c.modules.build();
+        let same = modules.len() == self.modules.len() && modules.iter().zip(&self.modules).all(|(a, b)| std::ptr::eq(a.manifest(), b.manifest()));
+        if !same {
+            return Err("these settings change which modules run, which needs a new world".into());
+        }
+        for m in &modules {
+            m.check(&self.world.goods).map_err(|e| format!("{:?} \"{}\": {e}", m.manifest().slot, m.manifest().version))?;
+        }
+        for (new, old) in modules.iter_mut().zip(&self.modules) {
+            new.load_state(&old.save_state())?;
+        }
+        self.modules = modules;
+        self.settings = Arc::new(c.modules);
         Ok(())
     }
 

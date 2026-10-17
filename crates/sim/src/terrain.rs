@@ -10,9 +10,43 @@ use crate::module::{Manifest, Module as SimModule, Slot};
 use crate::rng::{draw, mix, purpose, Module};
 use crate::world::World;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
-pub struct NoiseTerrain;
-pub struct NullTerrain;
+pub struct NoiseTerrain {
+    pub params: TerrainParams,
+}
+pub struct NullTerrain {
+    pub params: TerrainParams,
+}
+
+/// The shape of the land, for both versions (the null version uses only the heights and curves).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerrainParams {
+    /// Height of the highest land, metres.
+    pub mountain_m: f64,
+    /// Depth of the deepest sea, metres.
+    pub sea_depth_m: f64,
+    /// Land height from 0 (the coast) to 1 (the highest) is raised to this power: above 1, most
+    /// land lies low and heights are rare.
+    pub highland_curve: f64,
+    /// Sea depth likewise: below 1, the sea floor drops off fast from the coast.
+    pub shelf_curve: f64,
+    /// How many continents fit around the planet: more makes smaller ones.
+    pub continent_scale: f64,
+    /// How far the continents' shapes are twisted.
+    pub coast_warp: f64,
+    /// Strength of small hills and islands against the continents.
+    pub detail: f64,
+    /// Strength of long mountain chains.
+    pub ridges: f64,
+}
+
+impl Default for TerrainParams {
+    fn default() -> Self {
+        TerrainParams { mountain_m: 5200.0, sea_depth_m: 5500.0, highland_curve: 1.4, shelf_curve: 0.8, continent_scale: 1.7, coast_warp: 0.6, detail: 0.25, ridges: 0.12 }
+    }
+}
 
 static NOISE: Manifest = Manifest::generation(Slot::Terrain, "noise", crate::fields::Tier::Cell, &[], &["cell.elevation"]);
 static NULL: Manifest = Manifest::generation(Slot::Terrain, "null", crate::fields::Tier::Cell, &[], &["cell.elevation"]);
@@ -22,7 +56,7 @@ impl SimModule for NoiseTerrain {
         &NOISE
     }
     fn generate(&self, w: &mut World) {
-        w.elevation = generate(&w.grid, w.params.seed, w.params.land_fraction);
+        w.elevation = generate(&w.grid, w.params.seed, w.params.land_fraction, &self.params);
     }
 }
 
@@ -31,7 +65,7 @@ impl SimModule for NullTerrain {
         &NULL
     }
     fn generate(&self, w: &mut World) {
-        w.elevation = generate_null(&w.grid, w.params.land_fraction);
+        w.elevation = generate_null(&w.grid, w.params.land_fraction, &self.params);
     }
 }
 
@@ -79,7 +113,7 @@ fn scale(d: V3, s: f64) -> V3 {
 }
 
 /// Raw height before sea level: continents, warped, plus detail and ridges.
-fn raw_height(d: V3, seed: u64) -> f64 {
+fn raw_height(d: V3, seed: u64, p: &TerrainParams) -> f64 {
     let key = |name: &str| draw(seed, Module::Terrain, 0, 0, purpose(name));
     let d2 = scale(d, 2.0);
     let warp = [
@@ -87,30 +121,31 @@ fn raw_height(d: V3, seed: u64) -> f64 {
         fbm([d2[0], d2[1] + 1.3, d2[2]], 3, key("warp y")),
         fbm([d2[0], d2[1], d2[2] + 7.1], 3, key("warp z")),
     ];
-    let q = [d[0] * 1.7 + warp[0] * 0.6, d[1] * 1.7 + warp[1] * 0.6, d[2] * 1.7 + warp[2] * 0.6];
+    let (s, k) = (p.continent_scale, p.coast_warp);
+    let q = [d[0] * s + warp[0] * k, d[1] * s + warp[1] * k, d[2] * s + warp[2] * k];
     let continents = fbm(q, 4, key("continents"));
     let detail = fbm(scale(d, 9.0), 5, key("detail"));
     let ridge = 1.0 - fbm(scale(d, 4.0), 4, key("ridges")).abs() * 2.0;
-    continents + 0.25 * detail + 0.12 * ridge.max(0.0).powi(3)
+    continents + p.detail * detail + p.ridges * ridge.max(0.0).powi(3)
 }
 
 /// Elevation in metres per cell; below 0 is sea. `land_fraction` of cells end up at or above 0.
-pub fn generate(grid: &Grid, seed: u64, land_fraction: f64) -> Vec<f32> {
-    let raw: Vec<f64> = grid.center.par_iter().map(|&d| raw_height(d, seed)).collect();
-    to_elevation(&raw, land_fraction)
+pub fn generate(grid: &Grid, seed: u64, land_fraction: f64, p: &TerrainParams) -> Vec<f32> {
+    let raw: Vec<f64> = grid.center.par_iter().map(|&d| raw_height(d, seed, p)).collect();
+    to_elevation(&raw, land_fraction, p)
 }
 
 /// The null version: a few smooth waves over the sphere, no noise and no seed. Seas, coasts and
 /// rivers still exist, so everything downstream has something to work with.
-pub fn generate_null(grid: &Grid, land_fraction: f64) -> Vec<f32> {
+pub fn generate_null(grid: &Grid, land_fraction: f64, p: &TerrainParams) -> Vec<f32> {
     let raw: Vec<f64> =
         grid.center.par_iter().map(|&[x, y, z]| 0.8 * x + 0.5 * (2.5 * y).sin() * (2.0 * z).cos() + 0.3 * z * z).collect();
-    to_elevation(&raw, land_fraction)
+    to_elevation(&raw, land_fraction, p)
 }
 
 /// Raw heights to metres: sea level at the rank that leaves `land_fraction` of cells dry, land
-/// rising to 5,200 m and sea falling to 5,500 m.
-fn to_elevation(raw: &[f64], land_fraction: f64) -> Vec<f32> {
+/// rising to the highest mountains and sea falling to the deepest sea.
+fn to_elevation(raw: &[f64], land_fraction: f64, p: &TerrainParams) -> Vec<f32> {
     let cells = raw.len();
 
     let mut sorted = raw.to_vec();
@@ -121,9 +156,9 @@ fn to_elevation(raw: &[f64], land_fraction: f64) -> Vec<f32> {
     raw.par_iter()
         .map(|&h| {
             if h >= sea {
-                (((h - sea) / (hi - sea).max(1e-12)).powf(1.4) * 5200.0) as f32
+                (((h - sea) / (hi - sea).max(1e-12)).powf(p.highland_curve) * p.mountain_m) as f32
             } else {
-                (-((sea - h) / (sea - lo).max(1e-12)).powf(0.8) * 5500.0 - 1.0) as f32
+                (-((sea - h) / (sea - lo).max(1e-12)).powf(p.shelf_curve) * p.sea_depth_m - 1.0) as f32
             }
         })
         .collect()
@@ -136,7 +171,7 @@ mod tests {
     #[test]
     fn land_fraction_is_respected() {
         let g = Grid::new(24);
-        let e = generate(&g, 3, 0.4);
+        let e = generate(&g, 3, 0.4, &TerrainParams::default());
         let land = e.iter().filter(|&&h| h >= 0.0).count() as f64 / g.cells() as f64;
         assert!((land - 0.4).abs() < 0.01, "{land}");
         assert!(e.iter().all(|h| h.is_finite()));
@@ -145,14 +180,14 @@ mod tests {
     #[test]
     fn seeds_give_different_worlds() {
         let g = Grid::new(16);
-        assert_ne!(generate(&g, 1, 0.4), generate(&g, 2, 0.4));
-        assert_eq!(generate(&g, 1, 0.4), generate(&g, 1, 0.4));
+        assert_ne!(generate(&g, 1, 0.4, &TerrainParams::default()), generate(&g, 2, 0.4, &TerrainParams::default()));
+        assert_eq!(generate(&g, 1, 0.4, &TerrainParams::default()), generate(&g, 1, 0.4, &TerrainParams::default()));
     }
 
     #[test]
     fn null_terrain_has_land_and_sea_and_ignores_the_seed() {
         let g = Grid::new(24);
-        let e = generate_null(&g, 0.4);
+        let e = generate_null(&g, 0.4, &TerrainParams::default());
         let land = e.iter().filter(|&&h| h >= 0.0).count() as f64 / g.cells() as f64;
         assert!((land - 0.4).abs() < 0.01, "{land}");
         assert!(e.iter().any(|&h| h > 1000.0) && e.iter().any(|&h| h < -1000.0));

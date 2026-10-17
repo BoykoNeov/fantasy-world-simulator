@@ -15,6 +15,9 @@
 //! 3. The running part changes pops and stores, and reports every person or ration it creates or
 //!    removes as a flow with [`Cause::Edit`], so the conservation check balances.
 //!
+//! A settings edit ([`Edit::Settings`]) is the engine's own: it changes no values, but the settings
+//! the modules run with from that day on (see [`crate::settings`]).
+//!
 //! Pops are only ever added, never removed or reordered: a grant on its way finds its pop by
 //! position. A pop emptied by an edit keeps its place with nobody in it. Province numbers never
 //! change either: a province merged away stays as an empty placeholder (owned by no realm; see
@@ -87,6 +90,16 @@ pub enum Edit {
     /// Set how much of one good a province has stored. The good is named as the goods tree names
     /// it, and must be one the world keeps on its own. (Last, so saved edits keep their numbers.)
     SetStock { province: u32, good: String, amount: u64 },
+    /// Change settings that may change while the world runs ([`crate::settings::When::Live`]):
+    /// from this day on, the modules run with the new values. Refused whole if any change is.
+    Settings { changes: Vec<SettingChange> },
+}
+
+/// One setting changed, by its key in the configuration (see [`crate::settings`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SettingChange {
+    pub key: String,
+    pub value: f64,
 }
 
 /// What an override stroke sets.
@@ -204,13 +217,15 @@ impl Edit {
                 if x.is_finite() { Ok(()) } else { Err("the brush's strength must be a number".into()) }
             }
             Edit::SeaLevel { rise_m } => if rise_m.is_finite() { Ok(()) } else { Err("the rise must be a number".into()) },
+            // The engine checks settings against the modules ([`crate::sim::Sim`]).
+            Edit::Settings { ref changes } => if changes.is_empty() { Err("no settings changed".into()) } else { Ok(()) },
         }
     }
 
     /// Whether the edit changes the map (cell and province-shape fields).
     pub fn changes_map(&self) -> bool {
         match self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } => false,
+            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } | Edit::Settings { .. } => false,
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => true,
         }
     }
@@ -222,7 +237,7 @@ impl Edit {
         let count = w.provinces.count;
         let of_cell = &mut w.provinces.of_cell;
         let count = match *self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } => return,
+            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } | Edit::Settings { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -304,6 +319,7 @@ impl Edit {
                 flows = rehouse(w, &emptied);
                 crate::realms::repair(w);
             }
+            Edit::Settings { .. } => {}
         }
         flows
     }
@@ -331,6 +347,7 @@ impl Edit {
                 v
             }
             Edit::SeaLevel { .. } => (0..w.provinces.count as u32).collect(),
+            Edit::Settings { .. } => Vec::new(),
             Edit::River { ref path, .. } => {
                 let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -360,6 +377,15 @@ impl Edit {
                 };
                 format!("{what} along a {}-point stroke {radius_km:.0} km wide", path.len())
             }
+            Edit::Settings { changes } => {
+                let one = |c: &SettingChange| {
+                    let name = crate::settings::spec(&c.key).map_or(c.key.clone(), |s| s.label.to_string());
+                    // A table's setting names its row too ("grain: base price").
+                    let of: Vec<&str> = crate::settings::spec(&c.key).map_or(Vec::new(), |s| s.key.split('.').zip(c.key.split('.')).filter(|(p, _)| *p == "*").map(|(_, k)| k).collect());
+                    if of.is_empty() { format!("{name} to {}", c.value) } else { format!("{}: {name} to {}", of.join(" → "), c.value) }
+                };
+                format!("settings changed: {}", changes.iter().map(one).collect::<Vec<_>>().join(", "))
+            }
             Edit::SeaLevel { rise_m } if *rise_m >= 0.0 => format!("the sea rose {rise_m:.0} m"),
             Edit::SeaLevel { rise_m } => format!("the sea fell {:.0} m", -rise_m),
             Edit::Override { path, radius_km, set } => {
@@ -383,7 +409,7 @@ impl Edit {
         match self {
             Edit::SetPop { .. } | Edit::AddPop { .. } => &["pop.size"],
             Edit::SetFoodStock { .. } | Edit::SetStock { .. } => &["province.stock"],
-            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => &[],
+            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } | Edit::Settings { .. } => &[],
         }
     }
 }
