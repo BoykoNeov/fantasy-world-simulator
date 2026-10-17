@@ -382,8 +382,28 @@ pub static GROUPS: &[Group] = &[
     Group {
         title: "Culture",
         at: "modules.culture",
-        help: "Peoples spread over regions when the world is made; over the years people take up the culture of their neighbours and rulers, and cut-off groups become cultures of their own.",
-        specs: &[],
+        help: "Peoples spread over regions when the world is made; over the years people take up the culture of their neighbours and rulers, and cut-off groups become cultures of their own. Each month every culture pulls on each province's people: by its share of them, by its share of the people next door, and by being the ruling realm's culture (its capital's main culture). People of the other cultures there slowly take up the one that pulls hardest.",
+        specs: &[
+            made("modules.culture.starting", "Starting cultures", "About how many peoples the world starts with, each over a region of settled land (at most one a settled province). Cultures cross realm borders. More makes smaller peoples and more mixed borderlands.", 1.0, 1000.0, "cultures"),
+            made("modules.culture.borderland", "Mixed borderlands", "Where two peoples meet at the start, this share of each border province's people is of the neighbouring people. 0: sharp borders between peoples.", 0.0, 0.5, "share"),
+            live("modules.culture.per_year", "Assimilation speed", "Share of a group a year that takes up the leading culture of its province when the leader pulls on it as hard as it can, and less as the pulls are closer. Higher: provinces take up their rulers' and neighbours' cultures faster, and the map of peoples follows the realms sooner. 0: nobody changes culture (except by splits).", 0.0, 1.0, "share a year"),
+            live("modules.culture.own", "Holding to one's own", "How hard a culture pulls on a province's people for being all of them, and in proportion for a share: how stubbornly people keep their own. Higher: majorities hold out longer against rulers and neighbours.", 0.0, 100.0, ""),
+            live("modules.culture.neighbours", "Pull of neighbours", "How hard a culture pulls on a province for being all of the people next door (each neighbour counted less the further away it is in days). Higher: peoples spread across borders, and pockets are swallowed by what surrounds them.", 0.0, 100.0, ""),
+            live("modules.culture.neighbour_half_days", "Neighbours' reach", "A neighbour's pull halves for every this many days of travel to it. Lower: mountains and seas keep peoples apart; higher: even distant neighbours pull fully.", 0.1, 1000.0, "days"),
+            live("modules.culture.ruler", "Pull of the ruler", "How hard the culture of the realm holding a province pulls on its people. Above \"holding to one's own\", a ruler slowly wins over even a province all of another people. 0: rulers don't change their subjects' culture.", 0.0, 100.0, ""),
+            live("modules.culture.small_people", "Small groups: people", "A group of fewer people than this in a province takes up the leading culture at once, so provinces don't keep many tiny groups.", 0.0, 1_000_000.0, "people"),
+            live("modules.culture.small_share", "Small groups: share", "A group less than this share of its province's people takes up the leading culture at once.", 0.0, 1.0, "share"),
+        ],
+    },
+    Group {
+        title: "Cultures splitting off",
+        at: "modules.culture.splits",
+        help: "Once a year, the provinces where a culture is the main one are grouped by how they hang together along the ways. A group cut off from the culture's biggest group long enough may become a new culture, remembering the one it came from.",
+        specs: &[
+            live("modules.culture.splits.years", "Cut off for", "Years a group must have been cut off from its culture's heartland before it may split off. Lower: new peoples appear sooner, after shorter separations.", 1.0, 1000.0, "years"),
+            live("modules.culture.splits.provinces", "Smallest split", "The fewest provinces a cut-off group needs to split off as a new culture. Lower: even small pockets become peoples of their own.", 1.0, 1000.0, "provinces"),
+            live("modules.culture.splits.per_year", "Split chance", "Each year, the chance that a group cut off long enough splits off. 0: none ever does.", 0.0, 1.0, "chance"),
+        ],
     },
     // --- end of culture ---
 ];
@@ -403,6 +423,7 @@ pub static SECTIONS: &[Section] = &[
     // --- Research ---
     // --- end of research ---
     // --- Culture ---
+    Section { key: "modules.culture.splits", label: "New cultures splitting off", help: "Groups cut off from the rest of their people for decades may become new cultures. Off: the world keeps the peoples it starts with (fewer as some fade)." },
     // --- end of culture ---
 ];
 
@@ -551,7 +572,10 @@ pub fn defaults_for(c: &Config) -> Config {
     let research = on(m.research.is_some(), all.research);
     // --- end of research ---
     // --- Culture: its parts ---
-    let culture = on(m.culture.is_some(), all.culture);
+    let mut culture = on(m.culture.is_some(), all.culture);
+    if let (Some(p), Some(x)) = (&mut culture, &m.culture) {
+        p.splits = p.splits.take().filter(|_| x.splits.is_some());
+    }
     // --- end of culture ---
     let world = WorldParams { n: c.world.n, provinces: c.world.provinces, seed: c.world.seed, ..WorldParams::preset(Size::Small, 0) };
     let modules = ModuleConfig {

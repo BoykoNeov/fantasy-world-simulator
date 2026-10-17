@@ -203,7 +203,7 @@ impl ModuleConfig {
             out.push(Box::new(Research::new(params.clone(), self.markets.is_some())));
         }
         if let Some(params) = &self.culture {
-            out.push(Box::new(Assimilation { params: params.clone() }));
+            out.push(Box::new(Assimilation::new(params.clone())));
         }
         out
     }
