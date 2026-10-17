@@ -7,6 +7,11 @@
 //! `BARE` (set in the environment) runs without realms, rulers, diplomacy and armies, for a
 //! measure of the rest under the same load.
 //!
+//! `CAMPAIGNS` (set in the environment) switches on the four parts of logistics (supply, winter,
+//! pay and sieges). Warfare's work is counted and printed for the measured days, a round's worth:
+//! route searches, generals' plans and the like; `TIMING` adds how long each part of its day took
+//! (a little slower).
+//!
 //! cargo run --release -p sim --example day_cost -- [seed] [warm] [days] [rounds] [food|markets]
 
 use sim::config::Config;
@@ -50,8 +55,15 @@ fn main() {
             c.modules.set_choice(slot, "off").unwrap();
         }
     }
+    if std::env::var("CAMPAIGNS").is_ok()
+        && let Some(t) = c.modules.warfare.as_mut()
+    {
+        (t.supply, t.seasons, t.pay, t.sieges) = (Some(Default::default()), Some(Default::default()), Some(Default::default()), Some(Default::default()));
+    }
+    sim::warfare::work::time(std::env::var("TIMING").is_ok());
     let mut sim = Sim::new(&c).unwrap();
     sim.run_days(warm * sim.calendar.days_per_year() as u64);
+    sim::warfare::work::take();
     let (mut best, mut print) = (f64::INFINITY, 0);
     for _ in 0..rounds {
         let mut run = sim.fork();
@@ -64,4 +76,8 @@ fn main() {
     let wars = (0..sim.world.wars.count() as u32).filter(|&k| sim.world.wars.ongoing(k)).count();
     println!("{economics}, seed {seed}, after {warm} years ({wars} wars going on, {} companies): {best:.3} ms a day at best", sim.world.armies.count());
     println!("fingerprint {print}");
+    println!("Warfare's work, a round of {days} days on average:");
+    for (what, n) in sim::warfare::work::take() {
+        println!("  {what}: {:.1}", n / rounds as f64);
+    }
 }

@@ -70,6 +70,11 @@
 //!
 //! Nothing reads the army fields but this module, so the realms and markets modules don't depend
 //! on them (they may not: warfare reads theirs). They learn of battles and occupations by events.
+//!
+//! Logistics and support (build step 8, [`crate::logistics`]) adds four parts, each switched on by
+//! its own table of the parameters: supply lines and foraging, winter, soldiers' pay and sieges in
+//! depth (the province besieged, `province.besieger`, which markets reads as the day began to cut
+//! its trade). With all four off, everything above is exactly as it was, saved state included.
 
 use crate::diplomacy;
 use crate::edit::Edit;
@@ -85,6 +90,72 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::sync::Arc;
+
+/// Counts of the work Warfare does, for measuring its speed (`examples/day_cost.rs`): they change
+/// nothing in the world, and are shared by every world in the process.
+pub mod work {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+
+    /// What is counted, by name.
+    pub const NAMES: [&str; 12] = [
+        "days run",
+        "month starts",
+        "generals' plans",
+        "route searches",
+        "provinces settled in searches",
+        "recruit rounds",
+        "recruits ruled out unsearched",
+        "ms: month's raising, eating, looking over",
+        "ms: marching",
+        "ms: battles and sieges",
+        "ms: generals",
+        "ms: logistics",
+    ];
+    static COUNTS: [AtomicU64; 12] = [const { AtomicU64::new(0) }; 12];
+    static TIMING: AtomicBool = AtomicBool::new(false);
+
+    pub(crate) fn add(what: usize, n: u64) {
+        COUNTS[what].fetch_add(n, Relaxed);
+    }
+
+    /// Time the parts of a day too (a little slower).
+    pub fn time(on: bool) {
+        TIMING.store(on, Relaxed);
+    }
+
+    pub(crate) fn timing() -> bool {
+        TIMING.load(Relaxed)
+    }
+
+    /// Run `f`, adding its time to `what` (a "ms:" count, kept in nanoseconds) if timing.
+    pub(crate) fn timed<T>(what: usize, f: impl FnOnce() -> T) -> T {
+        if !timing() {
+            return f();
+        }
+        let t = std::time::Instant::now();
+        let out = f();
+        add(what, t.elapsed().as_nanos() as u64);
+        out
+    }
+
+    /// Every count so far (the "ms:" ones in ms), and start again from zero.
+    pub fn take() -> Vec<(&'static str, f64)> {
+        NAMES.iter().zip(&COUNTS).map(|(n, c)| (*n, c.swap(0, Relaxed) as f64 / if n.starts_with("ms:") { 1e6 } else { 1.0 })).collect()
+    }
+
+    pub(crate) const DAYS: usize = 0;
+    pub(crate) const MONTHS: usize = 1;
+    pub(crate) const PLANS: usize = 2;
+    pub(crate) const SEARCHES: usize = 3;
+    pub(crate) const SETTLED: usize = 4;
+    pub(crate) const RECRUITS: usize = 5;
+    pub(crate) const RULED_OUT: usize = 6;
+    pub(crate) const T_MONTH: usize = 7;
+    pub(crate) const T_MARCH: usize = 8;
+    pub(crate) const T_FIGHT: usize = 9;
+    pub(crate) const T_PLAN: usize = 10;
+    pub(crate) const T_LOGISTICS: usize = 11;
+}
 
 /// The parameters shipped in `data/troops.toml`.
 pub const STANDARD: &str = include_str!("../data/troops.toml");
@@ -450,10 +521,10 @@ struct Fighter {
 
 /// What the module keeps between days (saved).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-struct State {
+pub(crate) struct State {
     /// The companies whose food is asked for, and their soldiers then, by the province they stand
     /// in: kept from the month's first day until the grant comes.
-    eating: BTreeMap<u32, Vec<(u32, u64)>>,
+    pub(crate) eating: BTreeMap<u32, Vec<(u32, u64)>>,
     /// Groups by number.
     groups: BTreeMap<u32, Group>,
     next_group: u32,
@@ -512,22 +583,97 @@ impl Index {
 /// Companies to send, each with its route: provinces, and whether by sea.
 type Sends = Vec<(u32, Vec<(u32, bool)>)>;
 
-/// A route search's results: each province's days from the nearest source (thousandths, `u64::MAX`
-/// where not reached), the province before it on the way from that source, and the source.
-struct Search {
+/// The arrays a route search works in, one entry a province, kept between searches: a search
+/// touches few provinces, and filling arrays the size of the map for each one cost more than the
+/// search itself. Untouched entries hold "not reached".
+struct Buffers {
     dist: Vec<u64>,
     parent: Vec<u32>,
     origin: Vec<u32>,
+    want: Vec<bool>,
+    /// The provinces whose entries a search changed, to put back afterwards.
+    touched: Vec<u32>,
+}
+
+impl Buffers {
+    fn new(n: usize) -> Buffers {
+        Buffers { dist: vec![u64::MAX; n], parent: vec![NONE; n], origin: vec![NONE; n], want: vec![false; n], touched: Vec::new() }
+    }
+
+    /// Note that province `p`'s entries are about to change (they are put back afterwards).
+    fn touch(&mut self, p: usize) {
+        if self.dist[p] == u64::MAX && !self.want[p] {
+            self.touched.push(p as u32);
+        }
+    }
+
+    fn clean(&mut self) {
+        for &p in &self.touched {
+            let p = p as usize;
+            (self.dist[p], self.parent[p], self.origin[p], self.want[p]) = (u64::MAX, NONE, NONE, false);
+        }
+        self.touched.clear();
+    }
+}
+
+thread_local! {
+    /// Clean buffers left by searches that are over, for the next ones.
+    static SPARE: std::cell::RefCell<Vec<Buffers>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Clean buffers for a map of `n` provinces.
+fn buffers(n: usize) -> Buffers {
+    SPARE.with(|s| s.borrow_mut().pop()).filter(|b| b.dist.len() == n).unwrap_or_else(|| Buffers::new(n))
+}
+
+/// Give buffers back, cleaned, for the next search.
+fn give_back(mut b: Buffers) {
+    b.clean();
+    let _ = SPARE.try_with(|s| {
+        let mut s = s.borrow_mut();
+        if s.len() < 4 {
+            s.push(b);
+        }
+    });
+}
+
+/// A route search's results: each province's days from the nearest source (thousandths, `u64::MAX`
+/// where not reached), the province before it on the way from that source, and the source.
+struct Search {
+    b: Option<Buffers>,
+}
+
+impl Drop for Search {
+    fn drop(&mut self) {
+        if let Some(b) = self.b.take() {
+            give_back(b);
+        }
+    }
 }
 
 impl Search {
+    fn bufs(&self) -> &Buffers {
+        self.b.as_ref().expect("held until dropped")
+    }
+
+    /// Days from the nearest source to `p`, in thousandths; `u64::MAX` where not reached.
+    fn dist(&self, p: u32) -> u64 {
+        self.bufs().dist[p as usize]
+    }
+
+    /// The source `p` was reached from.
+    fn origin(&self, p: u32) -> u32 {
+        self.bufs().origin[p as usize]
+    }
+
     /// The provinces from `p` back to its source, `p` left out: the route a company at `p` takes
     /// to the source (ways cost the same both ways).
     fn route_back(&self, p: u32) -> Vec<u32> {
+        let parent = &self.bufs().parent;
         let mut out = Vec::new();
         let mut q = p;
-        while self.parent[q as usize] != NONE {
-            q = self.parent[q as usize];
+        while parent[q as usize] != NONE {
+            q = parent[q as usize];
             out.push(q);
         }
         out
@@ -540,31 +686,32 @@ impl Search {
 /// (and the same as a search over the whole map would give); other provinces' may not be.
 fn search(w: &World, sources: &[u32], allowed: &dyn Fn(u32) -> bool, sea: bool, wanted: &[u32]) -> Search {
     let n = w.provinces.count;
-    let mut s = Search { dist: vec![u64::MAX; n], parent: vec![NONE; n], origin: vec![NONE; n] };
-    let mut want = vec![false; n];
+    let mut b = buffers(n);
     let mut left = 0usize;
     for &p in wanted {
-        if let Some(x) = want.get_mut(p as usize)
-            && !*x
-        {
-            *x = true;
+        if (p as usize) < n && !b.want[p as usize] {
+            b.touch(p as usize);
+            b.want[p as usize] = true;
             left += 1;
         }
     }
     let mut heap = BinaryHeap::new();
     for &p in sources {
-        if (p as usize) < n && s.dist[p as usize] != 0 {
-            s.dist[p as usize] = 0;
-            s.origin[p as usize] = p;
+        if (p as usize) < n && b.dist[p as usize] != 0 {
+            b.touch(p as usize);
+            b.dist[p as usize] = 0;
+            b.origin[p as usize] = p;
             heap.push(Reverse((0u64, p)));
         }
     }
+    work::add(work::SEARCHES, 1);
     while let Some(Reverse((d, p))) = heap.pop() {
-        if d > s.dist[p as usize] {
+        if d > b.dist[p as usize] {
             continue;
         }
-        if want[p as usize] {
-            want[p as usize] = false;
+        work::add(work::SETTLED, 1);
+        if b.want[p as usize] {
+            b.want[p as usize] = false;
             left -= 1;
             if left == 0 {
                 break;
@@ -577,39 +724,47 @@ fn search(w: &World, sources: &[u32], allowed: &dyn Fn(u32) -> bool, sea: bool, 
                 continue;
             }
             let nd = d + ((days as f64 * 1000.0).round() as u64).max(1);
-            if nd < s.dist[q as usize] {
-                s.dist[q as usize] = nd;
-                s.parent[q as usize] = p;
-                s.origin[q as usize] = s.origin[p as usize];
+            if nd < b.dist[q as usize] {
+                b.touch(q as usize);
+                b.dist[q as usize] = nd;
+                b.parent[q as usize] = p;
+                b.origin[q as usize] = b.origin[p as usize];
                 heap.push(Reverse((nd, q)));
             }
         }
     }
-    s
+    Search { b: Some(b) }
 }
 
 /// The route from `from` to the nearest province (not `from`) that `goal` accepts, over the
 /// provinces `allowed` lets in: the provinces after `from`, in order.
 fn route_to(w: &World, from: u32, allowed: &dyn Fn(u32) -> bool, sea: bool, goal: &dyn Fn(u32) -> bool) -> Option<Vec<u32>> {
     let n = w.provinces.count;
-    let mut dist = vec![u64::MAX; n];
-    let mut parent = vec![NONE; n];
+    if from as usize >= n {
+        return None;
+    }
+    let mut b = buffers(n);
     let mut heap = BinaryHeap::new();
-    dist.get_mut(from as usize).map(|d| *d = 0)?;
+    b.touch(from as usize);
+    b.dist[from as usize] = 0;
     heap.push(Reverse((0u64, from)));
+    work::add(work::SEARCHES, 1);
+    let mut found = None;
     while let Some(Reverse((d, p))) = heap.pop() {
-        if d > dist[p as usize] {
+        if d > b.dist[p as usize] {
             continue;
         }
+        work::add(work::SETTLED, 1);
         if p != from && goal(p) {
             let mut out = vec![p];
             let mut q = p;
-            while parent[q as usize] != from {
-                q = parent[q as usize];
+            while b.parent[q as usize] != from {
+                q = b.parent[q as usize];
                 out.push(q);
             }
             out.reverse();
-            return Some(out);
+            found = Some(out);
+            break;
         }
         for l in w.routes.of(p) {
             let Some(days) = (if sea { l.sea_days } else { l.land_days }) else { continue };
@@ -618,24 +773,28 @@ fn route_to(w: &World, from: u32, allowed: &dyn Fn(u32) -> bool, sea: bool, goal
                 continue;
             }
             let nd = d + ((days as f64 * 1000.0).round() as u64).max(1);
-            if nd < dist[q as usize] {
-                dist[q as usize] = nd;
-                parent[q as usize] = p;
+            if nd < b.dist[q as usize] {
+                b.touch(q as usize);
+                b.dist[q as usize] = nd;
+                b.parent[q as usize] = p;
                 heap.push(Reverse((nd, q)));
             }
         }
     }
-    None
+    give_back(b);
+    found
 }
 
 pub struct Troops {
     pub params: TroopParams,
     /// Whether the world keeps coins and the other goods (markets): then soldiers use up goods and
     /// realms pay a bounty.
-    coins: bool,
+    pub(crate) coins: bool,
     /// The parameters resolved, worked out the first time they are needed.
     resolved: Option<Arc<Resolved>>,
-    st: State,
+    pub(crate) st: State,
+    /// Logistics' own state (see [`crate::logistics::More`]).
+    pub(crate) more: crate::logistics::More,
     /// Rebuilt from the army fields when missing (after a load).
     ix: Option<Index>,
 }
@@ -646,7 +805,7 @@ impl Troops {
     /// name and the same private state, so saves and scenario files don't depend on which it is;
     /// the configuration picks by the economics chosen, as it does for realms' taxes.
     pub fn new(params: TroopParams, coins: bool) -> Troops {
-        Troops { params, coins, resolved: None, st: State::default(), ix: None }
+        Troops { params, coins, resolved: None, st: State::default(), more: Default::default(), ix: None }
     }
 
     fn resolved(&mut self) -> Arc<Resolved> {
@@ -683,6 +842,9 @@ static V1: Manifest = Manifest {
         "province.forest_km2",
         "province.coast_km",
         "province.ore_km2",
+        // Logistics: stores and coins (sieges: stripping, starving, plunder) and latitude (winter).
+        "province.stock",
+        "province.lat",
     ],
     reads_earlier: &[],
     owns: &[
@@ -698,6 +860,7 @@ static V1: Manifest = Manifest {
         "army.days_left",
         "army.siege_days",
         "army.supply",
+        "province.besieger",
     ],
     requests: &["pop.size", "province.stock"],
     asks: &["food"],
@@ -715,7 +878,8 @@ static V1: Manifest = Manifest {
 static V1_COINS: Manifest = Manifest {
     requests: &["pop.size", "province.stock", "realm.stock"],
     asks: &["food", "tools", "timber", "money"],
-    moves: &[("realm.stock", "province.stock")],
+    // Bounties and wages into provinces; plunder into treasuries.
+    moves: &[("realm.stock", "province.stock"), ("province.stock", "realm.stock")],
     ..V1
 };
 
@@ -726,6 +890,8 @@ impl Module for Troops {
 
     fn check(&self, goods: &Goods) -> Result<(), String> {
         let r = self.params.resolve()?;
+        let p = &self.params;
+        crate::logistics::check(p.supply.as_ref(), p.seasons.as_ref(), p.pay.as_ref(), p.sieges.as_ref())?;
         if self.coins {
             let wanted = r.kinds.iter().filter_map(|k| k.good.as_ref().map(|g| g.0.as_str())).chain([self.params.money.as_str()]);
             for name in wanted {
@@ -738,29 +904,53 @@ impl Module for Troops {
         Ok(())
     }
 
+    /// Nobody besieges any province yet.
+    fn init(&mut self, w: &mut World, _cx: &mut Ctx) {
+        w.besieger = vec![NONE; w.provinces.count];
+    }
+
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         if w.realms.count() == 0 {
             return;
         }
         self.ix(w);
+        work::add(work::DAYS, 1);
         if cx.calendar.is_month_start(cx.day) {
-            self.sweep(w, cx);
-            self.raise(w, cx);
-            self.eat(w, cx);
+            work::add(work::MONTHS, 1);
+            work::timed(work::T_MONTH, || {
+                self.sweep(w, cx);
+                self.raise(w, cx);
+            });
+            if self.campaigning() {
+                work::timed(work::T_LOGISTICS, || self.eat_campaigning(w, cx));
+            } else {
+                work::timed(work::T_MONTH, || self.eat(w, cx));
+            }
+            if self.params.pay.is_some() {
+                work::timed(work::T_LOGISTICS, || self.pay(w, cx));
+            }
             let enemies = diplomacy::enemies(w);
             self.st.dirty.extend((0..w.realms.count() as u32).filter(|&r| !enemies[r as usize].is_empty()));
         } else if self.st.sweep {
-            self.sweep(w, cx);
+            work::timed(work::T_MONTH, || self.sweep(w, cx));
         }
         self.st.sweep = false;
         if !self.st.moving.is_empty() {
-            self.march(w, cx);
+            work::timed(work::T_MARCH, || self.march(w, cx));
         }
         if !self.st.candidates.is_empty() {
-            self.fight(w, cx);
+            work::timed(work::T_FIGHT, || self.fight(w, cx));
         }
         if !self.st.dirty.is_empty() {
-            self.command(w, cx);
+            work::timed(work::T_PLAN, || self.command(w, cx));
+        }
+        // Sieges in depth: a province stays besieged only while its besiegers' field companies
+        // stand in it (a battle may have broken them, or their general sent them elsewhere).
+        if self.params.sieges.is_some() {
+            let cands: Vec<u32> = self.st.candidates.iter().copied().collect();
+            for p in cands {
+                self.lift_siege(w, p);
+            }
         }
     }
 
@@ -771,12 +961,19 @@ impl Module for Troops {
         !calendar.is_month_start(day) && s.moving.is_empty() && s.candidates.is_empty() && s.dirty.is_empty() && !s.sweep
     }
 
+    /// Its state, then logistics' if there is any (so with logistics off, exactly what it was).
     fn save_state(&self) -> Vec<u8> {
-        crate::sim::to_bytes(&self.st)
+        let mut out = crate::sim::to_bytes(&self.st);
+        if self.more != crate::logistics::More::default() {
+            out.extend(crate::sim::to_bytes(&self.more));
+        }
+        out
     }
 
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.st = postcard::from_bytes(bytes).map_err(|e| format!("Warfare state: {e}"))?;
+        let (st, rest) = postcard::take_from_bytes(bytes).map_err(|e| format!("Warfare state: {e}"))?;
+        self.st = st;
+        self.more = if rest.is_empty() { Default::default() } else { postcard::from_bytes(rest).map_err(|e| format!("Warfare's logistics state: {e}"))? };
         self.ix = None;
         Ok(())
     }
@@ -790,8 +987,11 @@ impl Module for Troops {
             Event::Granted { request: r, granted } => match r.cause {
                 Cause::Raised => self.recruited(w, cx, &r, granted),
                 Cause::Equipped => self.equipped(w, cx, &r, granted),
-                Cause::Eating => self.fed(w, cx, &r, granted),
-                // The bounty is paid: nothing follows.
+                Cause::Eating if r.tag >> 32 == 0 => self.fed(w, cx, &r, granted),
+                Cause::Eating => self.fed_campaigning(w, cx, &r, granted),
+                Cause::Wages => self.paid(w, cx, &r, granted),
+                // The bounty is paid, the plunder carried off, the forage or the carrying's losses
+                // taken: nothing follows.
                 _ => {}
             },
             Event::Peace { attacker, defender, .. } => {
@@ -935,7 +1135,7 @@ impl Troops {
 
     /// File company `a` where its fields say it is, after any change to them. A company emptied
     /// goes back to standing at home in no group.
-    fn settle(&mut self, w: &mut World, a: u32) {
+    pub(crate) fn settle(&mut self, w: &mut World, a: u32) {
         let au = a as usize;
         if w.armies.size[au] == 0 {
             self.leave_group(w, a);
@@ -997,7 +1197,7 @@ impl Troops {
     }
 
     /// `people` of company `a`'s soldiers leave it for home, with `cause`.
-    fn go_home(&mut self, w: &mut World, cx: &mut Ctx, a: u32, people: u64, cause: Cause) {
+    pub(crate) fn go_home(&mut self, w: &mut World, cx: &mut Ctx, a: u32, people: u64, cause: Cause) {
         if people == 0 {
             return;
         }
@@ -1134,7 +1334,19 @@ impl Troops {
             if people[prov] == 0 || w.occupier[prov] != NONE || w.uprising[prov] != NONE {
                 continue;
             }
-            let step = ((total as f64 * p.war_share / p.months_to_raise).ceil() as u64).max(1);
+            let mut step = ((total as f64 * p.war_share / p.months_to_raise).ceil() as u64).max(1);
+            // Sieges in depth: a besieged province raises a share of that, none as shipped.
+            if let Some(s) = &p.sieges
+                && w.besieger.get(prov).is_some_and(|&b| b != NONE)
+            {
+                step = (step as f64 * s.raising).floor() as u64;
+                if traced {
+                    cx.note(format!("besieged by realm {}: raises at most {step} this month", w.besieger[prov]));
+                }
+                if step == 0 {
+                    continue;
+                }
+            }
             let low = |cur: u64, wanted: u64| (cur as f64) < wanted as f64 * p.raise_below;
             let raise_guards = if low(guards, peace_wanted) { (peace_wanted - guards).min(step) } else { 0 };
             let raise_fields = if low(fields, field_wanted) { (field_wanted - fields).min(step - raise_guards) } else { 0 };
@@ -1320,6 +1532,12 @@ impl Troops {
     fn fed(&mut self, w: &mut World, cx: &mut Ctx, r: &Request, granted: u64) {
         let Some(companies) = self.st.eating.remove(&(r.tag as u32)) else { return };
         let fed = if r.take == 0 { 1.0 } else { granted as f64 / r.take as f64 };
+        self.feed(w, cx, r, companies, fed);
+    }
+
+    /// `companies`, with their soldiers when their food was asked for, got `fed` of it: soldiers
+    /// die of age, and of hunger, and the hungry desert.
+    pub(crate) fn feed(&mut self, w: &mut World, cx: &mut Ctx, r: &Request, companies: Vec<(u32, u64)>, fed: f64) {
         let (cal, seed) = (cx.calendar, cx.seed);
         let (deaths_per_year, desert_share, starvation_deaths) = (self.params.deaths_per_year, self.params.desert_share, self.params.starvation_deaths);
         let days = cal.def.months[cal.date(r.day).month].days as f64;
@@ -1418,7 +1636,12 @@ impl Troops {
                 continue;
             }
             let realm = w.armies.realm[au];
-            w.armies.days_left[au] -= 1.0;
+            // Winter: a day's march covers less of the way, down to 1 / road_slow of it.
+            let day_covers = match &self.params.seasons {
+                Some(s) => (1.0 / (1.0 + (s.road_slow - 1.0) * self.winter_at(w, cx.calendar, cx.day, w.armies.province[au]))) as f32,
+                None => 1.0,
+            };
+            w.armies.days_left[au] -= day_covers;
             while w.armies.days_left[au] <= 0.0 {
                 let at = w.armies.next[au];
                 w.armies.province[au] = at;
@@ -1514,6 +1737,27 @@ impl Troops {
             if !keep {
                 self.st.candidates.remove(&p);
             }
+            // No siege can go on there: none does (sieges in depth).
+            if !keep
+                && self.params.sieges.is_some()
+                && let Some(b) = w.besieger.get_mut(p as usize)
+            {
+                *b = NONE;
+            }
+        }
+    }
+
+    /// Province `p` is no longer besieged unless field companies of the realm besieging it stand
+    /// in it (sieges in depth).
+    fn lift_siege(&self, w: &mut World, p: u32) {
+        let Some(&by) = w.besieger.get(p as usize) else { return };
+        if by == NONE || self.params.sieges.is_none() {
+            return;
+        }
+        let ix = self.ix.as_ref().expect("built before use");
+        let there = ix.standing.get(&p).is_some_and(|s| s.iter().any(|&a| w.armies.realm[a as usize] == by && w.armies.role[a as usize] == FIELD));
+        if !there {
+            w.besieger[p as usize] = NONE;
         }
     }
 
@@ -1666,6 +1910,8 @@ impl Troops {
         let pu = p as usize;
         let (owner, occ) = (w.owner.get(pu).copied().unwrap_or(NONE), w.occupier.get(pu).copied().unwrap_or(NONE));
         let mut keep = false;
+        // Sieges in depth: who besieges it, making progress (the first realm, if several).
+        let mut besieging = NONE;
         for (x, companies) in sides {
             let field: Vec<u32> = companies.into_iter().filter(|&a| w.armies.role[a as usize] == FIELD).collect();
             if field.is_empty() {
@@ -1685,8 +1931,13 @@ impl Troops {
                 }
                 continue;
             }
+            // A starving province's siege goes faster (sieges in depth).
+            let step = if self.params.sieges.is_some() { self.siege_step(w, cx, p, people[pu]) } else { 1 };
             for &a in &field {
-                w.armies.siege_days[a as usize] += 1;
+                w.armies.siege_days[a as usize] += step;
+            }
+            if besieging == NONE {
+                besieging = x;
             }
             let done = field.iter().map(|&a| w.armies.siege_days[a as usize]).max().unwrap_or(0);
             let capital = owner != NONE && w.realms.capital.get(owner as usize) == Some(&p);
@@ -1707,9 +1958,18 @@ impl Troops {
                 for &a in &field {
                     w.armies.siege_days[a as usize] = 0;
                 }
+                if take {
+                    self.plunder(w, cx, p, x);
+                }
                 self.st.dirty.insert(x);
+                besieging = NONE;
                 break;
             }
+        }
+        if self.params.sieges.is_some()
+            && let Some(b) = w.besieger.get_mut(pu)
+        {
+            *b = besieging;
         }
         keep
     }
@@ -1810,17 +2070,33 @@ impl Troops {
         // Each realm's land, in province order: owners don't change while the generals plan, and a
         // general looks only at its own land and its enemies'.
         let mut land: Vec<Vec<u32>> = vec![Vec::new(); w.realms.count()];
+        // And the provinces each realm occupies.
+        let mut held: Vec<Vec<u32>> = vec![Vec::new(); w.realms.count()];
         for q in 0..w.provinces.count {
             if let Some(v) = land.get_mut(w.owner[q] as usize)
                 && w.provinces.cells[q] > 0
             {
                 v.push(q as u32);
             }
+            if let Some(v) = held.get_mut(w.occupier[q] as usize) {
+                v.push(q as u32);
+            }
+        }
+        // The provinces each realm's wars were declared over: wars don't change while generals plan.
+        let mut wanted: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+        for k in 0..w.wars.count() {
+            if w.wars.ended[k] == diplomacy::NEVER
+                && let Some(&t) = w.wars.target.get(k)
+                && t != NONE
+            {
+                wanted.entry(w.wars.attacker[k]).or_default().insert(t);
+            }
         }
         for r in dirty {
             if !w.realms.alive(r) {
                 continue;
             }
+            work::add(work::PLANS, 1);
             let foes = enemies.get(r as usize).cloned().unwrap_or_default();
             if foes.is_empty() {
                 let any = self.ix(w).field_of.get(&r).is_some_and(|v| v.iter().any(|&a| w.armies.size[a as usize] > 0));
@@ -1829,7 +2105,7 @@ impl Troops {
                 }
                 continue;
             }
-            self.plan(w, cx, &res, r, &foes, &people, &land);
+            self.plan(w, cx, &res, r, &foes, &people, &land, &held, &wanted);
         }
     }
 
@@ -1846,7 +2122,7 @@ impl Troops {
 
     /// Realm `r`'s general, at war with `foes` (sorted).
     #[allow(clippy::too_many_arguments)]
-    fn plan(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, r: u32, foes: &[u32], people: &[u64], land: &[Vec<u32>]) {
+    fn plan(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, r: u32, foes: &[u32], people: &[u64], land: &[Vec<u32>], held: &[Vec<u32>], wanted: &BTreeMap<u32, BTreeSet<u32>>) {
         // The settings it needs, copied out (the parameters hold the troop tree).
         struct Knobs {
             outmatch: f64,
@@ -1859,7 +2135,8 @@ impl Troops {
         let day = cx.day;
         // Companies under the player's orders are left alone until they arrive.
         let ordered = std::mem::take(&mut self.st.ordered);
-        let fields: Vec<u32> = self.ix(w).field_of.get(&r).map_or(Vec::new(), |v| v.iter().copied().filter(|a| !ordered.contains(a)).collect());
+        // (Only those with soldiers: everything below passes over empty companies.)
+        let fields: Vec<u32> = self.ix(w).field_of.get(&r).map_or(Vec::new(), |v| v.iter().copied().filter(|&a| w.armies.size[a as usize] > 0 && !ordered.contains(&a)).collect());
         self.st.ordered = ordered;
         let ok = |w: &World, q: u32| allowed_for(w, r, foes, q);
 
@@ -1933,26 +2210,40 @@ impl Troops {
         let capital = w.realms.capital[r as usize];
         let staging = |w: &World, q: u32| (w.owner[q as usize] == r && w.occupier[q as usize] == NONE) || w.occupier[q as usize] == r;
         let mut defend = Vec::new();
-        let mut attack = Vec::new();
-        let mut sea = Vec::new();
-        // Its land and its enemies' (the order doesn't matter: the lists are sorted below).
-        for &q in std::iter::once(&r).chain(foes).filter_map(|&o| land.get(o as usize)).flatten() {
-            let o = w.owner[q as usize];
-            if o == r {
-                if w.occupier[q as usize] != NONE || self.enemies_at(w, q, foes) {
-                    defend.push(q);
-                }
-            } else if o != NONE && foes.binary_search(&o).is_ok() && w.occupier[q as usize] != r {
-                if w.routes.of(q).any(|l| l.land_days.is_some() && staging(w, l.other(q))) {
-                    attack.push(q);
-                } else if w.routes.of(q).any(|l| l.sea_days.is_some() && staging(w, l.other(q))) {
-                    sea.push(q);
+        // Enemy land next to land it holds or occupies, by land and by sea, found from the land it
+        // holds or occupies (the front), not by looking over all its enemies' land. Sets: the
+        // lists are sorted below, so the order they are found in doesn't matter.
+        let own = land.get(r as usize).map_or(&[][..], |v| &v[..]);
+        let mut staged: Vec<u32> = Vec::new();
+        for &q in own {
+            if w.occupier[q as usize] != NONE || self.enemies_at(w, q, foes) {
+                defend.push(q);
+            }
+            if w.occupier[q as usize] == NONE {
+                staged.push(q);
+            }
+        }
+        staged.extend(held.get(r as usize).into_iter().flatten().copied());
+        let (mut by_land, mut by_sea) = (BTreeSet::new(), BTreeSet::new());
+        for &s in &staged {
+            for l in w.routes.of(s) {
+                let q = l.other(s);
+                let o = w.owner[q as usize];
+                if o != NONE && foes.binary_search(&o).is_ok() && w.occupier[q as usize] != r && w.provinces.cells[q as usize] > 0 {
+                    if l.land_days.is_some() {
+                        by_land.insert(q);
+                    }
+                    if l.sea_days.is_some() {
+                        by_sea.insert(q);
+                    }
                 }
             }
         }
+        let mut attack: Vec<u32> = by_land.iter().copied().collect();
+        let mut sea: Vec<u32> = by_sea.difference(&by_land).copied().collect();
         let asked: Vec<u32> = defend.iter().chain(&attack).copied().collect();
         let near = search(w, &[capital], &|q| ok(w, q), false, &asked);
-        let by_near = |v: &mut Vec<u32>| v.sort_by_key(|&q| (near.dist[q as usize], q));
+        let by_near = |v: &mut Vec<u32>| v.sort_by_key(|&q| (near.dist(q), q));
         by_near(&mut defend);
         by_near(&mut attack);
         let cap_center = w.provinces.center[capital as usize];
@@ -1962,10 +2253,8 @@ impl Troops {
         });
         // The provinces its wars were declared over come first after its own land, while it can
         // reach them.
-        let wanted: BTreeSet<u32> = (0..w.wars.count())
-            .filter(|&k| w.wars.ended[k] == diplomacy::NEVER && w.wars.attacker[k] == r && w.wars.target.get(k).is_some_and(|&t| t != NONE))
-            .map(|k| w.wars.target[k])
-            .collect();
+        let none = BTreeSet::new();
+        let wanted = wanted.get(&r).unwrap_or(&none);
         let (attack_wanted, attack): (Vec<u32>, Vec<u32>) = attack.into_iter().partition(|q| wanted.contains(q));
         let (sea_wanted, sea): (Vec<u32>, Vec<u32>) = sea.into_iter().partition(|q| wanted.contains(q));
         let targets: Vec<(u32, bool)> = defend
@@ -2007,18 +2296,44 @@ impl Troops {
                 group_of.entry(g.target).or_insert(k);
             }
         }
+        // The land companies of the pool, with their strength and soldiers in all: worked out again
+        // only after the pool changes (`None` then).
+        let mut land_pool: Option<std::rc::Rc<(Vec<u32>, f64, u64)>> = None;
         for (t, by_sea) in targets {
             let group = group_of.get(&t).copied().filter(|k| self.st.groups.contains_key(k));
-            if group.is_none() && !pool.iter().any(|&a| !res.kind(w.armies.kind[a as usize]).ship) {
+            let lp = land_pool
+                .get_or_insert_with(|| {
+                    let v: Vec<u32> = pool.iter().copied().filter(|&a| !res.kind(w.armies.kind[a as usize]).ship).collect();
+                    let (s, n) = v.iter().fold((0.0, 0u64), |(s, n), &a| {
+                        let size = w.armies.size[a as usize];
+                        (s + size as f64 * res.kind(w.armies.kind[a as usize]).strength, n + size)
+                    });
+                    std::rc::Rc::new((v, s, n))
+                })
+                .clone();
+            if group.is_none() && lp.0.is_empty() {
                 continue;
             }
             if group.is_some_and(|k| self.st.groups[&k].launched) {
                 continue;
             }
             let defending = w.owner[t as usize] == r;
+            // Winter: no new attack where it is deep; a group gathering for one waits.
+            if !defending
+                && let Some(s) = &self.params.seasons
+                && self.winter_at(w, cx.calendar, cx.day, t) > s.no_attack
+            {
+                continue;
+            }
             let edge = if defending { 1.0 } else { 1.0 + pr.home_edge };
             let need = pr.outmatch * edge * self.enemy_strength(w, res, t, foes, false);
             let least = ((pr.siege_min_share * people[t as usize] as f64).ceil() as u64).max(1);
+            // With no group yet, a pool too weak or too few for it in all can't make one (as
+            // `recruit` would find): nothing more to look at.
+            if group.is_none() && (lp.1 * (1.0 + 1e-9) < need || lp.2 < least) {
+                work::add(work::RULED_OUT, 1);
+                continue;
+            }
             let need_ships = pr.outmatch * self.enemy_strength(w, res, t, foes, true);
             // Where it gathers: provinces it holds or occupies next to the target (across the sea,
             // facing it), with no enemy standing in them.
@@ -2033,6 +2348,7 @@ impl Troops {
             if gather.is_empty() {
                 if let Some(k) = group {
                     pool.extend(self.dissolve(w, k).into_iter().filter(|&a| free(self, w, a)));
+                    land_pool = None;
                 }
                 continue;
             }
@@ -2042,12 +2358,12 @@ impl Troops {
             let have_n: u64 = troops.iter().map(|&a| w.armies.size[a as usize]).sum();
             let mut adds: Sends = Vec::new();
             if have < need || have_n < least || members.is_empty() {
-                let land_pool: Vec<u32> = pool.iter().copied().filter(|&a| !res.kind(w.armies.kind[a as usize]).ship).collect();
-                match self.recruit(w, res, r, foes, &gather, &land_pool, &room, need - have, least.saturating_sub(have_n), false) {
+                match self.recruit(w, res, r, foes, &gather, (&lp.0, lp.1, lp.2), &room, need - have, least.saturating_sub(have_n), false) {
                     Some(chosen) => adds.extend(chosen),
                     None => {
                         if let Some(k) = group {
                             pool.extend(self.dissolve(w, k).into_iter().filter(|&a| free(self, w, a)));
+                            land_pool = None;
                         }
                         continue;
                     }
@@ -2099,6 +2415,7 @@ impl Troops {
                 if failed {
                     if let Some(k) = group {
                         pool.extend(self.dissolve(w, k).into_iter().filter(|&a| free(self, w, a)));
+                        land_pool = None;
                     }
                     continue;
                 }
@@ -2112,6 +2429,9 @@ impl Troops {
             });
             if let Some(g) = self.st.groups.get_mut(&k) {
                 g.gather = gather.clone();
+            }
+            if !adds.is_empty() {
+                land_pool = None;
             }
             for (a, path) in adds {
                 pool.remove(&a);
@@ -2158,7 +2478,8 @@ impl Troops {
         g.members
     }
 
-    /// Free land companies (`pool`) to send to the gathering provinces `gather`, nearest first,
+    /// Free land companies (`pool`, with their strength and soldiers in all) to send to the
+    /// gathering provinces `gather`, nearest first,
     /// each province taking soldiers while it has room (`room`, less what is sent there now), until
     /// they bring `strength` and `soldiers`. None if they can't.
     #[allow(clippy::too_many_arguments)]
@@ -2169,7 +2490,7 @@ impl Troops {
         r: u32,
         foes: &[u32],
         gather: &[u32],
-        pool: &[u32],
+        (pool, all_s, all_n): (&[u32], f64, u64),
         room: &dyn Fn(u32) -> i64,
         strength: f64,
         soldiers: u64,
@@ -2178,20 +2499,28 @@ impl Troops {
         let mut left: BTreeMap<u32, i64> = gather.iter().map(|&q| (q, room(q))).collect();
         let mut chosen = Vec::new();
         let (mut got_s, mut got_n) = (0.0, 0u64);
+        // All of them together (`all_s`, `all_n`) too weak or too few: no search can find enough.
+        // (Whole-number strengths add up exactly; the margin keeps other strengths from being ruled
+        // out by a rounding the search's own sums wouldn't make.)
+        if all_s * (1.0 + 1e-9) < strength || all_n < soldiers {
+            work::add(work::RULED_OUT, 1);
+            return None;
+        }
         let mut rest: Vec<u32> = pool.to_vec();
         loop {
+            work::add(work::RECRUITS, 1);
             let sources: Vec<u32> = left.iter().filter(|(_, v)| **v > 0).map(|(&q, _)| q).collect();
             if sources.is_empty() || rest.is_empty() {
                 return None;
             }
             let asked: Vec<u32> = rest.iter().map(|&a| w.armies.province[a as usize]).collect();
             let s = search(w, &sources, &|q| allowed_for(w, r, foes, q), sea, &asked);
-            let mut order: Vec<(u64, u32)> = rest.iter().map(|&a| (s.dist[w.armies.province[a as usize] as usize], a)).filter(|(d, _)| *d != u64::MAX).collect();
+            let mut order: Vec<(u64, u32)> = rest.iter().map(|&a| (s.dist(w.armies.province[a as usize]), a)).filter(|(d, _)| *d != u64::MAX).collect();
             order.sort_unstable();
             let mut filled = false;
             for (_, a) in order {
                 let at = w.armies.province[a as usize];
-                let o = s.origin[at as usize];
+                let o = s.origin(at);
                 let room = left.get_mut(&o).expect("a source");
                 if *room <= 0 {
                     // Filled by an earlier company this round: look again without it.
@@ -2220,7 +2549,7 @@ impl Troops {
     fn recruit_ships(&self, w: &World, res: &Resolved, r: u32, foes: &[u32], gather: u32, pool: &[u32], carry: f64, strength: f64) -> Option<Sends> {
         let asked: Vec<u32> = pool.iter().map(|&a| w.armies.province[a as usize]).collect();
         let s = search(w, &[gather], &|q| allowed_for(w, r, foes, q), true, &asked);
-        let mut order: Vec<(u64, u32)> = pool.iter().map(|&a| (s.dist[w.armies.province[a as usize] as usize], a)).filter(|(d, _)| *d != u64::MAX).collect();
+        let mut order: Vec<(u64, u32)> = pool.iter().map(|&a| (s.dist(w.armies.province[a as usize]), a)).filter(|(d, _)| *d != u64::MAX).collect();
         order.sort_unstable();
         let (mut got_c, mut got_s) = (0.0, 0.0);
         let mut chosen = Vec::new();
@@ -2299,7 +2628,7 @@ fn middle_province(people: &[u64]) -> f64 {
 
 /// Whether realm `r`, at war with `foes` (sorted), may pass through province `q`: land it holds or
 /// occupies, its enemies' land, or land nobody owns.
-fn allowed_for(w: &World, r: u32, foes: &[u32], q: u32) -> bool {
+pub(crate) fn allowed_for(w: &World, r: u32, foes: &[u32], q: u32) -> bool {
     let o = w.owner.get(q as usize).copied().unwrap_or(NONE);
     o == r || o == NONE || w.occupier.get(q as usize) == Some(&r) || foes.binary_search(&o).is_ok()
 }

@@ -141,6 +141,9 @@ money_range = 3.0
 toll = 0.1
 # Share of the trade between realms at war that the war stops (1: all of it).
 war_stops = 1.0
+# Share of the trade with a province enemies besiege that the siege stops (1: all of it). Only
+# armies' "sieges in depth" mark provinces besieged; without it this changes nothing.
+siege_stops = 1.0
 
 # Coins to carry one unit one day overland. A cart doubles grain's price in about five days;
 # herds walk; fish must hurry; cloth and tools are worth a lot for their weight.

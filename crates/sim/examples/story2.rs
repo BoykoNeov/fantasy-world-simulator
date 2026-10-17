@@ -15,9 +15,25 @@
 //! when it changes hands at a peace to the realm that occupied it in that war, and its decline is
 //! looked for from the year it changed hands on.
 //!
-//! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...]
+//! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...] [campaigns]
 //!
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
+//! `campaigns` switches on the four parts of logistics (supply, winter, pay, sieges).
+//!
+//! The probe (logistics piece 1, reads only, so the world is the same): for every rich river city,
+//! month by month while a realm is at war with its owner, what stands in the way of that realm
+//! taking it, as the general sees it (see `warfare.rs`, `plan`):
+//! - **unreachable**: the realm holds or occupies no province next to it by land, so the general
+//!   never makes it a target (a city behind a front that doesn't move);
+//! - **room short**: the provinces next to it where an army may gather take at most the gathering
+//!   share of their people, and that many soldiers can't outmatch the garrison;
+//! - **soldiers short**: the realm hasn't that much strength in all its field companies;
+//! - **could**: neither: an attack could be gathered;
+//! - **gathering**, **attacking**, **battle**, **besieged**, **held**: a group of the realm gathering
+//!   next to it, marching on it, fighting in it, besieging it, or holding it.
+//!
+//! And: sieges begun, the best share of a siege's days reached, sieges cut off by a peace,
+//! recruits the city raised while besieged, battles in it, and the garrison against the room.
 
 use sim::config::Config;
 use sim::diplomacy::{TreatyParams, WarParams};
@@ -25,9 +41,11 @@ use sim::events::Event;
 use sim::grid::NONE;
 use sim::module::Slot;
 use sim::sim::Sim;
+use sim::warfare::{TroopParams, FIELD};
 use sim::world::{World, WorldParams, RIVER_MIN_FLOW};
+use std::collections::{BTreeMap, BTreeSet};
 
-fn config(seed: u64, set: &[(String, f64)]) -> Config {
+fn config(seed: u64, set: &[(String, f64)], campaigns: bool) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
@@ -35,6 +53,10 @@ fn config(seed: u64, set: &[(String, f64)]) -> Config {
     c.modules.characters = Some(Default::default());
     c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
     c.modules.warfare = Some(Default::default());
+    if campaigns {
+        let t = c.modules.warfare.as_mut().unwrap();
+        (t.supply, t.seasons, t.pay, t.sieges) = (Some(Default::default()), Some(Default::default()), Some(Default::default()), Some(Default::default()));
+    }
     for (k, v) in set {
         sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
     }
@@ -84,8 +106,193 @@ struct Track {
     less_trade: Option<i64>,
 }
 
-fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
-    let mut sim = Sim::new(&config(seed, set)).unwrap();
+/// What stood in the way of a realm at war with a river city's owner taking it, month by month
+/// (see the top of the file).
+#[derive(Clone, Default)]
+struct Probe {
+    unreachable: u32,
+    room_short: u32,
+    soldiers_short: u32,
+    could: u32,
+    gathering: u32,
+    attacking: u32,
+    battle: u32,
+    besieged: u32,
+    held: u32,
+    /// Months a war named it as its target, and of those, months it was unreachable; and those
+    /// months by what stood in the way, in the order of [`STATUS`].
+    target_months: u32,
+    target_unreachable: u32,
+    target_status: [u32; 9],
+    /// Months reachable: the garrison's strength the general must outmatch (its edge counted)
+    /// over what the room to gather can hold (soldiers × the realm's strength a soldier).
+    need_over_room: Vec<f64>,
+    sieges: u32,
+    /// The most of a siege's days reached, as a share of the days it needs.
+    best_progress: f64,
+    /// Days each siege needed, when it began.
+    siege_need: Vec<u32>,
+    /// Sieges going on when a peace ended the war.
+    cut_by_peace: u32,
+    raised_under_siege: u64,
+    battles_held: u32,
+    battles_lost: u32,
+}
+
+/// What stood in the way, in the order `Probe::target_status` counts it.
+const STATUS: [&str; 9] = ["unreachable", "room short", "soldiers short", "could", "gathering", "attacking", "battle", "besieged", "held"];
+
+/// The troop kinds' strength and whether ships, by node.
+struct Kit {
+    p: TroopParams,
+    strength: Vec<f64>,
+    ship: Vec<bool>,
+}
+
+impl Kit {
+    fn new(p: &TroopParams) -> Kit {
+        let kinds = sim::warfare::kinds(p);
+        let nodes = kinds.iter().map(|k| k.0 as usize + 1).max().unwrap_or(0);
+        let (mut strength, mut ship) = (vec![0.0; nodes], vec![false; nodes]);
+        for (node, name, is_ship, _) in kinds {
+            strength[node as usize] = p.kinds[&name].strength;
+            ship[node as usize] = is_ship;
+        }
+        Kit { p: p.clone(), strength, ship }
+    }
+}
+
+/// Days a siege of province `p` needs, as Warfare works it out.
+fn siege_need(w: &World, k: &Kit, p: usize, people: &[u64]) -> u32 {
+    let mut v: Vec<u64> = people.iter().copied().filter(|&x| x > 0).collect();
+    let middle = if v.is_empty() {
+        1.0
+    } else {
+        let m = v.len() / 2;
+        (*v.select_nth_unstable(m).1).max(1) as f64
+    };
+    let mut need = k.p.siege_base_days * (1.0 + people[p] as f64 / middle);
+    let o = w.owner[p];
+    if o != NONE && w.realms.capital.get(o as usize) == Some(&(p as u32)) {
+        need *= k.p.capital_siege;
+    }
+    (need.min(k.p.siege_max_days).round() as u32).max(1)
+}
+
+/// The month's look at each river city: for every realm at war with its owner, what stands in the
+/// way of its taking it.
+fn probe_month(w: &World, k: &Kit, mouth: &[(usize, f64)], probe: &mut [Probe]) {
+    let people = w.province_population();
+    let enemies = sim::diplomacy::enemies(w);
+    let arm = &w.armies;
+    let mut standing: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+    for a in 0..arm.count() {
+        if arm.size[a] > 0 && arm.next[a] == NONE && !k.ship[arm.kind[a] as usize] {
+            standing.entry(arm.province[a]).or_default().push(a);
+        }
+    }
+    let strength_of = |of: &[usize]| -> f64 { of.iter().map(|&a| arm.size[a] as f64 * k.strength[arm.kind[a] as usize]).sum() };
+    for &(p, _) in mouth {
+        let o = w.owner[p];
+        if o == NONE || !w.realms.alive(o) {
+            continue;
+        }
+        for &x in &enemies[o as usize] {
+            let st = &mut probe[p];
+            let foes = &enemies[x as usize];
+            let targeted = (0..w.wars.count() as u32).any(|j| w.wars.ongoing(j) && w.wars.attacker[j as usize] == x && w.wars.target.get(j as usize) == Some(&(p as u32)));
+            st.target_months += targeted as u32;
+            let mark = |st: &mut Probe, k: usize| {
+                if targeted {
+                    st.target_status[k] += 1;
+                }
+            };
+            if w.occupier[p] == x {
+                st.held += 1;
+                mark(st, 8);
+                continue;
+            }
+            let here = standing.get(&(p as u32)).cloned().unwrap_or_default();
+            let (mine, theirs): (Vec<usize>, Vec<usize>) = here.iter().partition(|&&a| arm.realm[a] == x);
+            let theirs: Vec<usize> = theirs.into_iter().filter(|&a| foes.binary_search(&arm.realm[a]).is_ok()).collect();
+            if mine.iter().any(|&a| arm.role[a] == FIELD) {
+                if theirs.is_empty() {
+                    st.besieged += 1;
+                    mark(st, 7);
+                } else {
+                    st.battle += 1;
+                    mark(st, 6);
+                }
+                continue;
+            }
+            if (0..arm.count()).any(|a| arm.realm[a] == x && arm.size[a] > 0 && arm.next[a] != NONE && arm.dest[a] == p as u32 && arm.group[a] != NONE) {
+                st.attacking += 1;
+                mark(st, 5);
+                continue;
+            }
+            let staging = |q: usize| (w.owner[q] == x && w.occupier[q] == NONE) || w.occupier[q] == x;
+            let gather: Vec<u32> = w
+                .routes
+                .of(p as u32)
+                .filter(|l| l.land_days.is_some())
+                .map(|l| l.other(p as u32))
+                .filter(|&q| staging(q as usize) && !standing.get(&q).is_some_and(|v| v.iter().any(|&a| foes.binary_search(&arm.realm[a]).is_ok())))
+                .collect();
+            if gather.is_empty() {
+                st.unreachable += 1;
+                st.target_unreachable += targeted as u32;
+                mark(st, 0);
+                continue;
+            }
+            let gathering = (0..arm.count()).any(|a| arm.realm[a] == x && arm.size[a] > 0 && arm.group[a] != NONE && (gather.contains(&arm.province[a]) || gather.contains(&arm.dest[a])));
+            let need = k.p.outmatch * (1.0 + k.p.home_edge) * strength_of(&theirs);
+            let room: f64 = gather.iter().map(|&q| (k.p.gather_share * people[q as usize] as f64).floor()).sum();
+            let field: Vec<usize> = (0..arm.count()).filter(|&a| arm.realm[a] == x && arm.role[a] == FIELD && arm.size[a] > 0 && !k.ship[arm.kind[a] as usize]).collect();
+            let (soldiers, power) = (field.iter().map(|&a| arm.size[a]).sum::<u64>(), strength_of(&field));
+            let each = if soldiers > 0 { power / soldiers as f64 } else { 1.0 };
+            st.need_over_room.push(need / (room * each).max(1.0));
+            if gathering {
+                st.gathering += 1;
+                mark(st, 4);
+            } else if room * each < need {
+                st.room_short += 1;
+                mark(st, 1);
+            } else if power < need {
+                st.soldiers_short += 1;
+                mark(st, 2);
+            } else {
+                st.could += 1;
+                mark(st, 3);
+            }
+        }
+    }
+}
+
+/// The day's look at sieges of river cities: (city, besieger) → the most siege days reached.
+fn sieges_today(w: &World, mouth: &[(usize, f64)]) -> BTreeMap<(usize, u32), u32> {
+    let arm = &w.armies;
+    let is_mouth: BTreeSet<u32> = mouth.iter().map(|m| m.0 as u32).collect();
+    let mut out = BTreeMap::new();
+    for a in 0..arm.count() {
+        let p = arm.province[a];
+        if arm.size[a] > 0 && arm.next[a] == NONE && arm.role[a] == FIELD && arm.siege_days[a] > 0 && is_mouth.contains(&p) && w.owner[p as usize] != arm.realm[a] {
+            let e = out.entry((p as usize, arm.realm[a])).or_insert(0);
+            *e = (*e).max(arm.siege_days[a]);
+        }
+    }
+    out
+}
+
+/// The soldiers of each river city's owner from that city.
+fn garrison_raised(w: &World, p: usize) -> u64 {
+    let arm = &w.armies;
+    let o = w.owner[p];
+    (0..arm.count()).filter(|&a| arm.home[a] == p as u32 && arm.realm[a] == o).map(|a| arm.size[a]).sum()
+}
+
+fn run(seed: u64, years: i64, set: &[(String, f64)], campaigns: bool) -> bool {
+    let mut sim = Sim::new(&config(seed, set, campaigns)).unwrap();
+    let kit = Kit::new(sim.settings.warfare.as_ref().expect("armies are on"));
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let mouth = mouths(&sim.world);
@@ -95,6 +302,9 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
     let mut last_trade = 0;
     let (mut rich_handed, mut handed_all) = (0usize, 0usize);
     let mut rich = vec![false; n];
+    let mut probe = vec![Probe::default(); n];
+    let mut last_sieges: BTreeMap<(usize, u32), u32> = BTreeMap::new();
+    let mut last_garrison: BTreeMap<usize, u64> = BTreeMap::new();
     for year in 1..=years {
         let end = sim.calendar.year_start(start + year);
         while sim.day < end {
@@ -112,6 +322,49 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
                 if is_mouth[p] && w.occupier[p] != NONE {
                     t[p].occupied_days += 1;
                 }
+            }
+            // The probe: sieges begun, their progress and their end, recruits raised under siege,
+            // battles in the city, and once a month what stands in the way.
+            let today = sieges_today(w, &mouth);
+            for (&(p, x), &days) in &today {
+                let need = siege_need(w, &kit, p, &w.province_population());
+                let pr = &mut probe[p];
+                if !last_sieges.contains_key(&(p, x)) {
+                    pr.sieges += 1;
+                    pr.siege_need.push(need);
+                }
+                pr.best_progress = pr.best_progress.max(days as f64 / need as f64);
+                let now = garrison_raised(w, p);
+                if let Some(&was) = last_garrison.get(&p)
+                    && now > was
+                {
+                    pr.raised_under_siege += now - was;
+                }
+            }
+            last_garrison = today.keys().map(|&(p, _)| (p, garrison_raised(w, p))).collect();
+            for e in sim.delivered_today() {
+                match e.event {
+                    Event::Peace { attacker, defender, .. } => {
+                        for &(p, x) in last_sieges.keys() {
+                            if (x == attacker && owners[p] == defender) || (x == defender && owners[p] == attacker) {
+                                probe[p].cut_by_peace += 1;
+                            }
+                        }
+                    }
+                    Event::Battle { province, winner, loser, .. } if is_mouth[province as usize] => {
+                        let o = owners[province as usize];
+                        if winner == o {
+                            probe[province as usize].battles_held += 1;
+                        } else if loser == o {
+                            probe[province as usize].battles_lost += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            last_sieges = today;
+            if sim.calendar.is_month_start(sim.day) {
+                probe_month(w, &kit, &mouth, &mut probe);
             }
             for e in sim.delivered_today() {
                 if let Event::WarDeclared { war, .. } = e.event
@@ -173,6 +426,8 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
     }
     println!("seed {seed}: {} river-mouth provinces on the coast", mouth.len());
     let mut passed = false;
+    let mut totals: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut target_totals: BTreeMap<&str, u64> = BTreeMap::new();
     for &(p, flow) in &mouth {
         let k = &t[p];
         if k.longest < 10 {
@@ -192,7 +447,33 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
             k.less_trade,
             if pass { ": PASSES" } else { "" }
         );
+        let b = &probe[p];
+        let mut ratios = b.need_over_room.clone();
+        ratios.sort_by(f64::total_cmp);
+        let median = ratios.get(ratios.len() / 2).copied().unwrap_or(f64::NAN);
+        println!(
+            "    probe, months an enemy was at war with its owner: unreachable {} (of {} months a war's target: {} unreachable), room short {}, soldiers short {}, could {}, gathering {}, attacking {}, battle {}, besieged {}, held {}; garrison to beat ÷ room to gather: median {median:.2}, {} of {} months over 1",
+            b.unreachable, b.target_months, b.target_unreachable, b.room_short, b.soldiers_short, b.could, b.gathering, b.attacking, b.battle, b.besieged, b.held,
+            ratios.iter().filter(|&&r| r > 1.0).count(), ratios.len()
+        );
+        println!(
+            "    sieges begun {} (days needed {:?}), best progress {:.0}%, cut off by a peace {}, recruits raised while besieged {}, battles in it: held {} lost {}",
+            b.sieges, b.siege_need, 100.0 * b.best_progress, b.cut_by_peace, b.raised_under_siege, b.battles_held, b.battles_lost
+        );
+        for (k, v) in [("unreachable", b.unreachable), ("room short", b.room_short), ("soldiers short", b.soldiers_short), ("could", b.could), ("gathering", b.gathering), ("attacking", b.attacking), ("battle", b.battle), ("besieged", b.besieged), ("held", b.held)] {
+            *totals.entry(k).or_insert(0) += v as u64;
+        }
+        for (k, name) in STATUS.iter().enumerate() {
+            *target_totals.entry(name).or_insert(0) += b.target_status[k] as u64;
+        }
+        *totals.entry("sieges begun").or_insert(0) += b.sieges as u64;
+        *totals.entry("sieges cut off by a peace").or_insert(0) += b.cut_by_peace as u64;
+        *totals.entry("recruits raised while besieged").or_insert(0) += b.raised_under_siege;
+        *totals.entry("battles held").or_insert(0) += b.battles_held as u64;
+        *totals.entry("battles lost").or_insert(0) += b.battles_lost as u64;
     }
+    println!("  probe, all rich river cities together: {totals:?}");
+    println!("  probe, months a war named a rich river city its target, by what stood in the way: {target_totals:?}");
     let cities = mouth.iter().filter(|m| t[m.0].longest >= 10).count();
     println!("  {cities} rich river cities; story 2 {}", if passed { "passes" } else { "does not pass" });
     println!("  for comparison: {handed_all} provinces changed hands at a peace, {rich_handed} of them among the richest 2% at the time");
@@ -207,6 +488,7 @@ fn main() {
     let seeds: Vec<u64> = args.iter().skip(1).filter_map(|a| a.parse().ok()).collect();
     let seeds = if seeds.is_empty() { vec![21, 7, 1] } else { seeds };
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
-    let passed = seeds.iter().filter(|&&s| run(s, years, &set)).count();
+    let campaigns = args.iter().any(|a| a == "campaigns");
+    let passed = seeds.iter().filter(|&&s| run(s, years, &set, campaigns)).count();
     println!("story 2 passes on {passed} of {} seeds", seeds.len());
 }
