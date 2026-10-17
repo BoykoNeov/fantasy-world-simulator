@@ -287,3 +287,17 @@ fn treasuries_go_through_saves_going_back_and_scenario_files() {
     assert_eq!((back.day, back.fingerprint()), (sim.day, sim.fingerprint()));
     assert_eq!(back.world.realm_stock, sim.world.realm_stock);
 }
+
+#[test]
+fn a_file_from_before_taxes_keeps_the_capital_counted_three_times() {
+    // Realms as a scenario file wrote them before taxes were settings (no `taxes` table): the
+    // capital counted 3 times, as then, though new worlds count it once since step 7's checks.
+    let mut text = toml::to_string(&RealmParams::default()).unwrap();
+    let start = text.find("[taxes]").expect("the default names its taxes");
+    let end = text[start + 1..].find("\n[").map_or(text.len(), |k| start + 1 + k);
+    text.replace_range(start..end, "");
+    assert!(!text.contains("capital_weight"), "{text}");
+    let old: RealmParams = toml::from_str(&text).unwrap();
+    assert_eq!(old.taxes.capital_weight, 3.0);
+    assert_eq!(RealmParams::default().taxes.capital_weight, 1.0);
+}

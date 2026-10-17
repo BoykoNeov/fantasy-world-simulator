@@ -934,6 +934,12 @@ checks, which left every world the same, fingerprint for fingerprint:
 | Markets, year 5 (14 wars) | 5.07 ms | 3.43 ms | (markets alone: 1.89 ms) |
 | Without realms, rulers, diplomacy and armies | 0.17 ms | 0.17 ms | |
 
+Those were taken before capitals were counted once in spending and besieged like any province (the
+final defaults, which change the worlds). With the final defaults, timed again later on a quieter
+machine (the world without the step-7 parts then cost 0.086 ms): year 40 (25 wars going on) 2.15 ms,
+over the budget; year 100 (13 wars) 1.46 ms; year 40 on all cores, 1.63 ms of processor time summed
+over the threads. Capitals falling brings more fighting and planning; the cost follows the wars.
+
 What it was: the engine around the armies more than the armies. Delivering a day's events watched
 every module's fields (now only those of the modules receiving events); every army entry (numbers
 are never reused, so they only grow: 43,000 at year 10, 71,000 at 60, about 17,000 with soldiers)

@@ -12,4 +12,4 @@
 when = ["realms=basic"]
 problem = "stuck_at_top"
 field = "province.unrest"
-note = "Unrest stays at the line (1,000) while a province that has risen up, or can't rise (a capital, occupied land), goes on starving: the uprising lasts as long as the hunger. Each test world gets a drought, so famines last months. Found at step 7's checks (Oct 17), when realms first joined the tester; the rule as designed (unrest halves in two quiet years)."
+note = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
