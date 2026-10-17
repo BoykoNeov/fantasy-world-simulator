@@ -374,8 +374,18 @@ pub static GROUPS: &[Group] = &[
     Group {
         title: "Research",
         at: "modules.research",
-        help: "Realms study and learn techs from a tree; bigger realms and able rulers learn faster, and knowledge spreads from neighbours and trade partners.",
-        specs: &[],
+        help: "Realms study and learn techs from a tree, one at a time, each once they know the techs it needs. Bigger realms and able rulers learn faster, and a tech that neighbours and trade partners know is cheaper. In a world with coins, scholars are paid wages from the treasury. For now knowledge does nothing else: what techs do comes later.",
+        specs: &[
+            live("modules.research.speed", "Study speed", "Years of a tech's cost that a middle-sized realm (by people, against the other living realms) with an ordinary ruler studies in a year. Raise it and every realm learns faster; at 0 nobody learns anything.", 0.0, 10.0, "years a year"),
+            live("modules.research.size_power", "Bigger realms learn faster", "A realm studies as fast as its people against the middle realm's, to this power: 0, every realm alike; 0.5, a realm with four times the people studies twice as fast; 1, in proportion to its people.", 0.0, 1.0, "power"),
+            live("modules.research.size_cap", "Fastest big realm", "However big, a realm studies at most this many times as fast as the middle realm. Lower it to keep the biggest realms from racing ahead; 1 makes no realm faster than the middle one.", 1.0, 100.0, "times"),
+            live("modules.research.ruler_effect", "Rulers' ability", "A ruler of the highest ability studies this share faster, one of the lowest this share slower, an ordinary one (or none) neither. 0: rulers make no difference.", 0.0, 1.0, "share"),
+            live("modules.research.neighbour_discount", "Learning from neighbours", "A tech that every neighbour (and trade partner) knows costs this share less; one that some of them know, in proportion. Higher: knowledge spreads faster and realms keep closer together. 0: every realm learns alone.", 0.0, 0.95, "share"),
+            live("modules.research.trade_weight", "Learning from trade", "How much a trade partner (a realm traded with across the border last month) counts against a neighbour's 1 in that share. 0: trade passes on no knowledge. A world without trade has no partners.", 0.0, 10.0, "weight"),
+            live("modules.research.scholar_share", "Scholars", "In a world with coins, the share of the people who are scholars and are paid wages. More scholars cost the treasury more; they don't study faster (study speed and the realm's size set that). 0: no wages, study is free.", 0.0, 0.1, "share"),
+            live("modules.research.wage", "Scholars' wage", "Coins a scholar is paid a year from the treasury, a twelfth each month. Unpaid scholars don't study, so a realm short of coins learns slower: wages are paid after the realm's own spending, sharing what is left with its other lesser payments (such as soldiers' bounties). 0: study is free.", 0.0, 10_000.0, "coins a year"),
+            live("modules.research.techs.*.years", "years of study", "What this tech costs: years of study for a middle-sized realm with an ordinary ruler, before neighbours make it cheaper.", 0.1, 1000.0, "years"),
+        ],
     },
     // --- end of research ---
     // --- Culture ---
@@ -433,6 +443,9 @@ pub static LEFT_OUT: &[(&str, &str)] = &[
     // --- Logistics and support ---
     // --- end of logistics ---
     // --- Research ---
+    ("modules.research.fields", "the fields of knowledge are names: part of the research tree's content"),
+    ("modules.research.techs.*.field", "which field a tech is in: part of the research tree's content"),
+    ("modules.research.techs.*.needs", "which techs a tech needs first: part of the research tree's content"),
     // --- end of research ---
     // --- Culture ---
     // --- end of culture ---

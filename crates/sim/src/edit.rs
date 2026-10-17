@@ -310,7 +310,7 @@ impl Edit {
             }
             // Checked by the modules that carry them out ([`crate::module::Module::check_edit`]);
             // with those off, there is nothing to set.
-            Edit::SetTech { .. } => Err("no module keeps realms' knowledge".into()),
+            Edit::SetTech { realm, .. } => living(w, realm),
             Edit::SetCulture { .. } | Edit::NewCulture { .. } => Err("no module keeps cultures".into()),
         }
     }
