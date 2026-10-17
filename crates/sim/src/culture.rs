@@ -484,9 +484,28 @@ impl Assimilation {
         let field = known("pop.culture");
         // (culture, own people, people next door counted by their fade)
         let mut cand: Vec<(u32, u64, f64)> = Vec::new();
-        for p in 0..counts.provinces() {
-            let total = counts.total(p);
+        let n = counts.provinces();
+        let totals: Vec<u64> = (0..n).map(|p| counts.total(p)).collect();
+        // The one culture of a province that has only one, NONE otherwise.
+        let only: Vec<u32> = (0..n).map(|p| counts.only(p)).collect();
+        for p in 0..n {
+            let total = totals[p];
             if total == 0 || split[p] {
+                continue;
+            }
+            let owner = w.owner.get(p).copied().unwrap_or(NONE);
+            let ruler = if owner != NONE && w.realms.alive(owner) { w.realm_culture.get(owner as usize).copied().unwrap_or(NONE) } else { NONE };
+            // Most provinces are all of one culture, ruled by it or by nobody, among neighbours all
+            // of it: nobody there has anything to take up.
+            let c = only[p];
+            if c != NONE
+                && (ruler == NONE || ruler == c)
+                && w.routes.of(p as u32).all(|l| {
+                    let q = l.other(p as u32) as usize;
+                    l.days().is_none() || q >= n || totals[q] == 0 || only[q] == c
+                })
+                && !cx.traced(p as u32)
+            {
                 continue;
             }
             cand.clear();
@@ -495,10 +514,10 @@ impl Assimilation {
             for l in w.routes.of(p as u32) {
                 let Some(days) = l.days() else { continue };
                 let q = l.other(p as u32) as usize;
-                if q >= counts.provinces() || counts.total(q) == 0 {
+                if q >= n || totals[q] == 0 {
                     continue;
                 }
-                next_door += counts.total(q);
+                next_door += totals[q];
                 let fade = (-(days as f64) / pr.neighbour_half_days).exp2();
                 for (c, x) in counts.of(q) {
                     let c = c as u32;
@@ -508,8 +527,6 @@ impl Assimilation {
                     }
                 }
             }
-            let owner = w.owner.get(p).copied().unwrap_or(NONE);
-            let ruler = if owner != NONE && w.realms.alive(owner) { w.realm_culture.get(owner as usize).copied().unwrap_or(NONE) } else { NONE };
             if ruler != NONE && (ruler as usize) < MOST && !cand.iter().any(|e| e.0 == ruler) {
                 cand.push((ruler, 0, 0.0));
             }
@@ -599,6 +616,11 @@ impl Counts {
 
     fn total(&self, p: usize) -> u64 {
         self.of(p).map(|e| e.1).sum()
+    }
+
+    /// The province's one culture, if it has exactly one; [`NONE`] otherwise.
+    fn only(&self, p: usize) -> u32 {
+        if self.end[p] == self.first[p] + 1 { self.cul[self.first[p] as usize] as u32 } else { NONE }
     }
 
     fn people_of(&self, p: usize, c: u32) -> u64 {

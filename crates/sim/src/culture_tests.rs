@@ -333,3 +333,41 @@ fn foreign_share_counts_people_not_of_their_realms_culture() {
     off.modules.culture = None;
     assert!(foreign_share(&sim(&off).world).iter().all(|&x| x == 0));
 }
+
+/// Culture's own cost on a month-start day of a large world (5,000 provinces) with realms and
+/// wars, a decade in: the module's tick alone, timed many times on copies of the same day. Run it
+/// by hand: `cargo test --release -p sim culture_speed -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn culture_speed_on_a_large_world() {
+    use crate::module::{Ctx, Module, Outbox, Slot};
+    let mut c = Config::new(WorldParams::preset(crate::world::Size::Large, 21));
+    c.modules.culture = Some(CultureParams::default());
+    let mut s = Sim::new(&c).unwrap();
+    s.run_to_year(11);
+    let time = |s: &Sim, params: CultureParams, what: &str| {
+        let k = s.modules.iter().position(|m| m.manifest().slot == Slot::Culture).unwrap();
+        let state = s.modules[k].save_state();
+        let goods = s.world.goods.clone();
+        let (mut times, mut asked) = (Vec::new(), 0);
+        for _ in 0..30 {
+            let mut w = s.world.clone();
+            let mut m = crate::culture::Assimilation::new(params.clone());
+            m.load_state(&state).unwrap();
+            let mut out = Outbox::default();
+            let mut cx = Ctx { day: s.day, seed: w.params.seed, calendar: &s.calendar, goods: &goods, slot: Slot::Culture, out: &mut out, trace: None };
+            let t = std::time::Instant::now();
+            m.tick(&mut w, &mut cx);
+            times.push(t.elapsed().as_secs_f64() * 1000.0);
+            asked = out.requests.len();
+        }
+        times.sort_by(f64::total_cmp);
+        println!("{what}: {:.3} ms (fastest {:.3}), {asked} shift requests", times[times.len() / 2], times[0]);
+    };
+    let settled = s.world.province_population().iter().filter(|&&x| x > 0).count();
+    println!("{} provinces ({settled} settled), {} pop rows", s.world.provinces.count, s.world.pops.size.len());
+    time(&s, CultureParams::default(), "a year's start (splits looked for)");
+    time(&s, CultureParams { per_year: 0.0, splits: None, ..CultureParams::default() }, "  of which bookkeeping alone");
+    s.run_days(31);
+    time(&s, CultureParams::default(), "another month's start");
+}
