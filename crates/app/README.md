@@ -112,14 +112,18 @@ What exists:
   - Realm numbers are never blended between days: realm colours, occupiers and unrest show the
     day on screen.
   - The inspector opens with the selected province's realm: its colour and name, its capital
-    (click to go there, and so to its page), its provinces and people, its treasury (under
-    markets), the realm it broke away from, provinces in uprising and held by enemies; its ruler
+    (click to go there, and so to its page), its provinces and people, its treasury and the tolls it
+    collected last month (under markets, from the last month's trade record: none shown in a world
+    just opened until a month's trade runs), the realm it broke away from, provinces in uprising
+    and held by enemies; its ruler
     (age, traits, since when and how they came to the throne) and heir; its wars and truces (with
     a button to go to the other realm); earlier rulers; and what happened to it (successions, wars,
     peace, uprisings, breakaways). The province's own values say "occupied by" a realm by name,
     "calm" or "risen up", and unrest as "N of 1,000 toward an uprising".
   - Realms and rulers are named everywhere the inspector and the event log speak of them
-    (`inspector::Names`), and the log can filter by Realms, Characters and Diplomacy.
+    (`inspector::Names`), and the log can filter by Realms, Characters and Diplomacy. The monthly
+    trade between two realms ("X sold N coins' worth of goods to Y last month, and bought M coins'
+    worth") has its words, but isn't kept in the event log (hundreds a month).
   - Hovering says which realm owns a province, who occupies it, and how restless it is.
   - The Modules section lists the realms, rulers and wars versions running. They aren't among the
     combination tester's choices until step 7's checks, so a world running them, or a new world

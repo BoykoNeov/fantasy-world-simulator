@@ -685,13 +685,16 @@ Loads refuse other format versions,
   - A toll owed to a realm dissolved that same day (the copy still shows it) goes into its
     treasury, and Realms' monthly sweep moves a dissolved realm's coins to its last capital: dead
     realms held no coins at any decade's end below.
-  - **Measured** (Oct 17, `examples/border_trade.rs 21 long 150`: story 1's world, markets, unrest,
+  - **Measured** (Oct 17, `examples/border_trade.rs 21 long|cold 150`: story 1's world, markets, unrest,
     rulers, armies, "treaties", 150 years, against the same world with the four settings off).
     Tolls bring in 0.8% of what taxes do (0.6–1.2% by decade): trade is small beside the coins
     provinces hold, and an eighth of it crosses a border. Treasuries stay at 9–10% of their land's
     coins. 13% of trade's worth crossed a border before, 12.6% now; trade between enemies was
     0.3–2.1% and is now none. Wars: 187 declared against 216, 102 for riches against 113, of which
-    63% aimed at a capital against 77% (warmer opinions between trading partners). Starved 7.45
+    63% aimed at a capital against 77%. With tolls and war stopping trade but no warming (`cold`):
+    210 wars, 122 for riches, 66% at a capital. So the fewer wars come with trade warming opinions,
+    and the fewer aimed at capitals already with tolls alone; one seed of a world where small
+    changes grow, so a sign, not a measure. Starved 7.45
     per 1,000 a year against 7.52, 24 realms at the end both ways. Capitals hold 22–33% of the
     provinces' coins (22–34% before). Story 2's shape can't be judged here: provinces among the
     richest 2% changed hands at a peace twice in 150 years before (trade the year after 71% of the

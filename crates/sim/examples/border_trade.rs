@@ -14,7 +14,10 @@
 //! twice from the same world: as it is, and with tolls and war stopping trade switched off. Run it
 //! with `RAYON_NUM_THREADS=1` to time one worker thread.
 //!
-//! cargo run --release -p sim --example border_trade -- [seed] [long|time] [years]
+//! `cold` runs only the world as it runs now with trade warming no opinion, to tell what the
+//! warming does from what tolls and war stopping trade do.
+//!
+//! cargo run --release -p sim --example border_trade -- [seed] [long|cold|time] [years]
 
 use sim::config::Config;
 use sim::diplomacy::{TreatyParams, WarParams};
@@ -64,10 +67,17 @@ struct Decade {
     at_capitals: usize,
 }
 
-fn long(seed: u64, years: i64) {
-    for untolled in [true, false] {
-        let mut sim = Sim::new(&config(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 }, true, untolled)).unwrap();
-        println!("{}:", if untolled { "before (no tolls, war stops no trade, trade warms no opinion)" } else { "now" });
+fn long(seed: u64, years: i64, cold: bool) {
+    // `cold`: only the world as it runs now but with trade warming no opinion, to tell what the
+    // warming does from what tolls and war stopping trade do.
+    let runs: &[bool] = if cold { &[false] } else { &[true, false] };
+    for &untolled in runs {
+        let mut c = config(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 }, true, untolled);
+        if cold {
+            c.modules.diplomacy.as_mut().unwrap().treaties.as_mut().unwrap().trade_opinion = 0.0;
+        }
+        let mut sim = Sim::new(&c).unwrap();
+        println!("{}:", if untolled { "before (no tolls, war stops no trade, trade warms no opinion)" } else if cold { "now, but trade warms no opinion" } else { "now" });
         let start = sim.calendar.date(0).year;
         let n = sim.world.provinces.count;
         // Each province's trade (worth in and out) for each of the last 12 months.
@@ -226,6 +236,6 @@ fn main() {
     let seed: u64 = args.first().map_or(21, |s| s.parse().expect("seed"));
     match args.get(1).map_or("long", |s| s.as_str()) {
         "time" => time(seed),
-        _ => long(seed, args.get(2).map_or(150, |s| s.parse().expect("years"))),
+        mode => long(seed, args.get(2).map_or(150, |s| s.parse().expect("years")), mode == "cold"),
     }
 }
