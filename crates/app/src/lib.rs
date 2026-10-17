@@ -9,4 +9,5 @@ pub mod inspector;
 pub mod layers;
 pub mod playback;
 pub mod projection;
+pub mod settings_ui;
 pub mod wobble;

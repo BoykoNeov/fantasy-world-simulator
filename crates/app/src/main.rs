@@ -36,6 +36,7 @@ use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
 use app::inspector::{self, group, LogEntry, Names, RealmNames, Source};
 use app::layers::{self, ProvinceView};
 use app::playback::{Change, Clock, DayState, Frame, FromSim, MapState, Rate, Speed, Status, Worker};
+use app::settings_ui::{self, Show};
 use app::projection::{Camera, Projection};
 use app::wobble::ProvinceLookup;
 use eframe::egui;
@@ -44,7 +45,7 @@ use sim::branch::Timelines;
 use sim::calendar::Calendar;
 use sim::combos::{Table, Verdict};
 use sim::config::{Config, CHOICES};
-use sim::edit::{Edit, PopValues};
+use sim::edit::{Edit, PopValues, SettingChange};
 use sim::events::Event;
 use sim::fields::{FieldId, Tier};
 use sim::grid::NONE;
@@ -56,7 +57,7 @@ use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 /// An edit a scripted run makes through the window, as a player would.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum LiveEdit {
     Raise { lon: f64, lat: f64, radius_km: f64, metres: f32 },
     /// Half of a province (`None`: the one that grows the most food) becomes a new one, which is
@@ -64,6 +65,8 @@ enum LiveEdit {
     Split(Option<u32>),
     /// Take back the last change.
     Undo,
+    /// Change a setting while the world runs.
+    Set(String, f64),
 }
 
 /// Where a drought poke from the command line goes.
@@ -97,6 +100,10 @@ struct Options {
     live_edits: Vec<LiveEdit>,
     /// A new world made through the window once it is open (scripted runs): see `--remake`.
     remake: Option<String>,
+    /// Settings changed in the world made (`--set KEY=VALUE`).
+    set: Vec<(String, f64)>,
+    /// Section headers to open (scripted runs): "settings", "new-world" and "new-world-settings".
+    open_sections: Vec<String>,
     bench: bool,
     out_dir: String,
     tag: String,
@@ -126,6 +133,8 @@ impl Options {
             open: None,
             live_edits: Vec::new(),
             remake: None,
+            set: Vec::new(),
+            open_sections: Vec::new(),
             bench: false,
             out_dir: "W:/temp/claude/fantasymap-mapview/bench".into(),
             tag: "default".into(),
@@ -223,6 +232,18 @@ impl Options {
                     o.live_edits.push(LiveEdit::Raise { lon: x[0], lat: x[1], radius_km: x[2], metres: x[3] as f32 });
                 }
                 "--undo" => o.live_edits.push(LiveEdit::Undo),
+                "--set" | "--live-set" => {
+                    let which = args[i].clone();
+                    let kv = value(&mut i);
+                    let (key, x) = kv.split_once('=').unwrap_or_else(|| panic!("{which} {kv}: expected KEY=VALUE"));
+                    let x: f64 = x.parse().unwrap_or_else(|_| panic!("{which} {kv}: the value is a number"));
+                    if which == "--set" {
+                        o.set.push((key.into(), x));
+                    } else {
+                        o.live_edits.push(LiveEdit::Set(key.into(), x));
+                    }
+                }
+                "--open-section" => o.open_sections.push(value(&mut i)),
                 "--split" => {
                     let v = value(&mut i);
                     o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
@@ -275,6 +296,10 @@ impl Options {
             o.params.provinces = p;
         }
         o.config.world = o.params.clone();
+        for (key, x) in &o.set {
+            sim::settings::set(&mut o.config, key, *x).unwrap_or_else(|e| panic!("--set {key}={x}: {e}"));
+        }
+        o.params = o.config.world.clone();
         o
     }
 }
@@ -381,13 +406,16 @@ fn tested_on(table: &Result<Table, String>) -> String {
 /// couldn't be made.
 type Made = Result<(Timelines, MapData, f64), String>;
 
-/// The New world section: the size, seed, years run first and module versions picked, and a
-/// world being made from them.
+/// The New world section: the size, seed, years run first, module versions and settings picked, and
+/// a world being made from them.
 struct NewWorld {
     size: Size,
     seed: u64,
     years: i64,
-    modules: sim::config::ModuleConfig,
+    /// The world to make: its world settings, versions and module settings (the seed is `seed`).
+    config: Config,
+    /// Why the last setting typed was refused.
+    refused: Option<String>,
     /// "make it" was pressed once: the next press replaces the world.
     confirm: bool,
     /// A world being made on another thread, since when.
@@ -397,16 +425,23 @@ struct NewWorld {
 }
 
 impl NewWorld {
-    /// Picks that start as the world the window was started with.
-    fn like(opts: &Options, modules: &sim::config::ModuleConfig) -> NewWorld {
-        NewWorld { size: opts.size, seed: opts.params.seed, years: opts.years, modules: modules.clone(), confirm: false, making: None, failed: None }
+    /// Picks that start as the world shown: `config`, with the settings in force on the day shown.
+    fn like(opts: &Options, config: &Config) -> NewWorld {
+        let size = [Size::Small, Size::Medium, Size::Large, Size::Huge].into_iter().find(|&z| WorldParams::preset(z, 0).n == config.world.n).unwrap_or(opts.size);
+        NewWorld { size, seed: config.world.seed, years: opts.years, config: config.clone(), refused: None, confirm: false, making: None, failed: None }
+    }
+
+    /// A world size: the map detail and province count it has.
+    fn set_size(&mut self, size: Size) {
+        let p = WorldParams::preset(size, 0);
+        (self.size, self.config.world.n, self.config.world.provinces) = (size, p.n, p.provinces);
     }
 
     /// Make the world picked on another thread: generate it, run it its years, and build its
     /// picture. `done` is called when it is ready.
     fn make(&mut self, done: impl Fn() + Send + 'static) {
-        let mut config = Config::new(WorldParams::preset(self.size, self.seed));
-        config.modules = self.modules.clone();
+        let mut config = self.config.clone();
+        config.world.seed = self.seed;
         let years = self.years;
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
@@ -488,6 +523,13 @@ struct MapApp {
     table: Result<Table, String>,
     /// The New world section: what is picked, and a world being made.
     new_world: NewWorld,
+    /// The configuration the world shown was made with (its settings in force are the day's).
+    config: Config,
+    /// Settings changed in the Settings section and not yet applied.
+    live_draft: Option<Config>,
+    /// How many settings in force differ from the defaults, for the settings it was worked out for
+    /// (by address): working it out goes through every setting.
+    changed_count: (usize, usize),
     /// The trade record and map the trade lines on the GPU were built for, and lines waiting for
     /// the next paint callback to upload them.
     trade_lines_for: Option<(usize, usize)>,
@@ -589,7 +631,8 @@ impl MapApp {
 
         let table = Table::shipped();
         let WorldInfo { owners, modules, coin_columns, price_good, trades } = WorldInfo::of(sim, &table, opts.good.as_deref());
-        let new_world = NewWorld::like(&opts, &sim.config.modules);
+        let new_world = NewWorld::like(&opts, &Config { modules: (*sim.settings).clone(), ..sim.config.clone() });
+        let config = sim.config.clone();
         let frame = Frame::now(sim, 0);
         let first_day = sim.day;
         let selected = opts.select.map(|s| s.unwrap_or(breadbasket(&sim.world) as u32));
@@ -635,6 +678,9 @@ impl MapApp {
             trades,
             table,
             new_world,
+            config,
+            live_draft: None,
+            changed_count: (0, 0),
             trade_lines_for: None,
             pending_trade: None,
             realm_borders: data.realm_borders.clone(),
@@ -688,6 +734,7 @@ impl MapApp {
         (self.owners, self.modules, self.coin_columns, self.price_good, self.trades) = (owners, modules, coin_columns, price_good, trades);
         self.geo = sim.world.clone();
         self.calendar = sim.calendar.clone();
+        (self.config, self.live_draft) = (sim.config.clone(), None);
         self.clock = Clock::new(sim.day);
         self.run_to_year = sim.calendar.date(sim.day).year + 5;
         self.log = sim.event_log.entries.iter().map(|p| LogEntry::of_event(p, &sim.world.goods)).collect();
@@ -920,6 +967,7 @@ impl MapApp {
                 Edit::Split { cells: cells[..cells.len() / 2].to_vec() }
             }
             LiveEdit::Undo => return self.change(Change::Undo),
+            LiveEdit::Set(key, value) => Edit::Settings { changes: vec![SettingChange { key, value }] },
         };
         self.send_edit(Ok(edit));
     }
@@ -1105,6 +1153,7 @@ impl MapApp {
         ui.separator();
 
         self.modules_section(ui);
+        self.settings_section(ui);
         self.new_world_section(ui);
         ui.separator();
 
@@ -1216,12 +1265,73 @@ impl MapApp {
     }
 
     /// The versions running, and the combination tester's verdict on them.
-    fn modules_section(&self, ui: &mut egui::Ui) {
+    fn modules_section(&mut self, ui: &mut egui::Ui) {
+        let at = Arc::as_ptr(&self.shown_state.settings) as usize;
+        if self.changed_count.0 != at {
+            let now = self.settings_now();
+            self.changed_count = (at, sim::settings::changed(&now, &sim::settings::defaults_for(&now)).len());
+        }
         let ModulesInfo { versions, verdict, tested_on } = &self.modules;
         ui.label("Modules");
         let line: Vec<String> = versions.iter().map(|(slot, v)| format!("{slot} {v}")).collect();
         ui.small(line.join(" · "));
         Self::verdict_line(ui, verdict, tested_on, "running");
+        Self::changed_note(ui, self.changed_count.1);
+    }
+
+    /// The configuration in force on the day shown: the world's, with its settings of that day.
+    fn settings_now(&self) -> Config {
+        Config { modules: (*self.shown_state.settings).clone(), ..self.config.clone() }
+    }
+
+    /// How many settings differ from their defaults: the combination tester ran only the defaults.
+    fn changed_line(ui: &mut egui::Ui, c: &Config) {
+        Self::changed_note(ui, sim::settings::changed(c, &sim::settings::defaults_for(c)).len());
+    }
+
+    fn changed_note(ui: &mut egui::Ui, n: usize) {
+        if n > 0 {
+            ui.small(format!("{n} setting{} changed from the defaults; the combination tester ran only default settings.", if n == 1 { "" } else { "s" }));
+        }
+    }
+
+    /// The settings the world runs with on the day shown, to change from that day on.
+    fn settings_section(&mut self, ui: &mut egui::Ui) {
+        let now = self.settings_now();
+        let open = self.opts.open_sections.iter().any(|s| s == "settings");
+        let mut apply = None;
+        egui::CollapsingHeader::new("Settings").default_open(open).show(ui, |ui| {
+            ui.small("What the world runs with on the day shown, each with what it does. A change applies from that day on and goes into the timeline like an edit: undo takes it back, and on an earlier day it starts a new timeline. Settings that shape the map or the start are under New world.");
+            let mut edited = self.live_draft.clone().unwrap_or_else(|| now.clone());
+            let defaults = sim::settings::defaults_for(&now);
+            if let Some(e) = settings_ui::panel(ui, "live", &mut edited, &defaults, Show::Live, open) {
+                self.notice = Some((e, Instant::now()));
+            }
+            let changes: Vec<SettingChange> = sim::settings::changed(&edited, &now)
+                .into_iter()
+                .filter(|i| i.spec.when == sim::settings::When::Live)
+                .map(|i| SettingChange { key: i.key, value: i.value })
+                .collect();
+            self.live_draft = (!changes.is_empty()).then_some(edited);
+            if !changes.is_empty() {
+                ui.horizontal(|ui| {
+                    if ui.button(format!("apply {} change{}", changes.len(), if changes.len() == 1 { "" } else { "s" })).clicked() {
+                        apply = Some(true);
+                    }
+                    if ui.button("discard").clicked() {
+                        apply = Some(false);
+                    }
+                });
+            }
+            if apply == Some(true) {
+                apply = None;
+                self.live_draft = None;
+                self.send_edit(Ok(Edit::Settings { changes }));
+            }
+        });
+        if apply == Some(false) {
+            self.live_draft = None;
+        }
     }
 
     /// The combination tester's verdict on a set of versions, in colour, with what it found. `id`
@@ -1257,11 +1367,17 @@ impl MapApp {
     /// found for those versions, shown as they are picked.
     fn new_world_section(&mut self, ui: &mut egui::Ui) {
         let nw = &mut self.new_world;
-        egui::CollapsingHeader::new("New world").default_open(self.opts.remake.is_some()).show(ui, |ui| {
+        let opened = |what: &str| self.opts.open_sections.iter().any(|s| s == what);
+        let open = self.opts.remake.is_some() || opened("new-world");
+        let open_settings = opened("new-world-settings");
+        egui::CollapsingHeader::new("New world").default_open(open || open_settings).show(ui, |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("new world size").selected_text(format!("{:?}", nw.size)).show_ui(ui, |ui| {
                     for z in [Size::Small, Size::Medium, Size::Large, Size::Huge] {
-                        ui.selectable_value(&mut nw.size, z, format!("{z:?}"));
+                        if ui.selectable_label(nw.size == z, format!("{z:?}")).clicked() {
+                            nw.set_size(z);
+                            nw.confirm = false;
+                        }
                     }
                 });
                 ui.label("seed");
@@ -1275,28 +1391,62 @@ impl MapApp {
             egui::Grid::new("new world modules").num_columns(2).show(ui, |ui| {
                 for &(slot, versions) in CHOICES {
                     ui.label(inspector::slot_name(slot));
-                    let mut v = nw.modules.choice(slot).expect("a slot with a choice");
+                    let mut v = nw.config.modules.choice(slot).expect("a slot with a choice");
                     egui::ComboBox::from_id_salt(("new world version", inspector::slot_name(slot))).selected_text(v).show_ui(ui, |ui| {
                         for &x in versions {
                             ui.selectable_value(&mut v, x, x);
                         }
                     });
-                    if Some(v) != nw.modules.choice(slot) {
-                        nw.modules.set_choice(slot, v).expect("a version offered for the slot");
+                    if Some(v) != nw.config.modules.choice(slot) {
+                        nw.config.modules.set_choice(slot, v).expect("a version offered for the slot");
+                        nw.confirm = false;
+                    }
+                    ui.end_row();
+                }
+                // Realms, rulers, diplomacy and armies: not among the tester's choices yet.
+                for &(name, versions) in settings_ui::STEP7 {
+                    ui.label(name).on_hover_text("not yet tried by the combination tester");
+                    let mut v = settings_ui::step7_choice(&nw.config.modules, name);
+                    egui::ComboBox::from_id_salt(("new world version", name)).selected_text(v).show_ui(ui, |ui| {
+                        for &x in versions {
+                            ui.selectable_value(&mut v, x, x);
+                        }
+                    });
+                    if v != settings_ui::step7_choice(&nw.config.modules, name) {
+                        settings_ui::set_step7(&mut nw.config.modules, name, v);
                         nw.confirm = false;
                     }
                     ui.end_row();
                 }
             });
+            ui.small("Rulers, diplomacy and armies need realms; realms choosing war and peace need armies. Picking one switches on what it needs.");
+            egui::CollapsingHeader::new("settings").id_salt("new world settings").default_open(open_settings).show(ui, |ui| {
+                ui.small("Every setting of the world to make, with what it does. Those \"fixed once made\" shape the map or the start; the others can also be changed later, while the world runs (Settings, above).");
+                let defaults = sim::settings::defaults_for(&nw.config);
+                if ui.button("all back to the defaults").clicked() {
+                    nw.config.modules = defaults.modules.clone();
+                    nw.config.world = defaults.world.clone();
+                    nw.confirm = false;
+                }
+                let before = nw.config.clone();
+                nw.refused = settings_ui::panel(ui, "new world", &mut nw.config, &defaults, Show::All, open_settings).or(nw.refused.take().filter(|_| nw.config == before));
+                if nw.config != before {
+                    nw.confirm = false;
+                }
+                if let Some(e) = &nw.refused {
+                    ui.colored_label(egui::Color32::from_rgb(180, 50, 40), e);
+                }
+            });
             // What the tester found for these versions, as they are picked.
-            // Realms, rulers and wars carry over from the world shown; the tester never ran them.
-            let untested = nw.modules.realms.is_some() || nw.modules.characters.is_some() || nw.modules.diplomacy.is_some();
+            let m = &nw.config.modules;
+            let untested = m.realms.is_some() || m.characters.is_some() || m.diplomacy.is_some() || m.warfare.is_some();
             let verdict = match untested {
                 true => Ok(None),
-                false => self.table.as_ref().map(|t| t.verdict_for(&nw.modules)).map_err(|e| e.clone()),
+                false => self.table.as_ref().map(|t| t.verdict_for(m)).map_err(|e| e.clone()),
             };
             let refused = matches!(verdict, Ok(Some((Verdict::Refused, _))));
             Self::verdict_line(ui, &verdict, &tested_on(&self.table), "new world");
+            Self::changed_line(ui, &nw.config);
             if let Some((since, _)) = &nw.making {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -2052,17 +2202,17 @@ impl eframe::App for MapApp {
                 {
                     let nw = &mut self.new_world;
                     let parts: Vec<&str> = text.splitn(4, ',').collect();
-                    nw.size = match parts[0] {
+                    nw.set_size(match parts[0] {
                         "small" => Size::Small,
                         "medium" => Size::Medium,
                         "large" => Size::Large,
                         "huge" => Size::Huge,
                         other => panic!("--remake: unknown size {other}"),
-                    };
+                    });
                     nw.seed = parts.get(1).expect("--remake SIZE,SEED,YEARS[,SLOT=VERSION...]").parse().expect("--remake seed");
                     nw.years = parts.get(2).expect("--remake SIZE,SEED,YEARS[,SLOT=VERSION...]").parse().expect("--remake years");
                     if let Some(m) = parts.get(3) {
-                        sim::combos::choose(&mut nw.modules, m).unwrap_or_else(|e| panic!("--remake: {e}"));
+                        sim::combos::choose(&mut nw.config.modules, m).unwrap_or_else(|e| panic!("--remake: {e}"));
                     }
                     let ctx = self.repaint.clone();
                     nw.make(move || ctx.request_repaint());

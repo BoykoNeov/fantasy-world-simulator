@@ -60,6 +60,8 @@ pub struct DayState {
     pub money_levels: Option<Vec<f64>>,
     /// Last month's trade ([`sim::markets::TradeRecord`]).
     pub trade: Arc<sim::markets::TradeRecord>,
+    /// The modules' settings in force ([`Sim::settings`]).
+    pub settings: Arc<sim::config::ModuleConfig>,
     pub map: Arc<MapState>,
 }
 
@@ -69,8 +71,9 @@ impl DayState {
             fields: sim.running_fields().map(|id| (id, sim.world.field(id))).collect(),
             last_change: sim.last_change.clone(),
             view: ProvinceView::now(sim),
-            money_levels: sim.config.modules.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
+            money_levels: sim.settings.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
             trade: sim.world.trade.clone(),
+            settings: sim.settings.clone(),
             map,
         }
     }
