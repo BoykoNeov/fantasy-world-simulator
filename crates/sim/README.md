@@ -645,6 +645,60 @@ Loads refuse other format versions,
     story 2's rich city is rarely taken. Speed (large world, one worker thread, `war_check ...
     time-treaties`): about 7 ms more on a month's first day under markets (0.24 ms a day averaged),
     below the noise on Economics v0.
+- **Trade and realms** (step 7; markets' trade and Diplomacy "treaties", `markets.rs`,
+  `diplomacy.rs`; tests in `markets.rs` and `border_trade_tests.rs`; `examples/border_trade.rs`).
+  Under Economics v0 nothing changes: it has no trade. Worlds without realms trade as before.
+  - **Reading the day's start** (`Manifest::reads_earlier`, `world::Earlier`). Markets reads who
+    owns, occupies and rises up in each province, which realms are dissolved, and the wars; but
+    Realms (taxes) and Diplomacy (wants) read markets' coins and stores, so plain reads would be a
+    loop. A manifest's `reads_earlier` lists fields it reads as they stood when the day began. The
+    engine copies them before the day's events are delivered, on a day a module that lists them is
+    due by its cadence, and the module reads the copy (`World::earlier`). They add no run-order
+    edge, so the run order is as before. The planner refuses a field read both ways, one the module
+    owns, an unknown one, and one with no owner and no default. The copy isn't saved or
+    fingerprinted: saves and checkpoints are taken between days, and the copy is made again when
+    the day runs (tested by saving, loading and going back on a month's first day on which a peace
+    hands land over).
+  - **Who a province trades as**: the enemy occupying it (the front cuts it off from its owner's
+    land), else its owner, else nobody (`markets::Borders`). Whether two realms are at war comes
+    from one rule, `diplomacy::enemies_in`, which Diplomacy and Warfare use too: a war goes on until
+    its peace, and a war with a dissolved realm counts as over.
+  - **War stops trade**: between provinces trading as realms at war, a way carries only what
+    `trade.war_stops` leaves (1, nothing, in `data/markets.toml`).
+  - **Tolls**: goods coming into a realm from outside it pay `trade.toll` (0.1) of the seller's
+    price, on top of the price and the carrying, into the treasury of the realm they enter. It is
+    counted in the gap a trade must beat (a gap that beats the carrying but not the carrying and
+    the toll carries nothing across a border, and does within a realm) and in the buyer's most
+    spent a month. None into land nobody owns, an enemy occupies or that has risen up, nor within a
+    realm. A toll is a move between two stores markets keeps, as taxes are, so it books no flow;
+    the day's trace says what each toll was, the trade record keeps each shipment's toll and each
+    realm's tolls, and the window's realm page shows the tolls a realm collected last month.
+  - **Trade warms opinions** (Diplomacy "treaties"): on the month's trade day markets sends one
+    `Trade` event for each pair of realms that traded across their border, with the worth each way
+    (routine changes, by the pair; not kept in the event log). The next day each of the two, at
+    peace and outside a truce, thinks better of the other by `trade_opinion` (0.5 a month) ×
+    the trade's worth against `trade_full` (1%) of the coins in its own land, at most the whole
+    0.5, up to peace's ceiling of 50. A pair with no relation yet gets one. "wars" ignores it.
+  - Each of the four settings is off when a scenario file doesn't name it, so files written before
+    make the same world: a realms, wars, armies and markets scenario written by the build before
+    (`tests/old_scenarios/realms_before_tolls`) comes out value for value.
+  - A toll owed to a realm dissolved that same day (the copy still shows it) goes into its
+    treasury, and Realms' monthly sweep moves a dissolved realm's coins to its last capital: dead
+    realms held no coins at any decade's end below.
+  - **Measured** (Oct 17, `examples/border_trade.rs 21 long 150`: story 1's world, markets, unrest,
+    rulers, armies, "treaties", 150 years, against the same world with the four settings off).
+    Tolls bring in 0.8% of what taxes do (0.6–1.2% by decade): trade is small beside the coins
+    provinces hold, and an eighth of it crosses a border. Treasuries stay at 9–10% of their land's
+    coins. 13% of trade's worth crossed a border before, 12.6% now; trade between enemies was
+    0.3–2.1% and is now none. Wars: 187 declared against 216, 102 for riches against 113, of which
+    63% aimed at a capital against 77% (warmer opinions between trading partners). Starved 7.45
+    per 1,000 a year against 7.52, 24 realms at the end both ways. Capitals hold 22–33% of the
+    provinces' coins (22–34% before). Story 2's shape can't be judged here: provinces among the
+    richest 2% changed hands at a peace twice in 150 years before (trade the year after 71% of the
+    year before) and never now. Story 1 under markets still passes on all three seeds (drought
+    realm: uprising after 1.4 years on seed 21, 2.0 on 3, a war for food after 1.0 on 7; nothing
+    without the drought). Speed (large world, one worker thread, the same month's first days run
+    twice from the same world): no measurable cost (69 ms against 70, 78 against 80).
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

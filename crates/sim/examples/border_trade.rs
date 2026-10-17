@@ -4,21 +4,23 @@
 //! for the years given, as it ran before trade across borders changed (no tolls, war stops no
 //! trade, trade warms no opinion) and as it runs now, and prints, each decade: tolls collected
 //! against taxes; the treasuries' share of the coins their land holds; the share of trade (by worth)
-//! that crosses a border, and the trade between realms at war; the capitals' share of the
+//! that crosses a border, and the trade between realms at war (each end as trade saw it: as the
+//! day began, occupied land as its occupier's); the capitals' share of the
 //! provinces' coins; and, for provinces among the richest 2% that change hands at a peace, their
 //! trade in the year before and the year after.
 //!
 //! `time` takes a large world under markets with realms (no unrest), rulers, armies and
-//! "treaties" after a year, and times a year of months' first days (the day trade runs) in two
-//! worlds alike but for tolls and war stopping trade. Run it with `RAYON_NUM_THREADS=1` to time one
-//! worker thread.
+//! "treaties" after a year, and times each month's first day (the day trade runs) for a year, run
+//! twice from the same world: as it is, and with tolls and war stopping trade switched off. Run it
+//! with `RAYON_NUM_THREADS=1` to time one worker thread.
 //!
 //! cargo run --release -p sim --example border_trade -- [seed] [long|time] [years]
 
 use sim::config::Config;
-use sim::diplomacy::{enemies, TreatyParams, WarParams};
+use sim::diplomacy::{TreatyParams, WarParams};
 use sim::events::Event;
 use sim::grid::NONE;
+use sim::markets::Borders;
 use sim::module::Slot;
 use sim::realms::RealmParams;
 use sim::requests::Cause;
@@ -91,16 +93,17 @@ fn long(seed: u64, years: i64) {
                 if w.trade.day != last_trade && !w.trade.shipments.is_empty() {
                     last_trade = w.trade.day;
                     d.tolls += w.trade.tolls.iter().map(|t| t.1).sum::<u64>();
-                    let foes = enemies(w);
+                    // Each end as trade saw it: as the day began, occupied land as its occupier's.
+                    let borders = Borders::read(&w.earlier, n);
                     let mut month = vec![0.0; n];
                     for s in &w.trade.shipments {
-                        let (a, b) = (w.owner[s.from as usize], w.owner[s.to as usize]);
+                        let (a, b) = (borders.trades_as[s.from as usize], borders.trades_as[s.to as usize]);
                         d.traded += s.coins;
                         month[s.from as usize] += s.coins;
                         month[s.to as usize] += s.coins;
                         if a != NONE && b != NONE && a != b {
                             d.across += s.coins;
-                            if foes[a as usize].contains(&b) {
+                            if borders.at_war(a, b) {
                                 d.enemies += s.coins;
                             }
                         }
@@ -178,18 +181,25 @@ fn long(seed: u64, years: i64) {
     }
 }
 
+/// The same day run twice from the same world, once as it runs now and once with tolls and war
+/// stopping trade switched off (a settings edit): each month's first day for a year, in turns.
 fn time(seed: u64) {
-    let mut sims: Vec<Sim> = [true, false].iter().map(|&untolled| Sim::new(&config(WorldParams::preset(Size::Large, seed), false, untolled)).unwrap()).collect();
-    let year = sims[0].calendar.days_per_year() as u64;
-    for s in &mut sims {
-        s.run_days(year);
-    }
+    let mut sim = Sim::new(&config(WorldParams::preset(Size::Large, seed), false, false)).unwrap();
+    sim.run_days(sim.calendar.days_per_year() as u64);
+    let off = sim::edit::Edit::Settings {
+        changes: ["modules.markets.trade.toll", "modules.markets.trade.war_stops"].iter().map(|k| sim::edit::SettingChange { key: k.to_string(), value: 0.0 }).collect(),
+    };
     let mut ms = [0.0f64; 2];
     let mut tolls = BTreeMap::new();
-    for _ in 0..12 {
-        for (k, s) in sims.iter_mut().enumerate() {
-            while !s.calendar.is_month_start(s.day) {
-                s.step_day();
+    let months = 12;
+    for m in 0..months {
+        while !sim.calendar.is_month_start(sim.day) {
+            sim.step_day();
+        }
+        for k in [m % 2, 1 - m % 2] {
+            let mut s = sim.fork();
+            if k == 0 {
+                s.edit(off.clone()).unwrap();
             }
             let t = std::time::Instant::now();
             s.step_day();
@@ -200,12 +210,13 @@ fn time(seed: u64) {
                 }
             }
         }
+        sim.step_day();
     }
     println!(
-        "large world, {} provinces: a month's first day takes {:.1} ms before, {:.1} ms with tolls and war stopping trade (12 months averaged); {} realms collected tolls",
-        sims[0].world.provinces.count,
-        ms[0] / 12.0,
-        ms[1] / 12.0,
+        "large world, {} provinces: a month's first day takes {:.1} ms without, {:.1} ms with tolls and war stopping trade (the same days, {months} months averaged); {} realms collected tolls",
+        sim.world.provinces.count,
+        ms[0] / months as f64,
+        ms[1] / months as f64,
         tolls.len()
     );
 }
