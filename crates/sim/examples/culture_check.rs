@@ -80,18 +80,22 @@ fn main() {
     let above = |sh: &[f64], upto: usize| sh.iter().take(upto).filter(|&&x| x > 0.01).count();
     let first = shares(&s);
     println!("at the start: {} cultures above 1% of the people; largest {:.1}%", above(&first, starting), 100.0 * first.iter().cloned().fold(0.0, f64::max));
-    println!("year | alive | >1% (of starting) | largest | not main | rows/prov (with people) | main changed | assimilated | splits | ms per month-start day");
+    println!("year | alive | >1% (of starting) | largest | not main | rows/prov (with people) | main changed | assimilated | splits | ms per month-start day / the day after");
 
-    let (mut assimilated, mut splits, mut month_ms, mut month_days) = (0u64, 0usize, 0.0f64, 0usize);
+    let (mut assimilated, mut splits, mut month_ms, mut after_ms, mut month_days) = (0u64, 0usize, 0.0f64, 0.0f64, 0usize);
     let end = s.calendar.year_start(years);
     let y0 = s.calendar.date(s.day).year;
     while s.day < end {
         let month = s.calendar.is_month_start(s.day);
+        let after = s.day > 0 && s.calendar.is_month_start(s.day - 1);
         let t = Instant::now();
         s.step_day();
         if month {
             month_ms += t.elapsed().as_secs_f64() * 1000.0;
             month_days += 1;
+        }
+        if after {
+            after_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
         assimilated += s.applied_today.iter().filter(|(r, _)| r.cause == Cause::Assimilated).map(|(_, g)| g).sum::<u64>();
         splits += s.delivered_today().iter().filter(|p| matches!(p.event, Event::CultureBorn { .. })).count();
@@ -115,7 +119,7 @@ fn main() {
             let changed = settled.iter().filter(|&&p| start.get(p).is_some_and(|&c| c != NONE && c != main[p])).count();
             let alive = w.cultures.died.iter().filter(|&&d| d == u64::MAX).count();
             println!(
-                "{:>4} | {:>5} | {:>3} ({:>3}) | {:>6.1}% | {:>7.2}% | {:>5.2} ({:>4.2}) | {:>11.1}% | {:>10.2}% | {:>6} | {:.3}",
+                "{:>4} | {:>5} | {:>3} ({:>3}) | {:>6.1}% | {:>7.2}% | {:>5.2} ({:>4.2}) | {:>11.1}% | {:>10.2}% | {:>6} | {:.3} / {:.3}",
                 date.year,
                 alive,
                 above(&sh, sh.len()),
@@ -127,9 +131,10 @@ fn main() {
                 100.0 * changed as f64 / settled.len().max(1) as f64,
                 100.0 * assimilated as f64 / total.max(1) as f64,
                 splits,
-                month_ms / month_days.max(1) as f64
+                month_ms / month_days.max(1) as f64,
+                after_ms / month_days.max(1) as f64
             );
-            (assimilated, month_ms, month_days) = (0, 0.0, 0);
+            (assimilated, month_ms, after_ms, month_days) = (0, 0.0, 0.0, 0);
         }
     }
     println!("problems: {:?}", s.problems);
