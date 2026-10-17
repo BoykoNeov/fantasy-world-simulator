@@ -165,6 +165,7 @@ static V1: Manifest = Manifest {
     tier: crate::fields::Tier::Character,
     cadence: Cadence::Monthly,
     reads: &["realm.capital"],
+    reads_earlier: &[],
     owns: &[
         "realm.ruler",
         "realm.heir",

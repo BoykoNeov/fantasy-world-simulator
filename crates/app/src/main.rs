@@ -1931,7 +1931,7 @@ impl MapApp {
             return;
         };
         let names = Names { world: w, realms: &self.realm_names.names };
-        let page = inspector::realm_page(&names, r, self.day(), &self.calendar, self.coin_columns.first().copied());
+        let page = inspector::realm_page(&names, r, self.day(), &self.calendar, self.coin_columns.first().copied(), &self.shown_state.trade);
         let mut go = None;
         ui.horizontal(|ui| {
             let [cr, cg, cb] = layers::realm_color(r, w.params.seed);

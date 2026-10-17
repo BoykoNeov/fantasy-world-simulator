@@ -301,11 +301,20 @@ pub fn at_war(w: &World, a: u32, b: u32) -> bool {
 /// Each realm's enemies today, sorted: for readers that ask about many pairs (trade along every
 /// way) and should work them out once.
 pub fn enemies(w: &World) -> Vec<Vec<u32>> {
-    let mut out = vec![Vec::new(); w.realms.count()];
     let wars = &w.wars;
-    for k in 0..wars.count() {
-        let (a, b) = (wars.attacker[k], wars.defender[k]);
-        if wars.ended[k] == NEVER && w.realms.alive(a) && w.realms.alive(b) {
+    enemies_in(&w.realms.capital, &wars.attacker, &wars.defender, &wars.ended)
+}
+
+/// [`enemies`] from the fields themselves: each realm's capital (`realm.capital`, which says which
+/// realms are dissolved) and the wars' `war.attacker`, `war.defender` and `war.ended`. The one rule
+/// for who is at war, for readers of the fields as the day began (trade) as for the rest: a war
+/// goes on until its peace, and a war with a dissolved realm counts as over.
+pub fn enemies_in(capital: &[u32], attacker: &[u32], defender: &[u32], ended: &[u64]) -> Vec<Vec<u32>> {
+    let alive = |r: u32| capital.get(r as usize).is_some_and(|&c| c != NONE);
+    let mut out = vec![Vec::new(); capital.len()];
+    for k in 0..attacker.len() {
+        let (a, b) = (attacker[k], defender[k]);
+        if ended[k] == NEVER && alive(a) && alive(b) {
             out[a as usize].push(b);
             out[b as usize].push(a);
         }
@@ -397,6 +406,19 @@ pub struct TreatyParams {
     pub held_target_weariness: f64,
     /// Both sides worn out within this of each other: nobody wins.
     pub tie: f64,
+    /// Trade warms opinions: at peace and outside a truce, a realm thinks up to this much better a
+    /// month of a realm it trades with, on top of peace's rise and up to the same ceiling. 0 in
+    /// scenario files written before.
+    #[serde(default)]
+    pub trade_opinion: f64,
+    /// A month's trade with a realm worth this share of the coins in a realm's own land warms it
+    /// the whole `trade_opinion`; less trade, in proportion.
+    #[serde(default = "trade_full")]
+    pub trade_full: f64,
+}
+
+fn trade_full() -> f64 {
+    0.01
 }
 
 impl Default for TreatyParams {
@@ -427,6 +449,8 @@ impl Default for TreatyParams {
             unrest_weariness: 30.0,
             held_target_weariness: 50.0,
             tie: 10.0,
+            trade_opinion: 0.5,
+            trade_full: trade_full(),
         }
     }
 }
@@ -457,6 +481,8 @@ impl TreatyParams {
             self.unrest_weariness,
             self.held_target_weariness,
             self.tie,
+            self.trade_opinion,
+            self.trade_full,
         ];
         if !all.iter().all(|x| x.is_finite() && *x >= 0.0) {
             return Err("treaties: every setting but the starting opinions is a number of 0 or more".into());
@@ -465,8 +491,8 @@ impl TreatyParams {
         if ![self.opinion_start, self.opinion_rebels, self.peace_ceiling].iter().all(|x| x.is_finite() && x.abs() <= opinion) {
             return Err(format!("treaties: opinions are between -{opinion} and {opinion}"));
         }
-        if self.war_share <= 0.0 || self.worn <= 0.0 || self.rival_ratio < 1.0 {
-            return Err("treaties: the war-time share and the worn-out line are above 0, and rivals' ratio is 1 or more".into());
+        if self.war_share <= 0.0 || self.worn <= 0.0 || self.trade_full <= 0.0 || self.rival_ratio < 1.0 {
+            return Err("treaties: the war-time share, the worn-out line and trade's full share are above 0, and rivals' ratio is 1 or more".into());
         }
         Ok(())
     }
@@ -484,11 +510,14 @@ pub struct WarState {
     /// Where each pair of realms is kept in the relations, rebuilt when the relations change from
     /// outside (not saved).
     index: BTreeMap<(u32, u32), u32>,
+    /// The coins in each realm's own land, worked out once on a day trade is delivered: the day,
+    /// and the coins by realm (not saved).
+    land_coins: Option<(u64, Vec<u64>)>,
 }
 
 impl WarState {
     pub fn new(params: WarParams) -> WarState {
-        WarState { params, hunger: Vec::new(), month: 0, index: BTreeMap::new() }
+        WarState { params, hunger: Vec::new(), month: 0, index: BTreeMap::new(), land_coins: None }
     }
 }
 
@@ -513,6 +542,7 @@ static V0: Manifest = Manifest {
     tier: crate::fields::Tier::War,
     cadence: Cadence::Monthly,
     reads: &["realm.capital", "province.occupier"],
+    reads_earlier: &[],
     owns: &WAR_FIELDS,
     requests: &[],
     asks: &[],
@@ -561,7 +591,7 @@ static V1: Manifest = Manifest {
     // Without armies nothing is occupied and no battle fought: every war would end with nobody
     // winning.
     requires: &["realm.capital", "army.size"],
-    handles: &[EventKind::DeclareWar, EventKind::ForcePeace, EventKind::Rebellion, EventKind::Famine, EventKind::Battle, EventKind::Occupied],
+    handles: &[EventKind::DeclareWar, EventKind::ForcePeace, EventKind::Rebellion, EventKind::Famine, EventKind::Battle, EventKind::Occupied, EventKind::Trade],
     state_schema: "treaties-1",
     ..V0
 };
@@ -668,6 +698,10 @@ impl Module for WarState {
                     self.sour(w, &t, owner, by, t.occupied_fall);
                 }
             }
+            &Event::Trade { a, b, a_to_b, b_to_a } => {
+                let Some(t) = self.params.treaties.clone().filter(|t| t.trade_opinion > 0.0) else { return };
+                self.traded(w, &t, cx, a, b, a_to_b + b_to_a);
+            }
             _ => {}
         }
     }
@@ -685,6 +719,7 @@ impl Module for WarState {
         }
         (self.hunger, self.month) = postcard::from_bytes(bytes).map_err(|e| format!("Diplomacy state: {e}"))?;
         self.index.clear();
+        self.land_coins = None;
         Ok(())
     }
 }
@@ -981,6 +1016,41 @@ impl WarState {
                     v -= fall;
                 }
                 w.relations.set(k as u32, x, v);
+            }
+        }
+    }
+
+    /// Realms `a` and `b` traded goods worth `worth` coins across their border last month: at peace,
+    /// outside a truce, each thinks better of the other, by up to `trade_opinion` (for trade worth
+    /// `trade_full` of the coins in its own land, and in proportion for less), up to peace's ceiling.
+    /// A pair with no relation yet gets one.
+    fn traded(&mut self, w: &mut World, t: &TreatyParams, cx: &mut Ctx, a: u32, b: u32, worth: u64) {
+        if a == b || !(w.realms.alive(a) && w.realms.alive(b)) || standing(w, a, b, cx.day) != Standing::Peace {
+            return;
+        }
+        if self.land_coins.as_ref().is_none_or(|c| c.0 != cx.day) {
+            let mut coins = vec![0u64; w.realms.count()];
+            for p in 0..w.provinces.count {
+                let o = w.owner.get(p).copied().unwrap_or(NONE);
+                if o != NONE && (o as usize) < coins.len() {
+                    coins[o as usize] += w.stock_under(p, "money").unwrap_or(0);
+                }
+            }
+            self.land_coins = Some((cx.day, coins));
+        }
+        let ceiling = t.peace_ceiling as f32;
+        let k = self.relation(w, t, a, b);
+        for x in [a, b] {
+            let own = self.land_coins.as_ref().and_then(|c| c.1.get(x as usize)).copied().unwrap_or(0) as f64;
+            let share = if own > 0.0 { (worth as f64 / (t.trade_full * own)).min(1.0) } else { 1.0 };
+            let v = w.relations.of(k, x);
+            if v < ceiling {
+                w.relations.set(k, x, (v + (t.trade_opinion * share) as f32).min(ceiling));
+            }
+            let capital = w.realms.capital[x as usize];
+            if cx.traced(capital) {
+                let other = if x == a { b } else { a };
+                cx.note(format!("trade with realm {other} worth {worth} coins last month: realm {x} thinks {:.2} better of it", t.trade_opinion * share));
             }
         }
     }

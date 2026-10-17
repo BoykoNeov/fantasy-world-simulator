@@ -23,6 +23,7 @@ static COFFERS: Manifest = Manifest {
     tier: Tier::Province,
     cadence: Cadence::Monthly,
     reads: &[],
+    reads_earlier: &[],
     owns: &["province.stock", "realm.stock"],
     requests: &[],
     asks: &[],
@@ -61,6 +62,7 @@ static CROWNS: Manifest = Manifest {
     tier: Tier::Realm,
     cadence: Cadence::Monthly,
     reads: &["province.cells"],
+    reads_earlier: &[],
     owns: &["province.owner", "realm.capital"],
     requests: &["province.stock", "realm.stock"],
     asks: &["money"],
@@ -115,6 +117,7 @@ static MUSTER: Manifest = Manifest {
     tier: Tier::Army,
     cadence: Cadence::Monthly,
     reads: &["province.owner"],
+    reads_earlier: &[],
     owns: &[
         "army.realm",
         "army.province",

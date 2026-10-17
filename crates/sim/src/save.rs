@@ -67,7 +67,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 22: settings: the map-making slots' settings (terrain, climate, biomes, rivers,
 /// farmland, provinces) and the largest city-state in the configuration, and the edit that changes
 /// settings while the world runs.
-pub const FORMAT_VERSION: u32 = 22;
+/// Format 23 (step 7): trade and realms: tolls and war stopping trade in markets' trade parameters,
+/// trade warming opinions in the treaties', and the trade event between realms.
+pub const FORMAT_VERSION: u32 = 23;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

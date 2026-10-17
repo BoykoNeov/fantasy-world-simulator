@@ -135,6 +135,12 @@ sea_share = 0.1
 # up, goods are dear, so the province buys more and sells less and the coins flow back out.
 money_response = 1.0
 money_range = 3.0
+# Goods coming into another realm pay this share of the seller's price as a toll, on top of the
+# price and the carrying, into that realm's treasury (none into land nobody owns, an enemy occupies
+# or that has risen up, nor within a realm).
+toll = 0.1
+# Share of the trade between realms at war that the war stops (1: all of it).
+war_stops = 1.0
 
 # Coins to carry one unit one day overland. A cart doubles grain's price in about five days;
 # herds walk; fish must hurry; cloth and tools are worth a lot for their weight.

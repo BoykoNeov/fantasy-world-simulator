@@ -10,6 +10,10 @@
 //! - `markets_before_trade`: commit 7593428. Economics "markets" before trade: no trade table.
 //! - `trade_before_money`: commit f27d284. Trade before prices followed the money: a trade table
 //!   without `money_response` or `money_range`.
+//! - `realms_before_tolls`: commit ff95375. Realms, rulers, Diplomacy "treaties", armies and markets
+//!   with trade, before tolls, war stopping trade and trade warming opinions: their keys are missing.
+//!   A war poked between neighbours, the realms' own wars, and a second timeline that forces the
+//!   poked war's peace. It also prints owners, occupiers, treasuries, wars' ends and opinions.
 //!
 //! The programs that wrote them are kept beside them (`make_fixture_*.rs.txt`, not built): to make a
 //! file again, check out that commit, put the program in `crates/sim/examples/` and run it with the
@@ -38,6 +42,13 @@ fn dump(sim: &Sim) -> String {
             out += &line(&format!("price {name}"), (0..count).map(|p| w.price[p * k + c]));
             out += &line(&format!("workers {name}"), (0..count).map(|p| w.workers[p * k + c]));
         }
+    }
+    if w.realms.count() > 0 {
+        out += &line("owner", w.owner.iter().map(|&x| x as u64));
+        out += &line("occupier", w.occupier.iter().map(|&x| x as u64));
+        out += &line("treasury", w.realm_stock.iter().copied());
+        out += &line("wars", w.wars.ended.iter().copied());
+        out += &line("opinions", w.relations.a_of_b.iter().chain(&w.relations.b_of_a).map(|x| x.to_bits() as u64));
     }
     out
 }
@@ -72,4 +83,9 @@ fn a_markets_scenario_from_before_trade_makes_the_same_world() {
 #[test]
 fn a_trade_scenario_from_before_money_levels_makes_the_same_world() {
     check("trade_before_money");
+}
+
+#[test]
+fn a_realms_and_trade_scenario_from_before_tolls_makes_the_same_world() {
+    check("realms_before_tolls");
 }

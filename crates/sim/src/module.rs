@@ -74,6 +74,10 @@ pub struct Manifest {
     pub tier: Tier,
     pub cadence: Cadence,
     pub reads: &'static [&'static str],
+    /// Fields it reads as they stood when the day began, before the day's events were delivered
+    /// (see [`crate::world::Earlier`]). They add no run-order edge, so a module may read this way a
+    /// field whose owner runs after it, or reads what it owns.
+    pub reads_earlier: &'static [&'static str],
     pub owns: &'static [&'static str],
     /// Fields this module asks the owner to change. Grants come back the next day as
     /// [`Event::Granted`], addressed to this module.
@@ -99,7 +103,7 @@ pub struct Manifest {
 impl Manifest {
     /// A generation module: it reads some fields and writes the ones it owns, once.
     pub const fn generation(slot: Slot, version: &'static str, tier: Tier, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version, tier, cadence: Cadence::Generation, reads, reads_earlier: &[], owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 }
 
@@ -313,6 +317,20 @@ pub fn plan(manifests: &[&Manifest]) -> Result<Plan, ConfigError> {
                 _ => {}
             }
         }
+        for f in m.reads_earlier {
+            let id = lookup(m, f)?;
+            if m.reads.contains(f) {
+                return err(format!("{} reads {f} both as it stands and as it stood when the day began", name(m)));
+            }
+            match owner[id.0 as usize] {
+                Some(o) if o == i => return err(format!("{} owns {f}; it reads its own values as they stand", name(m))),
+                None if id.def().default == fields::Default::Required => {
+                    return err(format!("{} reads {f}, but no active module provides it", name(m)));
+                }
+                _ if generation(i) => return err(format!("{} runs at generation, before any day begins, but reads {f} as it stood when the day began", name(m))),
+                _ => {}
+            }
+        }
         for f in m.requires {
             if owner[lookup(m, f)?.0 as usize].is_none() {
                 return err(format!("{} requires {f}, but no active module owns it", name(m)));
@@ -433,7 +451,7 @@ mod tests {
     use super::*;
 
     fn m(slot: Slot, cadence: Cadence, reads: &'static [&'static str], owns: &'static [&'static str]) -> Manifest {
-        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
+        Manifest { slot, version: "test", tier: Tier::Province, cadence, reads, reads_earlier: &[], owns, requests: &[], asks: &[], moves: &[], requires: &[], emits: &[], handles: &[], state_schema: "none", goods: &[] }
     }
 
     #[test]
@@ -507,6 +525,28 @@ mod tests {
         assert_eq!(refused(&[&owner(&["food"]), &eater(&["grain"])]), "Population \"test\" asks for grain, but Economics \"test\" keeps it only as part of food");
         assert!(refused(&[&owner(&["food"]), &eater(&["spice"])]).contains("asks for spice, which is not a good"));
         assert!(refused(&[&owner(&["food"]), &eater(&["goods"])]).contains("asks for goods, which is not a good"));
+    }
+
+    #[test]
+    fn reading_as_the_day_began_adds_no_edge_and_is_checked() {
+        // Economics reads Population's field as it stood when the day began, and Population reads
+        // Economics' as it stands: no cycle, and Economics (the lower slot) runs first.
+        let a = Manifest { reads_earlier: &["pop.size"], ..m(Slot::Economics, Cadence::Monthly, &[], &["province.stock"]) };
+        let b = m(Slot::Population, Cadence::Monthly, &["province.stock"], &["pop.size"]);
+        assert_eq!(plan(&[&b, &a]).unwrap().runtime, vec![1, 0]);
+        let both = Manifest { reads: &["pop.size"], ..a };
+        fails(&[&both, &b], "reads pop.size both as it stands and as it stood");
+        let own = Manifest { reads_earlier: &["province.stock"], ..m(Slot::Economics, Cadence::Monthly, &[], &["province.stock"]) };
+        fails(&[&own], "owns province.stock; it reads its own values as they stand");
+        let typo = Manifest { reads_earlier: &["pop.sise"], ..m(Slot::Economics, Cadence::Monthly, &[], &[]) };
+        fails(&[&typo], "unknown field pop.sise");
+        let unmet = Manifest { reads_earlier: &["province.center"], ..m(Slot::Economics, Cadence::Monthly, &[], &[]) };
+        fails(&[&unmet], "reads province.center, but no active module provides it");
+        // A field with a documented default may be read without an owner, as with `reads`.
+        let ok = Manifest { reads_earlier: &["province.owner"], ..m(Slot::Economics, Cadence::Monthly, &[], &[]) };
+        assert!(plan(&[&ok]).is_ok());
+        let early = Manifest { reads_earlier: &["province.owner"], ..m(Slot::Terrain, Cadence::Generation, &[], &["cell.elevation"]) };
+        fails(&[&early], "runs at generation, before any day begins");
     }
 
     #[test]

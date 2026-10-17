@@ -156,6 +156,8 @@ pub struct World {
     pub routes: Arc<Routes>,
     /// The last month's trade, for showing it ([`crate::markets::TradeRecord`]): not a field.
     pub trade: Arc<crate::markets::TradeRecord>,
+    /// Fields as they stood when today began, for the modules that read them so ([`Earlier`]).
+    pub earlier: Arc<Earlier>,
     /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
     pub stock: Vec<u64>,
     /// The goods tree, and which of its goods the per-good fields keep. Set from the configuration
@@ -218,6 +220,7 @@ impl World {
             provinces: Provinces::default(),
             routes: Arc::new(Routes::default()),
             trade: Arc::default(),
+            earlier: Arc::default(),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
             price: Vec::new(),
@@ -693,6 +696,52 @@ impl World {
             };
             self.set_field(id, data).expect("defaults have the field's own type");
         }
+    }
+}
+
+/// Fields as they stood when the day began: after the day's edits, before its events were
+/// delivered. The engine copies the fields that the modules due today list in their manifests'
+/// `reads_earlier`, on such a day only, and those modules read the copy instead of the field. So a
+/// module can read what is written after it runs (or what is written by those who read it) without
+/// a loop in the day's order.
+///
+/// Not a field: not saved, not fingerprinted. Saves and checkpoints are taken between days, and the
+/// copy is made again from them when the day runs, so a loaded world reads the same copy.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Earlier {
+    /// The day it was copied.
+    pub day: u64,
+    fields: Vec<(FieldId, FieldData)>,
+}
+
+impl Earlier {
+    pub fn copy(w: &World, day: u64, fields: &[FieldId]) -> Earlier {
+        Earlier { day, fields: fields.iter().map(|&id| (id, w.field(id))).collect() }
+    }
+
+    /// The copy of the field named `name`. Panics if it wasn't copied today: it isn't in the
+    /// reader's `reads_earlier`.
+    pub fn get(&self, name: &str) -> &FieldData {
+        let id = crate::fields::known(name);
+        self.fields.iter().find(|f| f.0 == id).map(|f| &f.1).unwrap_or_else(|| panic!("{name} is not read as the day began (add it to the manifest's reads_earlier)"))
+    }
+
+    pub fn u32s(&self, name: &str) -> &[u32] {
+        match self.get(name) {
+            FieldData::U32(v) => v,
+            _ => panic!("{name} doesn't hold u32 values"),
+        }
+    }
+
+    pub fn u64s(&self, name: &str) -> &[u64] {
+        match self.get(name) {
+            FieldData::U64(v) => v,
+            _ => panic!("{name} doesn't hold u64 values"),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
     }
 }
 

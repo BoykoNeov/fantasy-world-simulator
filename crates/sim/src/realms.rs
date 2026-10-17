@@ -230,6 +230,7 @@ static V1: Manifest = Manifest {
     tier: crate::fields::Tier::Realm,
     cadence: Cadence::Monthly,
     reads: &["pop.province", "pop.size", "province.cells", "province.center"],
+    reads_earlier: &[],
     owns: &["province.owner", "realm.capital", "province.occupier", "province.unrest", "province.uprising", "realm.broke_from"],
     requests: &[],
     asks: &[],

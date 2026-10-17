@@ -88,9 +88,10 @@ pub struct RealmPage {
 }
 
 /// Realm `r`'s page on `day`. `coin`: the column of the per-good fields that holds coins, if the
-/// world keeps them. Every value is read with a check, since a realm or person made after the
-/// window opened may lack values no running module keeps.
-pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usize>) -> RealmPage {
+/// world keeps them; `trade`, the last month's trade (for the tolls it collected). Every value is
+/// read with a check, since a realm or person made after the window opened may lack values no
+/// running module keeps.
+pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usize>, trade: &sim::markets::TradeRecord) -> RealmPage {
     let w = n.world;
     let dpy = cal.days_per_year() as f64;
     let capital = w.realms.capital.get(r as usize).copied().filter(|&c| c != NONE);
@@ -108,6 +109,9 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
         && let Some(&coins) = w.realm_stock.get(r as usize * w.goods.stride() + c)
     {
         facts.push(format!("treasury: {} coins", group(coins)));
+    }
+    if let Some(&(_, tolls)) = trade.tolls.iter().find(|t| t.0 == r) {
+        facts.push(format!("tolls collected last month: {} coins", group(tolls)));
     }
     if let Some(&from) = w.realms.broke_from.get(r as usize).filter(|&&f| f != NONE) {
         facts.push(format!("broke away from {}", n.realm(from)));
@@ -211,6 +215,7 @@ pub fn realms_in(e: &Event) -> Vec<u32> {
         Event::Occupied { by, .. } => vec![by],
         Event::Rebellion { realm, from, .. } => vec![realm, from],
         Event::Battle { ref sides, .. } => sides.iter().map(|s| s.0).collect(),
+        Event::Trade { a, b, .. } => vec![a, b],
         _ => Vec::new(),
     }
 }
@@ -444,6 +449,9 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
             (NONE, l) => format!("a battle here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
             (w, l) => format!("{} beat {} in battle here: {} killed", realm(&w), realm(&l), group(*killed)),
         },
+        Event::Trade { a, b, a_to_b, b_to_a } => {
+            format!("{} sold {} coins' worth of goods to {} last month, and bought {} coins' worth", realm(a), group(*a_to_b), realm(b), group(*b_to_a))
+        }
     }
 }
 

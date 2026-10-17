@@ -4,7 +4,9 @@
 //!
 //! 1. On a year's first day, the year summary closes the year that just ended (an observer, like
 //!    the map: it reads fields and changes nothing).
-//! 2. Events emitted yesterday are delivered in their fixed order, grants included.
+//! 2. The fields that modules due today read as the day began are copied
+//!    ([`crate::world::Earlier`]). Events emitted yesterday are then delivered in their fixed
+//!    order, grants included.
 //! 3. Each module whose cadence is due runs its main logic, in the run order derived from the
 //!    manifests.
 //! 4. Today's change requests are applied, owner by owner in run order.
@@ -401,6 +403,7 @@ impl Sim {
             ran = true;
         }
         self.log_today = self.event_log.entries.len();
+        self.copy_earlier();
         if !self.pending.is_empty() {
             self.deliver();
             ran = true;
@@ -791,6 +794,26 @@ impl Sim {
         Ok(())
     }
 
+    /// Copy the fields the modules due today read as the day began (their `reads_earlier`), before
+    /// anything changes them today. Whether a module is due goes by its cadence alone: the world
+    /// will still change before it runs, so asking it whether it is idle comes later.
+    fn copy_earlier(&mut self) {
+        let mut ids: Vec<FieldId> = Vec::new();
+        for &i in &self.plan.runtime {
+            let m = self.modules[i].manifest();
+            if m.cadence.due(&self.calendar, self.day) {
+                ids.extend(m.reads_earlier.iter().map(|f| known(f)));
+            }
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        if !ids.is_empty() {
+            self.world.earlier = Arc::new(crate::world::Earlier::copy(&self.world, self.day, &ids));
+        } else if !self.world.earlier.is_empty() {
+            self.world.earlier = Arc::default();
+        }
+    }
+
     /// Place of a slot in the run order (generation modules first).
     fn rank(&self, slot: Slot) -> usize {
         let p = &self.plan;
@@ -823,7 +846,8 @@ impl Sim {
             outs
         });
         let log = &mut self.event_log;
-        log.entries.extend(events.into_iter().filter(|p| p.event.kind() != EventKind::Granted));
+        // Grants, and trade between realms (hundreds a month), are not kept.
+        log.entries.extend(events.into_iter().filter(|p| !matches!(p.event.kind(), EventKind::Granted | EventKind::Trade)));
     }
 
     fn apply_requests(&mut self) {

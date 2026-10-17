@@ -40,7 +40,7 @@ What exists:
   city-state and a number of realms to start with (about that many, plus one for each island none
   reaches; 0 keeps "provinces per realm"). A live change is an edit (`Edit::Settings`): it goes into
   the command log, and the engine makes the modules again with the new settings, each keeping its
-  state; going back, taking it back, branching, saves (format 22) and scenario files all keep the
+  state; going back, taking it back, branching, saves (format 23) and scenario files all keep the
   settings of each day (`Sim::settings`; `Sim::config` stays the configuration the world was made
   with). Tests in `tests/settings.rs`.
 - **The engine** (`sim.rs`): the daily clock. After every stage it checks that people and each
@@ -67,7 +67,9 @@ a peace saying whether it ended a rebellion); format 19 troops (the warfare modu
 with the troop tree, each army's kind and home, and the causes deserted, equipped and bounty);
 format 20 armies moving and fighting (each company's role, group, destination, next province, days
 left on its way and siege days, the warfare module's new private state, the battle event, the cause
-killed and the year's killed in the ledger).
+killed and the year's killed in the ledger); format 21 Diplomacy "treaties"; format 22 settings;
+format 23 trade and realms (tolls and war stopping trade in the trade parameters, trade warming
+opinions in the treaties', and the trade event between realms).
 Loads refuse other format versions,
   other module versions and damaged files with a message.
 - **Modules and their versions** (`config.rs` chooses them):
@@ -362,10 +364,9 @@ Loads refuse other format versions,
     keep the land and occupation; the wars read realms; armies read both and send occupation
     back by event. So the realms module can't read the wars, and peace changes land by an event
     (a test builds this order). Diplomacy "treaties" reads stores and people too, and Warfare reads
-    the wars, so Diplomacy can't read the armies (it counts battles from their events). The next
-    piece, trade between realms, needs a way to read the day before's values without an order
-    between the modules: markets will read owners and wars, while realms (taxes) and Diplomacy
-    (wants) read markets' stores.
+    the wars, so Diplomacy can't read the armies (it counts battles from their events). Trade
+    between realms reads owners and wars while realms (taxes) and Diplomacy (wants) read markets'
+    stores: it reads them as the day began instead (see "Trade and realms" below).
   - With no pokes and no unrest, worlds with wars on hold the same values as without (a test);
     with unrest, rebels who break away start wars of their own. Wars cost nothing
     measurable per day. `simrun` prints how many wars were declared, go on, were won and ended with
@@ -597,7 +598,7 @@ Loads refuse other format versions,
     each other's strength) lose 0.3. A war declared: the realm attacked thinks 60 less of the
     attacker, the attacker 20 less of it. Each battle between them: 5 less, both ways. Each province
     occupied: its owner 10 less of the occupier. Land lost at a peace: the loser 30 less of the
-    winner. Opinion of trade waits for the trade piece (trade is not a field yet).
+    winner. Trade warms opinions too (see "Trade and realms" below).
   - **Strength is people**: Diplomacy can't read the armies, since Warfare reads the wars (the
     engine refuses the circle). A realm's strength is the people of its land.
   - **Wants**, each month: a realm whose people starved past 1% over the last twelve months

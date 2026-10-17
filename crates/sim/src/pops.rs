@@ -70,6 +70,7 @@ static V0: Manifest = Manifest {
     tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
     reads: &["province.food_capacity", "province.cells", "province.center"],
+    reads_earlier: &[],
     owns: &["pop.province", "pop.species", "pop.culture", "pop.religion", "pop.class", "pop.size", "province.starved_this_year"],
     requests: &["province.stock"],
     asks: &["food"],

@@ -12,6 +12,8 @@ pub mod climate;
 pub mod combos;
 pub mod config;
 pub mod diplomacy;
+#[cfg(test)]
+mod border_trade_tests;
 pub mod economy;
 pub mod edit;
 pub mod events;

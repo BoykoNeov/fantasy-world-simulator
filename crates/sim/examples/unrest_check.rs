@@ -16,7 +16,9 @@
 //! then prints the wars each decade (by cause; second wars; the most at once; peaces with a
 //! winner; wars for riches aimed at a capital; provinces that changed hands at a peace, and how
 //! many were among the richest 5%), and `drought` counts a war for food declared by a drought
-//! realm as the story's war (only for food: a war for riches is not the story's).
+//! realm as the story's war (only for food: a war for riches is not the story's). `untolled` runs
+//! the world as it ran before trade across borders changed: no tolls, war doesn't stop trade, and
+//! trade doesn't warm opinions.
 
 use sim::config::Config;
 use sim::diplomacy::WarCause;
@@ -28,7 +30,7 @@ use sim::world::WorldParams;
 const FAMINE: f64 = 0.005;
 const WINDOW: usize = 24;
 
-fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties: bool) -> Sim {
+fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties: bool, untolled: bool) -> Sim {
     let mut config = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     config.modules.set_choice(Slot::Economics, economics).unwrap();
     let mut realms = sim::realms::RealmParams::default();
@@ -43,6 +45,14 @@ fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties
     }
     if treaties {
         config.modules.diplomacy.as_mut().unwrap().treaties = Some(Default::default());
+    }
+    if untolled {
+        if let Some(t) = config.modules.markets.as_mut().and_then(|m| m.trade.as_mut()) {
+            (t.toll, t.war_stops) = (0.0, 0.0);
+        }
+        if let Some(t) = config.modules.diplomacy.as_mut().and_then(|d| d.treaties.as_mut()) {
+            t.trade_opinion = 0.0;
+        }
     }
     Sim::new(&config).unwrap()
 }
@@ -160,13 +170,14 @@ fn main() {
     let all: Vec<String> = std::env::args().skip(1).collect();
     let armies = all.iter().any(|a| a == "armies");
     let treaties = all.iter().any(|a| a == "treaties");
-    let args: Vec<String> = all.into_iter().filter(|a| a != "armies" && a != "treaties").collect();
+    let untolled = all.iter().any(|a| a == "untolled");
+    let args: Vec<String> = all.into_iter().filter(|a| a != "armies" && a != "treaties" && a != "untolled").collect();
     let economics = args.first().map_or("food", |s| s.as_str());
     let seed: u64 = args.get(1).map_or(21, |s| s.parse().expect("seed"));
     let drought = args.get(2).is_some_and(|s| s == "drought");
     let years: i64 = args.get(3).map_or(if drought { 5 } else { 150 }, |s| s.parse().expect("years"));
     let famine: Option<f64> = args.get(4).map(|s| s.parse().expect("famine"));
-    let mut sim = world(economics, seed, famine, armies, treaties);
+    let mut sim = world(economics, seed, famine, armies, treaties, untolled);
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let year = sim.calendar.days_per_year() as u64;

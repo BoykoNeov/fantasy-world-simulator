@@ -33,7 +33,8 @@
 //! (`data/markets.toml`), saved with the world.
 
 use crate::economy::month_share;
-use crate::events::EventKind;
+use crate::events::{Event, EventKind};
+use crate::grid::NONE;
 use crate::fields::{known, FieldData, FieldId, Goods, Quantity, Tier};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
 use crate::requests::{serve_goods_into, split_proportional, Cause, Request};
@@ -106,6 +107,16 @@ pub struct TradeParams {
     /// That stays within 1/this and this times.
     #[serde(default = "no_range")]
     pub money_range: f64,
+    /// Goods crossing into another realm pay this share of the seller's price as a toll, on top of
+    /// the price and the carrying, into the treasury of the realm they enter. None where no realm
+    /// collects it: into land nobody owns, an enemy occupies or that has risen up. 0 in scenario
+    /// files written before tolls.
+    #[serde(default)]
+    pub toll: f64,
+    /// Share of the trade between realms at war that the war stops: 1 none goes, 0 as in peace (as
+    /// in scenario files written before).
+    #[serde(default)]
+    pub war_stops: f64,
     /// Coins to carry one unit of each good one day overland.
     pub carriage: BTreeMap<String, f64>,
 }
@@ -252,6 +263,10 @@ static V1: Manifest = Manifest {
         "pop.province",
         "pop.size",
     ],
+    // Who owns, occupies and rises up in each province, which realms are dissolved, and the wars,
+    // for trade across borders: as the day began, since Realms and Diplomacy read what this module
+    // keeps (coins and stores) and so run after it.
+    reads_earlier: &["province.owner", "province.occupier", "province.uprising", "realm.capital", "war.attacker", "war.defender", "war.ended"],
     // Realms' stores too: their coins are the treasuries, and coins keep one keeper, so a realm's
     // taxes and spending are moves between two stores this module keeps.
     owns: &["province.stock", "province.price", "province.workers", "realm.stock"],
@@ -260,7 +275,7 @@ static V1: Manifest = Manifest {
     moves: &[],
     // Goods are made by people: a world without them is refused.
     requires: &["pop.size"],
-    emits: &[EventKind::Granted],
+    emits: &[EventKind::Granted, EventKind::Trade],
     handles: &[],
     state_schema: "none",
     // The eight goods and the coins. Which of them are coins is found through the goods tree.
@@ -397,8 +412,8 @@ impl Resolved {
         let mut carriage = vec![0.0; kept.stride()];
         if let Some(t) = &p.trade {
             let share = |x: f64| (0.0..=1.0).contains(&x);
-            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && t.sea_share >= 0.0 && t.money_response >= 0.0 && t.money_range >= 1.0) {
-                return Err("trade: change, most_sold and most_spent must be between 0 and 1, sea_share and money_response at least 0, money_range at least 1".into());
+            if !(share(t.change) && share(t.most_sold) && share(t.most_spent) && share(t.war_stops) && t.sea_share >= 0.0 && t.money_response >= 0.0 && t.money_range >= 1.0 && t.toll >= 0.0 && t.toll.is_finite()) {
+                return Err("trade: change, most_sold, most_spent and war_stops must be between 0 and 1, sea_share, money_response and toll at least 0, money_range at least 1".into());
             }
             for (name, &x) in &t.carriage {
                 let c = column(name)?;
@@ -624,10 +639,15 @@ impl Module for Markets {
         }
         if let Some(t) = &self.params.trade {
             let routes = w.routes.clone();
-            let deals = deals(&r, &self.params, t, &w.stock, &wanted, &people, &routes.links);
-            let (notes, shipments) = settle(&r, &deals, &mut w.stock, &w.goods, &mut books, cx.trace);
-            notes.into_iter().for_each(|n| cx.note(n));
-            w.trade = std::sync::Arc::new(TradeRecord { day: cx.day, shipments });
+            let borders = Borders::read(&w.earlier, w.provinces.count);
+            let deals = deals(&r, &self.params, t, &w.stock, &wanted, &people, &routes.links, Some(&borders));
+            let done = settle(&r, &deals, &mut w.stock, &mut w.realm_stock, &w.goods, &mut books, cx.trace);
+            done.notes.into_iter().for_each(|n| cx.note(n));
+            // Each pair of realms that traded across their border, for their opinions of each other.
+            for (&(a, b), &(a_to_b, b_to_a)) in &done.between {
+                cx.emit(Event::Trade { a, b, a_to_b, b_to_a });
+            }
+            w.trade = std::sync::Arc::new(TradeRecord { day: cx.day, shipments: done.shipments, tolls: done.tolls.into_iter().collect() });
         }
         for ((class, cause), delta) in books.0 {
             cx.flow(Quantity::Goods(class), cause, delta);
@@ -801,6 +821,8 @@ pub struct TradeRecord {
     /// The day the trade was settled.
     pub day: u64,
     pub shipments: Vec<Shipment>,
+    /// Tolls each realm collected, in coins, by realm.
+    pub tolls: Vec<(u32, u64)>,
 }
 
 /// Goods of one kind sent along one way in a month.
@@ -813,6 +835,48 @@ pub struct Shipment {
     pub units: u64,
     /// What the buyer paid for them, carrying included, in coins.
     pub coins: f64,
+    /// The toll the buyer paid on them besides, into its realm's treasury, in coins.
+    pub toll: f64,
+}
+
+/// How provinces stand to trade across realms' borders, from the fields as the day began
+/// ([`crate::world::Earlier`]): Realms and Diplomacy read the coins and stores trade moves, so
+/// trade can't wait for today's changes to them.
+pub struct Borders {
+    /// The realm each province trades as: an enemy occupying it (the front cuts it off from its
+    /// owner's land), else its owner, else nobody ([`NONE`]).
+    pub trades_as: Vec<u32>,
+    /// The realm a toll on goods coming into each province goes to: its owner, where the owner
+    /// collects (no enemy occupies it and it hasn't risen up); else nobody.
+    pub collects: Vec<u32>,
+    /// Each realm's enemies, sorted, by the one rule for war ([`crate::diplomacy::enemies_in`]).
+    pub enemies: Vec<Vec<u32>>,
+}
+
+impl Borders {
+    pub fn read(e: &crate::world::Earlier, provinces: usize) -> Borders {
+        let (owner, occupier, uprising) = (e.u32s("province.owner"), e.u32s("province.occupier"), e.u32s("province.uprising"));
+        let capital = e.u32s("realm.capital");
+        let enemies = crate::diplomacy::enemies_in(capital, e.u32s("war.attacker"), e.u32s("war.defender"), e.u64s("war.ended"));
+        let alive = |r: u32| capital.get(r as usize).is_some_and(|&c| c != NONE);
+        let of = |v: &[u32], p: usize| v.get(p).copied().filter(|&r| r != NONE);
+        let mut trades_as = vec![NONE; provinces];
+        let mut collects = vec![NONE; provinces];
+        for p in 0..provinces {
+            let own = of(owner, p).filter(|&r| alive(r));
+            let occ = of(occupier, p).filter(|&r| alive(r));
+            trades_as[p] = occ.or(own).unwrap_or(NONE);
+            if occ.is_none() && of(uprising, p).is_none() {
+                collects[p] = own.unwrap_or(NONE);
+            }
+        }
+        Borders { trades_as, collects, enemies }
+    }
+
+    /// Whether realms `a` and `b` are at war (nobody is at war with nobody, or with itself).
+    pub fn at_war(&self, a: u32, b: u32) -> bool {
+        a != b && a != NONE && b != NONE && self.enemies.get(a as usize).is_some_and(|v| v.binary_search(&b).is_ok())
+    }
 }
 
 /// One month's trade along one way: goods of one item go from `from` to `to`, which pays for them.
@@ -827,6 +891,11 @@ pub struct Deal {
     item: usize,
     pub prices: (f64, f64),
     pub carrying: f64,
+    /// The toll owed on each of `goods`, in coins a unit; empty where none is owed.
+    pub tolls: Vec<f64>,
+    /// The realm the toll goes to ([`NONE`] for none), and the realms the two ends trade as.
+    pub tolled: u32,
+    pub realms: (u32, u32),
 }
 
 /// One province's side of one item, as trade sees it.
@@ -851,7 +920,13 @@ struct Side {
 /// sales of an item are scaled down to `most_sold` of its store, and its spending to `most_spent`
 /// of its coins. Everything is worked out from the same stores, so the order of the ways doesn't
 /// matter.
-fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted: &[f64], people: &[u64], links: &[Link]) -> Vec<Deal> {
+///
+/// Across realms' borders (`borders`; none in a world without realms): between realms at war, a
+/// way carries only what the war leaves (`war_stops`); goods coming into a realm that collects a
+/// toll cost the buyer that share of the seller's price more, counted in the gap the trade must beat
+/// and in what the buyer spends.
+#[allow(clippy::too_many_arguments)]
+fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted: &[f64], people: &[u64], links: &[Link], borders: Option<&Borders>) -> Vec<Deal> {
     let Some(&coin) = r.coins.first() else { return Vec::new() };
     let (n, m, k) = (people.len(), r.items.len(), r.index.len());
     let base = |c: usize| r.goods[r.index[c]].params.base_price;
@@ -877,6 +952,9 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
         item: usize,
         days: f64,
         units: f64,
+        /// The toll's share of the seller's price, and who it goes to.
+        toll: f64,
+        tolled: u32,
     }
     // The ways are looked at side by side; the offers come out in the ways' order.
     let mut offers: Vec<Offer> = links.par_iter().flat_map_iter(|l| {
@@ -903,7 +981,27 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             // the month found it: it follows a province's wealth over months, not one month's
             // buying (a starving province paying for food doesn't want food less).
             let (ls, ld) = (levels[from], levels[to]);
-            let gap = |q: f64| s.base * (ld * target_price(p, 1.0, d.wanted, d.held + q) - ls * target_price(p, 1.0, s.wanted, s.held - q)) - s.carry * ls * days;
+            // Across a border: nothing (or what the war leaves) between enemies, and a toll into a
+            // realm that collects one from the seller's side.
+            let (mut stays, mut toll, mut tolled) = (1.0, 0.0, NONE);
+            if let Some(b) = borders {
+                let (rs, rd) = (b.trades_as[from], b.trades_as[to]);
+                if b.at_war(rs, rd) {
+                    stays = 1.0 - t.war_stops;
+                }
+                let c = b.collects[to];
+                if c != NONE && c != rs && t.toll > 0.0 {
+                    (toll, tolled) = (t.toll, c);
+                }
+            }
+            if stays <= 0.0 {
+                continue;
+            }
+            let gap = |q: f64| {
+                let seller = target_price(p, 1.0, s.wanted, s.held - q);
+                let g = s.base * (ld * target_price(p, 1.0, d.wanted, d.held + q) - ls * seller) - s.carry * ls * days;
+                if toll > 0.0 { g - toll * s.base * ls * seller } else { g }
+            };
             if s.held < 1.0 || gap(0.0) <= 0.0 {
                 continue;
             }
@@ -919,7 +1017,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
                 }
                 lo
             };
-            offers.push(Offer { from, to, item, days, units: t.change * close });
+            let units = t.change * close;
+            offers.push(Offer { from, to, item, days, units: if stays < 1.0 { units * stays } else { units }, toll, tolled });
         }
         offers
     }).collect();
@@ -950,7 +1049,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
     scale(&mut offers, &|o| o.from * m + o.item, &|o| o.units, &|at| t.most_sold * sides[at].held, n * m);
     let unit_cost = |o: &Offer| {
         let s = sides[o.from * m + o.item];
-        levels[o.from] * (s.base * s.factor + s.carry * o.days)
+        let cost = levels[o.from] * (s.base * s.factor + s.carry * o.days);
+        if o.toll > 0.0 { cost + o.toll * levels[o.from] * s.base * s.factor } else { cost }
     };
     scale(&mut offers, &|o| o.to, &|o| o.units * unit_cost(o), &|prov| t.most_spent * stock[prov * k + coin] as f64, n);
 
@@ -965,7 +1065,7 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
         let cols = &r.items[o.item].cols;
         let (ls, ld) = (levels[o.from], levels[o.to]);
         let unit = |c: usize| base(c) * ls * s.factor + r.carriage[c] * ls * o.days;
-        let goods = if let [c] = cols[..] {
+        let goods: Vec<(usize, u64, f64)> = if let [c] = cols[..] {
             vec![(c, units, unit(c))]
         } else {
             let held: Vec<u64> = cols.iter().map(|&c| stock[o.from * k + c]).collect();
@@ -973,6 +1073,8 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             let split = split_proportional(units, &held, &ids);
             cols.iter().zip(split).filter(|x| x.1 > 0).map(|(&c, x)| (c, x, unit(c))).collect()
         };
+        let tolls = if o.toll > 0.0 { goods.iter().map(|&(c, _, _)| o.toll * base(c) * ls * s.factor).collect() } else { Vec::new() };
+        let realms = borders.map_or((NONE, NONE), |b| (b.trades_as[o.from], b.trades_as[o.to]));
         out.push(Deal {
             from: o.from as u32,
             to: o.to as u32,
@@ -980,44 +1082,79 @@ fn deals(r: &Resolved, p: &MarketParams, t: &TradeParams, stock: &[u64], wanted:
             item: o.item,
             prices: (s.base * ls * s.factor, s.base * ld * d.factor),
             carrying: s.carry * ls * o.days,
+            tolls,
+            tolled: o.tolled,
+            realms,
         });
     }
     out
 }
 
-/// Carry out `deals` in order: the goods go, and the coins come back. A seller never sends more
-/// than it holds nor a buyer pays more than it has (the deals were scaled to leave room for that).
-/// Returns what the `traced` province did, and what was sent.
-fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books: &mut Books, traced: Option<u32>) -> (Vec<String>, Vec<Shipment>) {
-    let mut notes = Vec::new();
-    let mut shipments = Vec::new();
-    let Some(&coin) = r.coins.first() else { return (notes, shipments) };
+/// What a month's trade did: the traced province's notes, what was sent, the tolls each realm
+/// collected, and the worth of the goods between each pair of realms that traded across their
+/// border (`(a, b)`, the lower first: a to b, b to a), in coins.
+#[derive(Default)]
+struct Settled {
+    notes: Vec<String>,
+    shipments: Vec<Shipment>,
+    tolls: BTreeMap<u32, u64>,
+    between: BTreeMap<(u32, u32), (u64, u64)>,
+}
+
+/// Carry out `deals` in order: the goods go, the coins come back, and the toll goes into the
+/// treasury (`treasury`, the realms' stores) of the realm it is owed to. A seller never sends more
+/// than it holds nor a buyer pays more than it has (the deals were scaled to leave room for that):
+/// the seller is paid first.
+fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], treasury: &mut [u64], goods: &Goods, books: &mut Books, traced: Option<u32>) -> Settled {
+    let mut done = Settled::default();
+    let Some(&coin) = r.coins.first() else { return done };
     let k = goods.stride();
     // What moved, per class: what came in somewhere went out somewhere else.
     let mut moved = vec![0i64; goods.tree.classes().len()];
     for d in deals {
         let (from, to) = (d.from as usize * k, d.to as usize * k);
         let mut owed = 0.0;
+        let mut toll = 0.0;
         let mut sent = 0;
-        for &(c, units, price) in &d.goods {
+        for (i, &(c, units, price)) in d.goods.iter().enumerate() {
             let units = units.min(stock[from + c]);
             stock[from + c] -= units;
             stock[to + c] += units;
             moved[goods.class_of_column(c) as usize] += units as i64;
             owed += units as f64 * price;
+            let tolled = d.tolls.get(i).map_or(0.0, |&x| units as f64 * x);
+            toll += tolled;
             sent += units;
             if units > 0 {
-                shipments.push(Shipment { from: d.from, to: d.to, column: c as u16, units, coins: units as f64 * price });
+                done.shipments.push(Shipment { from: d.from, to: d.to, column: c as u16, units, coins: units as f64 * price, toll: tolled });
             }
         }
         let paid = (owed.round() as u64).min(stock[to + coin]);
         stock[to + coin] -= paid;
         stock[from + coin] += paid;
         moved[goods.class_of_column(coin) as usize] += paid as i64;
+        // The toll: a move between two stores this module keeps, as taxes are, so no flow.
+        let at = d.tolled as usize * k + coin;
+        let tolled = if d.tolled != NONE && at < treasury.len() { (toll.round() as u64).min(stock[to + coin]) } else { 0 };
+        if tolled > 0 {
+            stock[to + coin] -= tolled;
+            treasury[at] += tolled;
+            *done.tolls.entry(d.tolled).or_default() += tolled;
+        }
+        let (ra, rb) = d.realms;
+        if ra != NONE && rb != NONE && ra != rb && paid > 0 {
+            let e = done.between.entry((ra.min(rb), ra.max(rb))).or_default();
+            if ra < rb {
+                e.0 += paid;
+            } else {
+                e.1 += paid;
+            }
+        }
         for (who, other, verb) in [(d.from, d.to, "sold"), (d.to, d.from, "bought")] {
             if traced == Some(who) {
-                notes.push(format!(
-                    "{verb} {sent} {} {} province {other} for {paid} coins ({:.3} a unit where sold, {:.3} where bought, {:.3} to carry)",
+                let toll = if tolled > 0 { format!(", and {tolled} coins of toll into the treasury of realm {}", d.tolled) } else { String::new() };
+                done.notes.push(format!(
+                    "{verb} {sent} {} {} province {other} for {paid} coins ({:.3} a unit where sold, {:.3} where bought, {:.3} to carry){toll}",
                     r.items[d.item].name,
                     if verb == "sold" { "to" } else { "from" },
                     d.prices.0,
@@ -1031,7 +1168,7 @@ fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], goods: &Goods, books:
         books.add(class as u8, Cause::TradeOut, -x);
         books.add(class as u8, Cause::TradeIn, x);
     }
-    (notes, shipments)
+    done
 }
 
 /// Each good's worth per unit to the one who makes it, what one worker makes and the land, for
@@ -1178,7 +1315,7 @@ mod tests {
         wanted[0] = 500_000.0;
         wanted[ITEMS] = 500_000.0;
         let people = [1000, 1000];
-        let deals = deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)]);
+        let deals = deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)], None);
         assert_eq!(deals.len(), 1, "{deals:?}");
         let d = &deals[0];
         assert_eq!((d.from, d.to, d.item), (0, 1, 0));
@@ -1190,7 +1327,7 @@ mod tests {
         assert!(grain + fish <= 500_000);
         let before = stock.clone();
         let mut books = Books::default();
-        let (notes, shipments) = settle(&r, &deals, &mut stock, &goods, &mut books, Some(1));
+        let Settled { notes, shipments, .. } = settle(&r, &deals, &mut stock, &mut Vec::new(), &goods, &mut books, Some(1));
         // Goods and coins only moved: every class balances.
         for c in 0..K {
             assert_eq!(stock[c] + stock[K + c], before[c] + before[K + c]);
@@ -1223,11 +1360,11 @@ mod tests {
         wanted[0] = 500_000.0;
         wanted[ITEMS] = 600_000.0;
         let people = [1000, 1000];
-        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)]), []);
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, Some(2.0), None)], None), []);
         // By sea, two days cost a tenth as much: it pays.
-        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, None, Some(2.0))]).len(), 1);
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &[way(0, 1, None, Some(2.0))], None).len(), 1);
         // With nobody living at one end, nothing is traded.
-        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &[1000, 0], &[way(0, 1, None, Some(2.0))]), []);
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &[1000, 0], &[way(0, 1, None, Some(2.0))], None), []);
     }
 
     #[test]
@@ -1242,7 +1379,7 @@ mod tests {
             wanted[q * ITEMS + 5] = 1_000_000.0;
         }
         let ways = [way(0, 1, Some(1.0), None), way(0, 2, Some(1.0), None), way(0, 3, Some(1.0), None)];
-        let deals = deals(&r, &p, &t, &stock, &wanted, &[10; 4], &ways);
+        let deals = deals(&r, &p, &t, &stock, &wanted, &[10; 4], &ways, None);
         assert_eq!(deals.len(), 3, "{deals:?}");
         let cost = |d: &Deal| d.goods.iter().map(|&(_, u, price)| u as f64 * price).sum::<f64>();
         assert!(cost(&deals[0]) <= 500.0 && cost(&deals[0]) > 400.0, "{deals:?}");
@@ -1263,8 +1400,8 @@ mod tests {
         }
         let ways = vec![way(0, 1, Some(1.0), None), way(0, 2, Some(3.0), Some(4.0)), way(1, 3, Some(2.0), None), way(2, 3, None, Some(6.0))];
         let people = [100; 4];
-        let mut forward = deals(&r, &p, &t, &stock, &wanted, &people, &ways);
-        let mut backward = deals(&r, &p, &t, &stock, &wanted, &people, &ways.iter().rev().copied().collect::<Vec<_>>());
+        let mut forward = deals(&r, &p, &t, &stock, &wanted, &people, &ways, None);
+        let mut backward = deals(&r, &p, &t, &stock, &wanted, &people, &ways.iter().rev().copied().collect::<Vec<_>>(), None);
         assert!(forward.len() >= 4);
         let key = |d: &Deal| (d.from, d.to, d.item);
         forward.sort_by_key(key);
@@ -1288,12 +1425,12 @@ mod tests {
         let ways: Vec<Link> = (0..n as u32 - 1).map(|q| way(q, q + 1, Some(1.0), None)).collect();
         let mut seen: BTreeMap<(u32, u32), u32> = BTreeMap::new();
         for _ in 0..60 {
-            let deals = deals(&r, &p, &t, &stock, &wanted, &[100; 5], &ways);
+            let deals = deals(&r, &p, &t, &stock, &wanted, &[100; 5], &ways, None);
             for d in &deals {
                 // Food only ever goes one way along each way: down the row.
                 *seen.entry((d.from, d.to)).or_default() += 1;
             }
-            settle(&r, &deals, &mut stock, &goods, &mut Books::default(), None);
+            settle(&r, &deals, &mut stock, &mut Vec::new(), &goods, &mut Books::default(), None);
         }
         assert_eq!(seen.keys().copied().collect::<Vec<_>>(), [(0, 1), (1, 2), (2, 3), (3, 4)]);
         // By then the gaps are about what a day's carrying costs, or less, and the far end is fed.
@@ -1333,18 +1470,170 @@ mod tests {
                     stock[at] = (0.8 * stock[at] as f64 + 0.2 * usual[at] as f64).round() as u64;
                 }
             }
-            let deals = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways);
+            let deals = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, None);
             for d in &deals {
                 // Each good goes only one way: to the province with the coins.
                 assert_eq!(*seen.entry(d.item).or_insert((d.from, d.to)), (d.from, d.to), "{} turned back", r.items[d.item].name);
             }
-            settle(&r, &deals, &mut stock, &goods, &mut Books::default(), None);
+            settle(&r, &deals, &mut stock, &mut Vec::new(), &goods, &mut Books::default(), None);
             gaps.push(stock[COIN] as i64 - stock[K + COIN] as i64);
         }
         // The coins even out, never overshooting.
         assert!(gaps.iter().all(|&g| g >= 0) && gaps.windows(2).all(|w| w[1] <= w[0]));
         assert!(*gaps.last().unwrap() < 1_300_000, "{gaps:?}");
         assert!(seen.values().all(|&(from, to)| (from, to) == (1, 0)));
+    }
+
+    /// Two provinces, `0` trading as realm `realms[0]` and `1` as `realms[1]`, each collecting tolls
+    /// for its realm, at war if `war`.
+    fn borders(realms: [u32; 2], war: bool) -> Borders {
+        let enemies = if war { vec![vec![1], vec![0]] } else { vec![Vec::new(); 2] };
+        Borders { trades_as: realms.to_vec(), collects: realms.to_vec(), enemies }
+    }
+
+    /// The setting of `food_goes_where_it_is_dear_and_coins_come_back`: food plenty in 0, short in 1.
+    fn food_gap() -> (Vec<u64>, Vec<f64>) {
+        let (mut stock, mut wanted) = provinces(2);
+        stock[0] = 900_000;
+        stock[1] = 100_000;
+        stock[K] = 1_000;
+        wanted[0] = 500_000.0;
+        wanted[ITEMS] = 500_000.0;
+        (stock, wanted)
+    }
+
+    fn units(deals: &[Deal]) -> u64 {
+        deals.iter().flat_map(|d| d.goods.iter().map(|g| g.1)).sum()
+    }
+
+    #[test]
+    fn war_stops_trade_between_enemies_and_trade_resumes_at_the_peace() {
+        let (p, r, _) = shipped();
+        let t = TradeParams { toll: 0.0, war_stops: 1.0, ..p.trade.clone().unwrap() };
+        let (stock, wanted) = food_gap();
+        let ways = [way(0, 1, Some(2.0), None)];
+        let free = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, None);
+        assert!(units(&free) > 0);
+        // At war: nothing; at peace, the same goods as with no realms at all.
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, Some(&borders([0, 1], true))), []);
+        let peace = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &ways, Some(&borders([0, 1], false)));
+        assert_eq!(peace.iter().map(|d| &d.goods).collect::<Vec<_>>(), free.iter().map(|d| &d.goods).collect::<Vec<_>>());
+        assert_eq!(peace[0].realms, (0, 1));
+        // A war that stops half the trade: half goes.
+        let half = TradeParams { war_stops: 0.5, ..t.clone() };
+        let some = units(&deals(&r, &p, &half, &stock, &wanted, &[1000, 1000], &ways, Some(&borders([0, 1], true))));
+        assert!((some as f64 - units(&free) as f64 / 2.0).abs() <= 2.0, "{some} of {}", units(&free));
+        // A war that stops nothing: as in peace.
+        let none = TradeParams { war_stops: 0.0, ..t };
+        assert_eq!(units(&deals(&r, &p, &none, &stock, &wanted, &[1000, 1000], &ways, Some(&borders([0, 1], true)))), units(&free));
+    }
+
+    #[test]
+    fn a_toll_must_be_beaten_by_the_gap_across_a_border_only() {
+        let (p, r, _) = shipped();
+        let (mut stock, mut wanted) = provinces(2);
+        // Grain a fifth dearer in province 1, two days apart by sea: the gap (0.02 a ration) beats
+        // the carrying (0.004), but not the carrying and a toll of half the price (0.05).
+        stock[0] = 500_000;
+        stock[K] = 500_000;
+        wanted[0] = 500_000.0;
+        wanted[ITEMS] = 600_000.0;
+        let ways = [way(0, 1, None, Some(2.0))];
+        let t = TradeParams { toll: 0.5, war_stops: 1.0, ..p.trade.clone().unwrap() };
+        let people = [1000, 1000];
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &ways, Some(&borders([0, 1], false))), []);
+        // Within one realm there is no toll, and none into land nobody owns: the grain goes.
+        for b in [borders([0, 0], false), borders([0, NONE], false)] {
+            let d = deals(&r, &p, &t, &stock, &wanted, &people, &ways, Some(&b));
+            assert!(d.len() == 1 && d[0].tolled == NONE && d[0].tolls.is_empty(), "{d:?}");
+        }
+        // Nor into a province that doesn't collect (an enemy occupies it, or it has risen up).
+        let mut rising = borders([0, 1], false);
+        rising.collects[1] = NONE;
+        assert_eq!(deals(&r, &p, &t, &stock, &wanted, &people, &ways, Some(&rising)).len(), 1);
+        // With no toll, it goes across the border too.
+        let free = TradeParams { toll: 0.0, ..t };
+        assert_eq!(deals(&r, &p, &free, &stock, &wanted, &people, &ways, Some(&borders([0, 1], false))).len(), 1);
+    }
+
+    #[test]
+    fn the_toll_goes_into_the_treasury_of_the_realm_the_goods_enter() {
+        let (p, r, goods) = shipped();
+        let t = TradeParams { toll: 0.1, war_stops: 1.0, ..p.trade.clone().unwrap() };
+        let (mut stock, wanted) = food_gap();
+        let deals = deals(&r, &p, &t, &stock, &wanted, &[1000, 1000], &[way(0, 1, Some(2.0), None)], Some(&borders([0, 1], false)));
+        assert_eq!(deals.len(), 1);
+        let d = &deals[0];
+        assert_eq!((d.tolled, d.tolls.len()), (1, d.goods.len()));
+        // A tenth of the seller's price a unit (grain and fish are of one price here), not of the
+        // carrying.
+        for (&(_, _, unit), &toll) in d.goods.iter().zip(&d.tolls) {
+            assert!(toll > 0.0 && unit > 10.0 * toll, "{d:?}");
+        }
+        let before = stock.clone();
+        let mut treasury = vec![0u64; 2 * K];
+        let done = settle(&r, &deals, &mut stock, &mut treasury, &goods, &mut Books::default(), None);
+        let toll: f64 = d.goods.iter().zip(&d.tolls).map(|(g, x)| g.1 as f64 * x).sum();
+        let owed: f64 = d.goods.iter().map(|&(_, u, price)| u as f64 * price).sum();
+        assert_eq!(treasury[K + COIN], toll.round() as u64);
+        assert_eq!(treasury[COIN], 0);
+        assert_eq!(done.tolls.into_iter().collect::<Vec<_>>(), [(1, toll.round() as u64)]);
+        // The buyer paid the price, the carrying and the toll; the seller got the price and the
+        // carrying; no coin was made or lost.
+        assert_eq!(before[K + COIN] - stock[K + COIN], owed.round() as u64 + toll.round() as u64);
+        assert_eq!(stock[COIN] - before[COIN], owed.round() as u64);
+        assert_eq!(stock[COIN] + stock[K + COIN] + treasury[K + COIN], before[COIN] + before[K + COIN]);
+        assert!((done.shipments.iter().map(|s| s.toll).sum::<f64>() - toll).abs() < 1e-6);
+        // The trade between the two realms, for their opinions: realm 0 sold to realm 1.
+        assert_eq!(done.between.into_iter().collect::<Vec<_>>(), [((0, 1), (owed.round() as u64, 0))]);
+    }
+
+    #[test]
+    fn a_buyer_spends_at_most_half_its_coins_toll_included() {
+        let (p, r, _) = shipped();
+        let t = TradeParams { toll: 1.0, war_stops: 1.0, ..p.trade.clone().unwrap() };
+        // As in the test without tolls: province 1 needs tools and has only 1,000 coins.
+        let (mut stock, mut wanted) = provinces(2);
+        stock[7] = 10_000;
+        stock[K + COIN] = 1_000;
+        wanted[ITEMS + 5] = 1_000_000.0;
+        let deals = deals(&r, &p, &t, &stock, &wanted, &[10; 2], &[way(0, 1, Some(1.0), None)], Some(&borders([0, 1], false)));
+        let d = &deals[0];
+        let cost: f64 = d.goods.iter().zip(&d.tolls).map(|(&(_, u, price), toll)| u as f64 * (price + toll)).sum();
+        assert!(cost <= 500.0 && cost > 400.0, "{deals:?}");
+    }
+
+    #[test]
+    fn occupied_land_trades_as_the_occupiers_and_collects_nothing() {
+        // Province 0 is realm 0's; 1 is realm 1's, occupied by realm 0; 2 is realm 1's and has risen
+        // up; 3 is nobody's. Realms 0 and 1 are at war; realm 2, dissolved, was at war with realm 1.
+        let mut w = World::empty(&crate::world::WorldParams { n: 4, provinces: 4, seed: 1, land_fraction: 0.4, radius_km: 1000.0 });
+        w.owner = vec![0, 1, 1, NONE];
+        w.occupier = vec![NONE, 0, NONE, NONE];
+        w.uprising = vec![NONE, NONE, 2, NONE];
+        w.realms.capital = vec![0, 2, NONE];
+        w.wars.push(0, 1, crate::diplomacy::WarCause::Poke, 0, NONE);
+        w.wars.push(1, 2, crate::diplomacy::WarCause::Poke, 0, NONE);
+        let fields: Vec<_> = V1.reads_earlier.iter().map(|f| known(f)).collect();
+        let b = Borders::read(&crate::world::Earlier::copy(&w, 0, &fields), 4);
+        assert_eq!(b.trades_as, [0, 0, 1, NONE]);
+        assert_eq!(b.collects, [0, NONE, NONE, NONE]);
+        assert!(b.at_war(0, 1) && b.at_war(1, 0) && !b.at_war(1, 2) && !b.at_war(0, NONE) && !b.at_war(0, 0));
+
+        // Food goes from realm 0's land into the province it occupies, toll-free, and not from
+        // that province's owner, the enemy.
+        let (p, r, _) = shipped();
+        let t = TradeParams { toll: 0.5, war_stops: 1.0, ..p.trade.clone().unwrap() };
+        let (mut stock, mut wanted) = provinces(4);
+        for q in [0, 2] {
+            stock[q * K] = 900_000;
+            wanted[q * ITEMS] = 500_000.0;
+        }
+        stock[K] = 1_000;
+        wanted[ITEMS] = 500_000.0;
+        let ways = [way(0, 1, Some(2.0), None), way(2, 1, Some(2.0), None)];
+        let d = deals(&r, &p, &t, &stock, &wanted, &[1000; 4], &ways, Some(&b));
+        assert_eq!(d.iter().map(|d| (d.from, d.to, d.tolled)).collect::<Vec<_>>(), [(0, 1, NONE)], "{d:?}");
     }
 
     #[test]

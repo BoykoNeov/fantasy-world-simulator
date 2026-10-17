@@ -33,6 +33,7 @@ static V0: Manifest = Manifest {
     tier: crate::fields::Tier::Province,
     cadence: Cadence::Monthly,
     reads: &["province.center"],
+    reads_earlier: &[],
     owns: &["province.rain_shortfall"],
     requests: &[],
     asks: &[],

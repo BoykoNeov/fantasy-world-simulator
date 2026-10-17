@@ -1,0 +1,74 @@
+//! Throwaway: write a scenario file with this build, and each timeline's end state. Realms, rulers,
+//! "treaties", armies and markets with trade: realms trade, go to war and occupy each other's land.
+use sim::branch::Timelines;
+use sim::config::Config;
+use sim::diplomacy::{TreatyParams, WarParams};
+use sim::events::Event;
+use sim::grid::NONE;
+use sim::module::Slot;
+use sim::realms::RealmParams;
+use sim::sim::Sim;
+use sim::world::WorldParams;
+
+fn line(name: &str, v: impl Iterator<Item = u64>) -> String {
+    format!("{name} {}\n", v.map(|x| x.to_string()).collect::<Vec<_>>().join(" "))
+}
+
+fn dump(sim: &Sim) -> String {
+    let w = &sim.world;
+    let mut out = format!("day {}\n", sim.day);
+    out += &line("people", w.province_population().into_iter());
+    out += &line("starved", w.starved_this_year.iter().copied());
+    let k = w.goods.stride();
+    let count = w.stock.len() / k;
+    for (c, name) in w.goods.names().iter().enumerate() {
+        out += &line(&format!("stock {name}"), (0..count).map(|p| w.stock[p * k + c]));
+        if !w.price.is_empty() {
+            out += &line(&format!("price {name}"), (0..count).map(|p| w.price[p * k + c]));
+            out += &line(&format!("workers {name}"), (0..count).map(|p| w.workers[p * k + c]));
+        }
+    }
+    if w.realms.count() > 0 {
+        out += &line("owner", w.owner.iter().map(|&x| x as u64));
+        out += &line("occupier", w.occupier.iter().map(|&x| x as u64));
+        out += &line("treasury", w.realm_stock.iter().copied());
+        out += &line("wars", w.wars.ended.iter().copied());
+        out += &line("opinions", w.relations.a_of_b.iter().chain(&w.relations.b_of_a).map(|x| x.to_bits() as u64));
+    }
+    out
+}
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let (dir, name) = (args.next().unwrap(), args.next().unwrap());
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.set_choice(Slot::Economics, "markets").unwrap();
+    c.modules.realms = Some(RealmParams::default());
+    c.modules.characters = Some(Default::default());
+    c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
+    c.modules.warfare = Some(Default::default());
+    let mut s = Sim::new(&c).unwrap();
+    s.run_days(200);
+    // Two realms that border each other go to war, so trade crosses a front.
+    let w = &s.world;
+    let (a, b) = w
+        .routes
+        .links
+        .iter()
+        .map(|l| (w.owner[l.a as usize], w.owner[l.b as usize]))
+        .find(|&(a, b)| a != b && a != NONE && b != NONE)
+        .unwrap();
+    s.poke(Event::DeclareWar { attacker: a, defender: b });
+    s.run_days(364 * 6);
+    let mut t = Timelines::new(s);
+    t.branch(364 * 3).unwrap();
+    t.sim_mut().poke(Event::ForcePeace { a, b, winner: NONE });
+    t.sim_mut().run_days(364 * 2);
+    std::fs::write(format!("{dir}/{name}.toml"), t.scenario_text()).unwrap();
+    let mut out = String::new();
+    for tl in &t.list {
+        out += &format!("timeline {}\n", tl.id);
+        out += &dump(&tl.sim);
+    }
+    std::fs::write(format!("{dir}/{name}.expected"), out).unwrap();
+}

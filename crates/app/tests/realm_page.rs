@@ -56,7 +56,7 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     let mut earlier_rulers = 0;
     let mut truces = 0;
     for r in 0..geo.realms.count() as u32 {
-        let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, coin);
+        let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, coin, &sim.world.trade);
         let mut all = vec![page.name.clone()];
         all.extend(page.facts.iter().cloned());
         all.extend(page.past_rulers.iter().cloned());

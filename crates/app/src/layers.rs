@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn trade_is_netted_per_pair_and_per_province() {
-        let ship = |from, to, coins| Shipment { from, to, column: 0, units: 1, coins };
+        let ship = |from, to, coins| Shipment { from, to, column: 0, units: 1, coins, toll: 0.0 };
         let s = [ship(1, 0, 30.0), ship(0, 1, 10.0), ship(2, 1, 5.0), ship(0, 2, 4.0), ship(2, 0, 4.0)];
         // 1 sold 0 a net 20; 2 sold 1 5; 0 and 2 cancel out.
         assert_eq!(net_trade(&s), vec![(1, 0, 20.0), (2, 1, 5.0)]);

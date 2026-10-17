@@ -607,6 +607,7 @@ static V1: Manifest = Manifest {
         "province.coast_km",
         "province.ore_km2",
     ],
+    reads_earlier: &[],
     owns: &[
         "army.realm",
         "army.province",

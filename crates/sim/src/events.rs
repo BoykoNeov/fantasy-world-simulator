@@ -61,6 +61,10 @@ pub enum Event {
     /// `sides` gives each realm that fought and the soldiers it lost, which sum to `killed`. The
     /// owner of provinces adds to the unrest where it was fought.
     Battle { province: u32, winner: u32, loser: u32, killed: u64, sides: Vec<(u32, u64)> },
+    /// A month's trade across the border between realms `a` and `b` (`a` the lower number): what
+    /// the goods each way were worth, in coins (the price and the carrying; tolls not included).
+    /// Sent once a month for each pair of realms that traded; not kept in the event log.
+    Trade { a: u32, b: u32, a_to_b: u64, b_to_a: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -82,6 +86,7 @@ pub enum EventKind {
     Calmed,
     Rebellion,
     Battle,
+    Trade,
 }
 
 impl EventKind {
@@ -92,14 +97,14 @@ impl EventKind {
     /// | --- | --- | --- |
     /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle |
     /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion |
-    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed |
+    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
             // A province taken the day before a peace is handed over (or given back) by it.
             EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied | EventKind::Battle => 0,
             EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion => 1,
-            EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed => 2,
+            EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed | EventKind::Trade => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -125,6 +130,7 @@ impl Event {
             Event::Calmed { .. } => EventKind::Calmed,
             Event::Rebellion { .. } => EventKind::Rebellion,
             Event::Battle { .. } => EventKind::Battle,
+            Event::Trade { .. } => EventKind::Trade,
         }
     }
 
@@ -137,7 +143,10 @@ impl Event {
             Event::ConservationBroken { .. } | Event::Drought { .. } => 0,
             Event::Succession { realm, .. } => *realm as u64,
             // Pokes about one pair go by the pair, so the player's order between them holds.
-            Event::DeclareWar { attacker: a, defender: b } | Event::ForcePeace { a, b, .. } | Event::WarRefused { attacker: a, defender: b, .. } => {
+            Event::DeclareWar { attacker: a, defender: b }
+            | Event::ForcePeace { a, b, .. }
+            | Event::WarRefused { attacker: a, defender: b, .. }
+            | Event::Trade { a, b, .. } => {
                 pair(*a, *b)
             }
             Event::WarDeclared { war, .. } | Event::Peace { war, .. } => *war as u64,
@@ -187,7 +196,7 @@ pub fn delivery_order(events: &mut [Posted], rank: impl Fn(Slot) -> usize) {
 
 /// Delivered events, kept for the chronicle and the inspector's history. It is not part of a
 /// snapshot: replay doesn't need it, and old entries are pruned. Grants are not kept here (the
-/// day's applied requests are).
+/// day's applied requests are), nor the monthly trade between realms.
 #[derive(Clone, Debug)]
 pub struct EventLog {
     pub entries: Vec<Posted>,

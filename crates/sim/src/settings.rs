@@ -229,6 +229,8 @@ pub static GROUPS: &[Group] = &[
             live("modules.markets.trade.sea_share", "Sea is cheaper", "A day of carrying at sea costs this share of a day overland (0.1: ten times cheaper).", 0.0, 10.0, "share"),
             live("modules.markets.trade.money_response", "Prices follow money", "How strongly prices follow the coins about: where coins pile up everything is dearer, by the coins a person against the world's to this power, so the coins flow back out. 0: not at all.", 0.0, 5.0, ""),
             live("modules.markets.trade.money_range", "Money price limits", "That dearness stays within 1/this and this times.", 1.0, 100.0, "times"),
+            live("modules.markets.trade.toll", "Border tolls", "Goods coming into another realm pay this share of the seller's price as a toll, on top of the price and the carrying, into that realm's treasury. Carrying food a day already costs about a fifth of its price, so a toll hardly touches food and bites on cloth and tools, worth much for their weight. Raise it and less trade crosses borders but treasuries fill; 0: no tolls. None into land nobody owns, an enemy occupies or that has risen up, nor within a realm.", 0.0, 5.0, "share"),
+            live("modules.markets.trade.war_stops", "War stops trade", "Share of the trade between two realms at war that the war stops: 1, none goes; 0, they trade as in peace. Land an enemy occupies trades as the occupier's.", 0.0, 1.0, "share"),
             live("modules.markets.trade.carriage.*", "carrying cost", "Coins to carry one unit of this good one day overland. Higher keeps it local.", 0.0, 1000.0, "coins a day"),
         ],
     },
@@ -301,6 +303,8 @@ pub static GROUPS: &[Group] = &[
             live("modules.diplomacy.treaties.unrest_weariness", "Weariness: unrest", "Weariness for a whole realm on the brink of uprising, by its average unrest.", 0.0, 1000.0, ""),
             live("modules.diplomacy.treaties.held_target_weariness", "Peace once the prize is held", "An attacker holding what it went to war for makes peace once the defender's weariness reaches this.", 0.0, 1000.0, ""),
             live("modules.diplomacy.treaties.tie", "A draw", "Both sides worn out within this of each other: nobody wins.", 0.0, 1000.0, ""),
+            live("modules.diplomacy.treaties.trade_opinion", "Warming by trade", "At peace and outside a truce, a realm thinks up to this much better a month of a realm it trades with, on top of \"warming in peace\" and up to \"peace's ceiling\". Higher: trading partners become friends faster and rarely fight. 0: trade doesn't change opinions.", 0.0, 10.0, "a month"),
+            live("modules.diplomacy.treaties.trade_full", "Trade that counts fully", "A month's trade with another realm worth this share of the coins in a realm's own land warms it the whole \"warming by trade\"; less trade, in proportion. Lower: even a little trade counts fully.", 0.0001, 1.0, "share"),
         ],
     },
     Group {
