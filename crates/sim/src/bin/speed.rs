@@ -10,9 +10,10 @@
 //! run measures first). A medium world unless `--size` or `--n`/`--provinces` say otherwise. One
 //! worker thread unless `--threads` (one is the fair measure). Measure on a quiet machine.
 //!
-//! It prints each mix as it goes, then the mixes that got slower than in the shipped table
-//! (`crates/sim/data/speed.toml`) by more than a fifth, as multiples of the base mix. `--write`
-//! saves the new table there.
+//! It prints each mix as it goes, then the mixes whose time grew by a fifth more than the middle
+//! growth of the whole table since the shipped one (`crates/sim/data/speed.toml`): a faster or
+//! busier machine moves every mix alike, which the middle takes out. `--write` saves the new table
+//! there.
 
 use sim::combos::{all_pairs, Mix};
 use sim::speed::{base_mix, measure, mixes, today, About, Settings, Table};
@@ -77,10 +78,10 @@ fn main() {
             if slower.is_empty() {
                 println!("\nNothing got slower than in the shipped table (measured {} on {}).", old.about.date, old.about.machine);
             } else {
-                println!("\nSlower than in the shipped table (measured {} on {}), as multiples of the base mix:", old.about.date, old.about.machine);
+                println!("\nSlower than in the shipped table (measured {} on {}), against how the whole table moved:", old.about.date, old.about.machine);
                 for x in &slower {
-                    let ms = x.ms.map_or(String::new(), |(a, b)| format!(" ({a:.2} → {b:.2} ms a day)"));
-                    println!("  {} {}: {:.2} → {:.2}{ms}", x.versions, x.moment, x.was, x.now);
+                    let ms = x.ms.map_or(String::new(), |(a, b)| format!(", {a:.2} → {b:.2} ms a day"));
+                    println!("  {} {}: {:.2}× the rest (× the simplest mix: {:.2} → {:.2}{ms})", x.versions, x.moment, x.against_rest, x.was, x.now);
                 }
             }
         }

@@ -176,7 +176,10 @@ pub struct Slower {
     pub versions: String,
     /// "young" or "busy".
     pub moment: &'static str,
-    /// Multiples of the base, before and now.
+    /// How many times its time grew, against the middle growth of every mix measured in both
+    /// tables: 1.5 is half as slow again as the rest of the table moved.
+    pub against_rest: f64,
+    /// Multiples of the base, before and now (for showing; not what decides).
     pub was: f64,
     pub now: f64,
     /// Milliseconds before and now, when both tables were measured alike (same machine and
@@ -224,18 +227,32 @@ impl Table {
         self.mix.iter().find(|r| r.versions == label && r.refused.is_none())
     }
 
-    /// Mixes that take more than `factor` times as many multiples of the base as in `old`.
+    /// Mixes whose time grew more than `factor` times the middle growth of every mix measured in
+    /// both tables, young and busy apart. A faster or slower machine, a busy one, or the base mix
+    /// measured a little off moves every mix alike, and the middle takes that out: only mixes that
+    /// slowed more than the rest are named. With fewer than three mixes in common nothing is.
     pub fn slower_than(&self, old: &Table, factor: f64) -> Vec<Slower> {
         let alike = self.about.machine == old.about.machine && self.about.threads == old.about.threads && self.settings == old.settings;
         let mut out = Vec::new();
-        for r in &self.mix {
-            let Some(o) = old.mix.iter().find(|o| o.versions == r.versions) else { continue };
-            for (name, now, was) in [("young", &r.young, &o.young), ("busy", &r.busy, &o.busy)] {
-                if let (Some(n), Some(w)) = (now, was)
-                    && w.times_base > 0.0
-                    && n.times_base > factor * w.times_base
-                {
-                    out.push(Slower { versions: r.versions.clone(), moment: name, was: w.times_base, now: n.times_base, ms: alike.then_some((w.ms, n.ms)) });
+        for (name, pick) in [("young", (|r: &Row| r.young.clone()) as fn(&Row) -> Option<Moment>), ("busy", |r: &Row| r.busy.clone())] {
+            let pairs: Vec<(&Row, Moment, Moment)> = self
+                .mix
+                .iter()
+                .filter_map(|r| {
+                    let o = old.mix.iter().find(|o| o.versions == r.versions)?;
+                    Some((r, pick(r)?, pick(o)?)).filter(|(_, n, w)| n.ms > 0.0 && w.ms > 0.0)
+                })
+                .collect();
+            if pairs.len() < 3 {
+                continue;
+            }
+            let mut growth: Vec<f64> = pairs.iter().map(|(_, n, w)| n.ms / w.ms).collect();
+            growth.sort_by(f64::total_cmp);
+            let middle = growth[growth.len() / 2];
+            for (r, n, w) in pairs {
+                let against_rest = n.ms / w.ms / middle;
+                if against_rest > factor {
+                    out.push(Slower { versions: r.versions.clone(), moment: name, against_rest, was: w.times_base, now: n.times_base, ms: alike.then_some((w.ms, n.ms)) });
                 }
             }
         }
@@ -293,15 +310,24 @@ mod tests {
         assert_eq!(Table::parse(&t.text()).unwrap(), t);
         assert_eq!(t.row(&other).unwrap().young.as_ref().unwrap().ms, 3.0);
 
-        // On a faster machine everything halves: nothing got slower. Only the busy day of the
-        // other mix went from 4 to 6 times the base.
-        let later = Table::new(About { machine: "faster".into(), ..about.clone() }, Settings::default(), vec![row(&other, 1.5, 6.0), row(&base, 0.5, 1.0)]);
+        // A third mix, so the middle of the table means something.
+        let third = Mix::parse("economics=markets").unwrap();
+        let t = Table::new(about.clone(), Settings::default(), vec![row(&other, 3.0, 8.0), row(&base, 1.0, 2.0), row(&third, 5.0, 10.0)]);
+        // On a faster machine everything halves: nothing got slower but the busy day of the other
+        // mix, which went from 8 to 6 ms while the rest halved: half as slow again as the rest.
+        let later = Table::new(About { machine: "faster".into(), ..about.clone() }, Settings::default(), vec![row(&other, 1.5, 6.0), row(&base, 0.5, 1.0), row(&third, 2.5, 5.0)]);
         let slower = later.slower_than(&t, 1.2);
         assert_eq!(slower.len(), 1);
-        assert_eq!((slower[0].moment, slower[0].was, slower[0].now, slower[0].ms), ("busy", 4.0, 6.0, None));
+        assert_eq!((slower[0].moment, slower[0].against_rest, slower[0].was, slower[0].now, slower[0].ms), ("busy", 1.5, 4.0, 6.0, None));
+        // The base mix measured a fifth low moves every multiple of it, but no mix is named: the
+        // middle of the table didn't move.
+        let low_base = Table::new(about.clone(), Settings::default(), vec![row(&other, 3.0, 8.0), row(&base, 0.8, 1.6), row(&third, 5.0, 10.0)]);
+        assert!(low_base.slower_than(&t, 1.2).is_empty());
         // Measured alike, milliseconds compare too.
-        let alike = Table::new(about, Settings::default(), vec![row(&other, 3.0, 12.0), row(&base, 1.0, 2.0)]);
+        let alike = Table::new(about, Settings::default(), vec![row(&other, 3.0, 12.0), row(&base, 1.0, 2.0), row(&third, 5.0, 10.0)]);
         assert_eq!(alike.slower_than(&t, 1.2)[0].ms, Some((8.0, 12.0)));
+        // With fewer than three mixes in common there is no middle to go by.
+        assert!(alike.slower_than(&Table { mix: t.mix[..2].to_vec(), ..t.clone() }, 1.2).is_empty());
     }
 
     #[test]

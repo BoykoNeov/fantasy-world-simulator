@@ -894,9 +894,12 @@ measured in the same run, so multiples compare across machines), the engine's ow
 modules, and each module's own work and the engine's checks around it (conservation sums, copies
 for "last changed", contracts), most costly first (`timing.rs`, `speed.rs`). Every accepted mix
 runs, terrain and climate at their defaults (they shape the map once, not its days; `--map` adds
-them); `--pairs` runs the tester's small set, `--only MIX` one mix. It prints the mixes that got
-more than a fifth slower than in the shipped table (`data/speed.toml`), and `--write` saves the new
-one, which the window shows beside the tester's verdict. Times are the clock's: measure on a quiet
+them); `--pairs` runs the tester's small set, `--only MIX` one mix. It prints the mixes whose time
+grew by a fifth more than the middle (median) growth of every mix since the shipped table
+(`data/speed.toml`): a faster or busier machine, or the cheap simplest mix measured a little off,
+moves every mix alike, and judging against the middle takes that out (the multiples of the
+simplest mix are for showing, not for deciding). `--write` saves the new table, which the window
+shows beside the tester's verdict. Times are the clock's: measure on a quiet
 machine, and never while other builds run.
 
 ```
