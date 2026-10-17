@@ -138,6 +138,10 @@ pub struct Climate {
     pub coast_distance_km: Vec<f32>,
 }
 
+/// The coldest and hottest yearly mean `cell.temperature` may hold, °C.
+const MIN_C: f64 = -90.0;
+const MAX_C: f64 = 70.0;
+
 /// Sea-level temperature by latitude (degrees, absolute).
 fn sea_level_temperature(abs_lat_deg: f64, p: &ClimateParams) -> f64 {
     p.equator_c - p.pole_drop_c * (abs_lat_deg / 90.0).powf(p.cooling_curve)
@@ -168,7 +172,9 @@ pub fn generate(grid: &Grid, elevation: &[f32], seed: u64, radius_km: f64, p: &C
             let continental = p.inland_rain + (1.0 - p.inland_rain) * (-(coast_distance_km[c] as f64) / p.inland_km).exp();
             let r_noise = 1.0 + p.rain_noise * fbm([d[0] * 4.0, d[1] * 4.0, d[2] * 4.0], 4, r_key);
             let r = band_rainfall(lat, p) * continental * r_noise;
-            (t as f32, r.max(0.0) as f32)
+            // Extreme settings together (bitter poles, steep cooling with height) could pass the
+            // coldest a field may hold; no default world comes near it.
+            (t.clamp(MIN_C, MAX_C) as f32, r.max(0.0) as f32)
         })
         .unzip();
     Climate { temperature, rainfall, coast_distance_km }

@@ -21,7 +21,9 @@ code can't be reached; numbers without an explanation can't be understood.
   whether it may change while the world runs (`live`) or only when a world is made (`made`: it
   shapes the map or the start). Keep the range inside what the module's own `check` accepts and
   wide enough to be useful; it must hold the default.
-- A part a module can switch on or off (an `Option` sub-table) goes in `SECTIONS`.
+- A part a module can switch on or off (an `Option` sub-table) goes in `SECTIONS`. Every module and
+  part must be on in `settings::everything()`, which names every field of `ModuleConfig` so a new
+  module doesn't build until it is added; a test fails for a part left off there.
 - Anything that is not a number to set (a name in a tree, a content table, a version picked from
   its own list) goes in `LEFT_OUT`, with the reason.
 - `settings::tests::every_value_is_a_setting_or_left_out_with_a_reason` fails for any value of the
@@ -31,6 +33,9 @@ code can't be reached; numbers without an explanation can't be understood.
   and given its old state (`save_state` / `load_state`). Anything a module works out from its
   settings must be rebuilt from them, not kept in its state. `crates/sim/tests/settings.rs` checks
   this for every module.
+- A setting's range must work at both ends: `tests/settings.rs` makes a tiny world with each setting
+  alone at its minimum and its maximum and runs it; it must run cleanly or be refused with a reason.
+  Keep generated values inside their fields' bounds (`fields.rs`).
 - Nothing more is needed for the window or the command line: the New world panel, the running
   world's Settings panel, `simrun --set KEY=VALUE`, `simrun --settings` and the window's
   `--set` / `--live-set` all work from `settings.rs`.

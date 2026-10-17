@@ -75,8 +75,8 @@ pub static GROUPS: &[Group] = &[
         at: "world",
         help: "The planet itself: its size, how finely it is mapped and how many provinces it has.",
         specs: &[
-            made("world.n", "Map detail", "How finely the planet is divided into cells: it has 6 × this × this of them. More cells make a sharper, more detailed map, but one slower to make and to draw. The world sizes set this.", 16.0, 1024.0, "cells a side"),
-            made("world.provinces", "Provinces", "About how many provinces the land is divided into (islands may add a few). Fewer make bigger provinces and a faster world; more make smaller ones. The world sizes set this.", 1.0, 100_000.0, ""),
+            made("world.n", "Map detail", "How finely the planet is divided into cells: it has 6 × this × this of them. More cells make a sharper, more detailed map, but one slower to make and to draw. The world sizes set this; at most the Huge world's, the largest run.", 16.0, 576.0, "cells a side"),
+            made("world.provinces", "Provinces", "About how many provinces the land is divided into (islands may add a few). Fewer make bigger provinces and a faster world; more make smaller ones. The world sizes set this; at most the Huge world's, the most run.", 1.0, 20_000.0, ""),
             made("world.land_fraction", "Land", "Share of the planet's surface that is land; the rest is sea.", 0.02, 0.98, "share"),
             made("world.radius_km", "Planet radius", "How big the planet is. A bigger planet has bigger cells and provinces, longer roads and more land to farm, for the same map detail.", 500.0, 50_000.0, "km"),
         ],
@@ -86,8 +86,8 @@ pub static GROUPS: &[Group] = &[
         at: "modules.terrain_params",
         help: "The shape of the land and the sea floor. The last four shape the \"noise\" terrain only.",
         specs: &[
-            made("modules.terrain_params.mountain_m", "Highest mountains", "How high the highest land rises. Height makes land colder, makes mountains and alpine land, and slows province borders.", 100.0, 15_000.0, "m"),
-            made("modules.terrain_params.sea_depth_m", "Deepest sea", "How deep the deepest sea is. It matters when the sea level is changed: a shallow sea uncovers more land as it falls.", 100.0, 15_000.0, "m"),
+            made("modules.terrain_params.mountain_m", "Highest mountains", "How high the highest land rises. Height makes land colder, makes mountains and alpine land, and slows province borders.", 100.0, 12_000.0, "m"),
+            made("modules.terrain_params.sea_depth_m", "Deepest sea", "How deep the deepest sea is. It matters when the sea level is changed: a shallow sea uncovers more land as it falls.", 100.0, 11_000.0, "m"),
             made("modules.terrain_params.highland_curve", "Lowland or highland", "How land is spread between low and high: above 1, most land is low plains with rare high peaks; at 1, every height is as common; below 1, broad high plateaus.", 0.2, 5.0, ""),
             made("modules.terrain_params.shelf_curve", "Coastal shelf", "How quickly the sea deepens away from the coast: below 1 it drops off fast; above 1, wide shallow seas along the coasts.", 0.2, 5.0, ""),
             made("modules.terrain_params.continent_scale", "Continents (more, smaller)", "How many continents fit around the planet: higher makes more, smaller continents and more islands; lower a few huge ones.", 0.3, 10.0, ""),
@@ -414,17 +414,27 @@ pub fn group_of(key: &str) -> Option<&'static Group> {
 
 /// Every module switched on, with every part: the configuration whose values every setting and
 /// [`LEFT_OUT`] together must cover, and where a part switched on gets its values from. Both
-/// economies are on, which no world runs, so that both are covered.
+/// economies are on, which no world runs, so that both are covered. Every field is named, so a new
+/// module doesn't build until it is switched on here (a test checks the parts inside modules).
 pub fn everything() -> ModuleConfig {
+    let d = ModuleConfig::default();
     ModuleConfig {
+        terrain: d.terrain,
+        climate: d.climate,
         economics: Some(FoodParams::default()),
         population: Some(PopParams::default()),
+        weather: true,
         markets: Some(MarketParams::default()),
         realms: Some(RealmParams::default()),
         characters: Some(Default::default()),
         diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
         warfare: Some(TroopParams::default()),
-        ..ModuleConfig::default()
+        terrain_params: d.terrain_params,
+        climate_params: d.climate_params,
+        biome_params: d.biome_params,
+        river_params: d.river_params,
+        farmland_params: d.farmland_params,
+        province_params: d.province_params,
     }
 }
 
@@ -632,6 +642,19 @@ mod tests {
         assert!(missing.is_empty(), "values with no description in settings.rs (describe them in GROUPS, or say in LEFT_OUT why not): {missing:?}");
         for (k, why) in LEFT_OUT {
             assert!(!why.is_empty(), "{k}");
+        }
+    }
+
+    /// Parts inside a module that are off by default (`None`) would be missed by the test above:
+    /// they don't serialise. Every one must be on in [`everything`], or be a value left out.
+    #[test]
+    fn every_part_is_on_in_everything() {
+        assert!(ron::to_string(&WarParams::default()).unwrap().contains("treaties:None"), "how RON writes a part that is off");
+        let text = ron::to_string(&everything()).unwrap();
+        let allowed: Vec<&str> = LEFT_OUT.iter().map(|(k, _)| k.rsplit('.').next().unwrap()).collect();
+        for (at, _) in text.match_indices(":None") {
+            let field = text[..at].rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap();
+            assert!(allowed.contains(&field), "{field} is off in everything(): switch it on there (and list it in SECTIONS if it can be switched)");
         }
     }
 

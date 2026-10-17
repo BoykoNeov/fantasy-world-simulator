@@ -168,3 +168,50 @@ fn map_settings_shape_the_world_made() {
     }
     assert!(made("modules.farmland_params.grassland", 2000.0).food_per_cell.iter().sum::<f64>() > plain.food_per_cell.iter().sum::<f64>());
 }
+
+/// Every setting alone at the ends of its range, on a tiny world with every module on: the world is
+/// made and runs two months, or a module refuses it with a reason. Nothing may crash, and no value
+/// may break its field's contract. (The map detail's top end is left out: it is the world size.)
+#[test]
+fn every_setting_works_at_the_ends_of_its_range() {
+    use rayon::prelude::*;
+    let mut base = everything();
+    base.modules.economics = Some(Default::default());
+    let mut cases = Vec::new();
+    for i in sim::settings::items(&base) {
+        for end in [i.spec.min, i.spec.max] {
+            if i.key == "world.n" && end > 64.0 {
+                continue;
+            }
+            // Food and markets both on is no world; each economy's settings are tried with its own.
+            let mut c = base.clone();
+            if i.key.starts_with("modules.economics") {
+                c.modules.markets = None;
+            } else {
+                c.modules.economics = None;
+            }
+            cases.push((i.key.clone(), end, c));
+        }
+    }
+    let failures: Vec<String> = cases
+        .into_par_iter()
+        .filter_map(|(key, end, mut c)| {
+            let v = if sim::settings::items(&c).iter().find(|i| i.key == key)?.whole { end.round() } else { end };
+            sim::settings::set(&mut c, &key, v).unwrap_or_else(|e| panic!("{key} = {v}: {e}"));
+            let run = std::panic::catch_unwind(move || match Sim::new(&c) {
+                Err(_) => Ok(()),
+                Ok(mut s) => {
+                    s.strict = true;
+                    s.run_days(60);
+                    if s.problems.contract_violations > 0 { Err(format!("{} contract violations", s.problems.contract_violations)) } else { Ok(()) }
+                }
+            });
+            match run {
+                Ok(Ok(())) => None,
+                Ok(Err(e)) => Some(format!("{key} = {v}: {e}")),
+                Err(p) => Some(format!("{key} = {v}: crashed: {}", p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default())),
+            }
+        })
+        .collect();
+    assert!(failures.is_empty(), "{} failing:\n{}", failures.len(), failures.join("\n"));
+}
