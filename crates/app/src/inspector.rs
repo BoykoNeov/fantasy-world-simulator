@@ -189,6 +189,9 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
                 (true, false) => format!("at war with its rebels, {}, since {began}", n.realm(other)),
                 (false, _) => format!("at war with {} since {began}, declared by {}", n.realm(other), n.realm(a)),
             };
+            let (lost, battles) = wars.tally(k as u32, r);
+            let (theirs, their_battles) = wars.tally(k as u32, other);
+            let text = if lost + theirs > 0 { format!("{text}; it has lost {} soldiers ({battles} battles), they {} ({their_battles})", group(lost), group(theirs)) } else { text };
             fighting.push((other, text));
         } else if day_of(&wars.truce_until, k) > day && truced.insert(other) {
             let winner = match wars.winner.get(k).copied().unwrap_or(NONE) {
@@ -201,6 +204,58 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
     }
     fighting.extend(truces);
     RealmPage { name: n.realm(r), alive: capital.is_some(), capital, facts, ruler, heir, past_rulers, relations: fighting }
+}
+
+/// One war going on, for the Wars section.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarLine {
+    pub attacker: u32,
+    pub defender: u32,
+    /// "Dreinmark against Tholia".
+    pub title: String,
+    /// What there is to say about it, a line each.
+    pub lines: Vec<String>,
+}
+
+/// Every war going on on `day`, latest first, and the peaces made in the `recent` days before it,
+/// latest first, in words. A war with a dissolved realm is over (its entry ends only at the next
+/// month's start), so it is left out.
+pub fn wars(n: &Names, day: u64, cal: &Calendar, recent: u64) -> (Vec<WarLine>, Vec<String>) {
+    let w = n.world;
+    let wars = &w.wars;
+    let get = |v: &[u64], k: usize| v.get(k).copied().unwrap_or(NEVER);
+    let (mut going, mut peaces) = (Vec::new(), Vec::new());
+    let held = |by: u32, of: u32| (0..w.provinces.count).filter(|&p| w.owner.get(p) == Some(&of) && w.occupier.get(p) == Some(&by)).count();
+    for k in (0..wars.count()).rev() {
+        let (Some(&a), Some(&b)) = (wars.attacker.get(k), wars.defender.get(k)) else { continue };
+        let cause = wars.cause.get(k).map_or(WarCause::Poke, |&c| WarCause::from_u8(c));
+        let ended = get(&wars.ended, k);
+        if ended == NEVER {
+            if !w.realms.alive(a) || !w.realms.alive(b) {
+                continue;
+            }
+            let title = if cause == WarCause::Rebellion { format!("{} rebels against {}", n.realm(a), n.realm(b)) } else { format!("{} against {}", n.realm(a), n.realm(b)) };
+            let mut lines = vec![format!("{}, since {}", cause.describe(), cal.format(get(&wars.began, k)))];
+            if let Some(&t) = wars.target.get(k).filter(|&&t| t != NONE) {
+                lines.push(format!("declared over province {t}"));
+            }
+            let (ad, al) = wars.tally(k as u32, a);
+            let (dd, dl) = wars.tally(k as u32, b);
+            if ad + dd + al as u64 + dl as u64 > 0 {
+                lines.push(format!("soldiers lost: {} {} ({al} battles lost), {} {} ({dl})", n.realm(a), group(ad), n.realm(b), group(dd)));
+            }
+            lines.push(format!("{} holds {} of {}'s provinces; {} holds {} of {}'s", n.realm(a), held(a, b), n.realm(b), n.realm(b), held(b, a), n.realm(a)));
+            going.push(WarLine { attacker: a, defender: b, title, lines });
+        } else if ended <= day && day - ended < recent {
+            let winner = match wars.winner.get(k).copied().unwrap_or(NONE) {
+                NONE => "nobody won".to_string(),
+                x => format!("{} won", n.realm(x)),
+            };
+            peaces.push((ended, format!("{}: peace between {} and {}, {winner}", cal.format(ended), n.realm(a), n.realm(b))));
+        }
+    }
+    peaces.sort_by_key(|p| std::cmp::Reverse(p.0));
+    (going, peaces.into_iter().map(|p| p.1).collect())
 }
 
 /// The realms an event is about.

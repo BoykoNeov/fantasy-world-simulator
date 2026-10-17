@@ -130,6 +130,24 @@ What exists:
     combination tester's choices until step 7's checks, so a world running them, or a new world
     made with them, says "not in the combination tester's table yet" rather than the table's
     verdict on the rest.
+- **Armies, battles and wars** (step 7's window part 2; `armies.rs`, only where armies are kept):
+  - "armies" draws field armies marching, gathering, besieging or fighting: one marker per realm
+    and place (a province's seat, or along the way it is on), in the realm's colour, larger with
+    more soldiers, ships as hulls; several realms at one seat sit side by side. Guards and recruits
+    standing idle at home aren't drawn (in a busy year on a large world they are 60–85% of field
+    companies; the province page lists them). On the march a marker glides along the way by the
+    days of it left (a group at its slowest member's pace; ships by sea, land troops by land where
+    a land way exists), smoothly between days, with a dotted line on to where it is going.
+    Hovering a marker names its realm, its soldiers by kind, and where it is or is going.
+  - "battles": crossed swords where a battle is fought on the day shown (by Warfare's own rule,
+    `sim::warfare::battle_provinces`: land soldiers of realms at war standing together), and a
+    mark fading over a month where one ended (only battles before the day shown).
+  - Worked out once for each day shown, from the army fields it is sent; drawn over the map by the
+    window's painter, on each copy of the repeating rectangle.
+  - The Wars section of the side panel: every war going on (who against whom, why and since when,
+    what it was declared over, soldiers and battles each side lost, provinces each holds of the
+    other), each side a button to its capital, and the peaces of the last five years. The realm
+    page's wars say what each side has lost.
 - **Editing realms, rulers and armies** (step 7's editor; `editor.rs`, `realm_tools.rs`; only
   what the world keeps is offered):
   - The "realms" tool in the Edit section: click provinces to pick them (again to put one back;
@@ -184,8 +202,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`, `--armies`: realms (with the ways
   to start weighted as given), rulers and heirs, wars and truces, and troops, as in `simrun`. Realms
   are off by default until step 7's checks; `--rulers`, `--wars` or `--armies` alone turn them on
-  the default way. Armies aren't drawn yet (window part 2); soldiers going home and deserting show
-  in the event log, under Warfare.
+  the default way; `--treaties` has realms choose war and peace themselves (with armies).
 - `--years Y`: how long to run before showing it (default 20).
 - `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
   on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).
@@ -196,7 +213,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
   `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest` (0..1), and `coasts`,
-  `rivers`, `borders`, `graticule`, `roads`, `realm_borders` (0 or 1).
+  `rivers`, `borders`, `graticule`, `roads`, `realm_borders`, `armies`, `battles` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--remake SIZE,SEED,YEARS[,SLOT=VERSION,...]`: once the window is open, make a new world through
@@ -207,7 +224,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   checks that the window copes with provinces going away).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
-  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm`: open that
+  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars`: open that
   section (for scripted screenshots).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.
@@ -268,5 +285,10 @@ results are in `bench/results/`.
   11.0–11.7 ms, zoom 13.1–13.6 ms, about 2 ms more, still 75–90 frames a second. One round of
   each was disturbed by other work on the machine (frames of 100–400 ms, `off_2` and `on_1`) and
   is left out of those ranges. Raw results: `bench/results/step7_window_*.json`.
+- **Re-checked after step 7's window part 2 (Oct 17):** one round each, oval map, integrated GPU,
+  large world (seed 7) under Economics v0 with realms, rulers, armies and "treaties" after 6 years
+  (14 wars going on), realm colours at 0.45. Armies and battles off: pan 10.2 ms, zoom 12.6 ms
+  (median); on: pan 9.7 ms, zoom 12.3 ms. No measurable cost. Raw results:
+  `bench/results/step7_armies_*.json`.
 - **The RTX 5090 numbers are not informative.** That day it showed a flat 15.6 ms (about 64 frames a
   second) for this app *and* for the renderer trial's program, so something capped it.

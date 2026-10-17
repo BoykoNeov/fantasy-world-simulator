@@ -31,6 +31,7 @@
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
+use app::armies::ArmyView;
 use app::editor::{Action, Clicked, Editor};
 use app::realm_tools::{Kept, RealmTools};
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
@@ -103,7 +104,7 @@ struct Options {
     remake: Option<String>,
     /// Settings changed in the world made (`--set KEY=VALUE`).
     set: Vec<(String, f64)>,
-    /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings" and "change-realm" (the editor's controls on the selected province's realm page).
+    /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings", "change-realm" (the editor's controls on the selected province's realm page) and "wars".
     open_sections: Vec<String>,
     bench: bool,
     out_dir: String,
@@ -216,6 +217,8 @@ impl Options {
                         "realms" => l.realms = x,
                         "unrest" => l.unrest = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
+                        "armies" => l.armies = x > 0.5,
+                        "battles" => l.battles = x > 0.5,
                         "roads" => l.roads = x > 0.5,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
@@ -357,7 +360,7 @@ struct WorldInfo {
     /// Whether the world trades: markets with trade on.
     trades: bool,
     /// The troop kinds, where armies are kept: node, name, whether ships.
-    troop_kinds: Vec<(u16, String, bool)>,
+    troop_kinds: Vec<app::armies::Kind>,
 }
 
 impl WorldInfo {
@@ -524,9 +527,12 @@ struct MapApp {
     /// Whether the world trades (markets with trade on): the trade layers are offered.
     trades: bool,
     /// The troop kinds, where armies are kept: node, name, whether ships.
-    troop_kinds: Vec<(u16, String, bool)>,
+    troop_kinds: Vec<app::armies::Kind>,
     /// What is typed into the editor's controls on the realm and province pages.
     realm_tools: RealmTools,
+    /// Armies, battles today and battles of the last month, for the day shown they were worked out
+    /// for (by address).
+    army_view: Option<(usize, ArmyView)>,
     /// The combination tester's table, shipped with the simulation.
     table: Result<Table, String>,
     /// The New world section: what is picked, and a world being made.
@@ -682,6 +688,7 @@ impl MapApp {
             coin_columns,
             troop_kinds,
             realm_tools: RealmTools::default(),
+            army_view: None,
             price_good,
             market: layers::MarketView::default(),
             market_for: None,
@@ -740,7 +747,7 @@ impl MapApp {
     fn adopt(&mut self, timelines: Timelines, data: MapData, gen_s: f64) {
         let sim = timelines.sim();
         let WorldInfo { owners, modules, coin_columns, price_good, trades, troop_kinds } = WorldInfo::of(sim, &self.table, None);
-        (self.troop_kinds, self.realm_tools) = (troop_kinds, RealmTools::default());
+        (self.troop_kinds, self.realm_tools, self.army_view) = (troop_kinds, RealmTools::default(), None);
         let frame = Frame::now(sim, 0);
         (self.owners, self.modules, self.coin_columns, self.price_good, self.trades) = (owners, modules, coin_columns, price_good, trades);
         self.geo = sim.world.clone();
@@ -1187,6 +1194,10 @@ impl MapApp {
         self.settings_section(ui);
         self.new_world_section(ui);
         ui.separator();
+        if self.kept().wars {
+            self.wars_section(ui);
+            ui.separator();
+        }
 
         ui.label("Edit");
         let edge = self.at_the_edge();
@@ -1235,6 +1246,7 @@ impl MapApp {
 
         ui.label("Layers");
         let realms = self.realms_on();
+        let armies = self.kept().armies;
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
@@ -1282,6 +1294,10 @@ impl MapApp {
         if realms {
             ui.checkbox(&mut l.realm_borders, "borders between realms").on_hover_text("thick lines where the realms on either side differ, or where a realm's land meets land nobody owns");
         }
+        if armies {
+            ui.checkbox(&mut l.armies, "armies").on_hover_text("field armies marching, gathering, besieging or fighting, in their realm's colour, sized by soldiers; ships as hulls. Guards and recruits idle at home aren't drawn (the province page lists them)");
+            ui.checkbox(&mut l.battles, "battles").on_hover_text("crossed swords where a battle is fought today; a fading mark where one ended in the last month");
+        }
         ui.separator();
 
         if let Some((c, p)) = self.hover {
@@ -1295,6 +1311,59 @@ impl MapApp {
         ui.small(format!("world built and run in {:.1} s", self.gen_s));
         ui.small(format!("frame {:.1} ms", self.last_dt_ms));
         ui.small(format!("GPU: {}", self.adapter));
+    }
+
+    /// Every war going on, and the peaces of the last five years; each side a button to its capital.
+    fn wars_section(&mut self, ui: &mut egui::Ui) {
+        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let (going, peaces) = inspector::wars(&names, self.day(), &self.calendar, 5 * self.calendar.days_per_year() as u64);
+        let open = self.opts.open_sections.iter().any(|s| s == "wars");
+        let mut go = None;
+        egui::CollapsingHeader::new(format!("Wars ({} going on)", going.len())).default_open(open).show(ui, |ui| {
+            if going.is_empty() {
+                ui.small("None going on.");
+            }
+            for g in &going {
+                ui.label(egui::RichText::new(&g.title).strong());
+                for l in &g.lines {
+                    ui.small(l);
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for r in [g.attacker, g.defender] {
+                        if let Some(c) = self.geo.realms.capital.get(r as usize).copied().filter(|&c| c != NONE)
+                            && ui.small_button(names.realm(r)).on_hover_text("select its capital").clicked()
+                        {
+                            go = Some(c);
+                        }
+                    }
+                });
+            }
+            if !peaces.is_empty() {
+                egui::CollapsingHeader::new(format!("Peaces of the last five years ({})", peaces.len())).id_salt("recent peaces").show(ui, |ui| {
+                    for p in peaces.iter().take(60) {
+                        ui.small(p);
+                    }
+                });
+            }
+        });
+        if let Some(c) = go {
+            (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
+        }
+    }
+
+    /// The armies and battles of the day shown, worked out once for it.
+    fn army_view(&mut self) -> &ArmyView {
+        let key = Arc::as_ptr(&self.shown_state) as usize;
+        if self.army_view.as_ref().is_none_or(|v| v.0 != key) {
+            let w = &self.geo;
+            let view = ArmyView {
+                markers: app::armies::markers(w, &self.troop_kinds),
+                battles: app::armies::battles(w, &self.troop_kinds),
+                recent: app::armies::recent_battles(&self.log, self.day(), 30),
+            };
+            self.army_view = Some((key, view));
+        }
+        &self.army_view.as_ref().expect("just set").1
     }
 
     /// The versions running, and the combination tester's verdict on them.
@@ -2312,6 +2381,90 @@ impl eframe::App for MapApp {
                 let centre = to_screen(lon, lat);
                 ui.painter().circle_stroke(centre, centre.distance(edge), ink);
                 ui.painter().circle_stroke(centre, centre.distance(edge) * 0.5, egui::Stroke::new(1.0, ink.color.gamma_multiply(0.5)));
+            }
+            if self.kept().armies && (self.layers.armies || self.layers.battles) {
+                let (first, last) = cam.visible_copies(w);
+                // The rectangle repeats sideways: everything is drawn on each copy in view.
+                let period = (2.0 * self.projection.half_width() * cam.scale / ppp) as f32;
+                let half = period * 0.5;
+                let t = self.clock.blend();
+                let (layers, hover) = (self.layers, response.hover_pos());
+                let view = self.army_view().clone();
+                let geo = &self.geo;
+                let lonlat = |d: sim::grid::V3| sim::grid::dir_to_lonlat(d);
+                let ink_c = egui::Color32::from_rgba_unmultiplied(40, 20, 8, 230);
+                let mut label: Option<(egui::Pos2, String)> = None;
+                for k in first..=last {
+                    let dx = egui::vec2(k as f32 * period, 0.0);
+                    let at = |d: sim::grid::V3| {
+                        let (lon, lat) = lonlat(d);
+                        to_screen(lon, lat) + dx
+                    };
+                    if layers.armies {
+                        // Markers standing at one seat sit side by side.
+                        let mut at_seat: HashMap<u32, usize> = HashMap::new();
+                        for m in &view.markers {
+                            let [cr, cg, cb] = layers::realm_color(m.realm, geo.params.seed);
+                            let colour = egui::Color32::from_rgb(cr, cg, cb);
+                            let r = (3.0 + (m.soldiers as f32).sqrt() / 30.0).clamp(4.0, 15.0);
+                            let mut c = at(m.at(geo, t));
+                            if m.to == NONE {
+                                let n = at_seat.entry(m.from).or_default();
+                                c.x += *n as f32 * (r * 2.0 + 2.0);
+                                *n += 1;
+                            } else if m.dest != NONE && (m.dest as usize) < geo.provinces.count {
+                                // A dotted line on to where it is going, broken where it would
+                                // cross the map's edge.
+                                let from = m.at(geo, t);
+                                let to = geo.provinces.center[m.dest as usize];
+                                let steps = 24;
+                                let points: Vec<egui::Pos2> = (0..=steps).map(|i| at(app::armies::slerp(from, to, i as f64 / steps as f64))).collect();
+                                for (i, pair) in points.windows(2).enumerate() {
+                                    if i % 2 == 0 && (pair[0].x - pair[1].x).abs() < half {
+                                        ui.painter().line_segment([pair[0], pair[1]], egui::Stroke::new(1.2, colour.gamma_multiply(0.8)));
+                                    }
+                                }
+                            }
+                            let stroke = egui::Stroke::new(1.2, ink_c);
+                            if m.ship {
+                                let hull = vec![c + egui::vec2(-r * 1.3, -r * 0.4), c + egui::vec2(r * 1.3, -r * 0.4), c + egui::vec2(r * 0.8, r * 0.6), c + egui::vec2(-r * 0.8, r * 0.6)];
+                                ui.painter().add(egui::Shape::convex_polygon(hull, colour, stroke));
+                            } else {
+                                ui.painter().circle(c, r, colour, stroke);
+                            }
+                            if let Some(h) = hover
+                                && h.distance(c) <= r + 2.0
+                            {
+                                let names = Names { world: geo, realms: &self.realm_names.names };
+                                label = Some((c, app::armies::describe(m, &self.troop_kinds, &names.realm(m.realm))));
+                            }
+                        }
+                    }
+                    if layers.battles {
+                        let swords = |c: egui::Pos2, alpha: f32| {
+                            let s = egui::Stroke::new(2.5, egui::Color32::from_rgba_unmultiplied(170, 20, 20, (255.0 * alpha) as u8));
+                            ui.painter().line_segment([c + egui::vec2(-7.0, -7.0), c + egui::vec2(7.0, 7.0)], s);
+                            ui.painter().line_segment([c + egui::vec2(-7.0, 7.0), c + egui::vec2(7.0, -7.0)], s);
+                        };
+                        for &(p, fade) in &view.recent {
+                            if !view.battles.contains(&p) && (p as usize) < geo.provinces.count {
+                                swords(at(geo.provinces.center[p as usize]) + egui::vec2(0.0, -10.0), 0.7 * (1.0 - fade as f32));
+                            }
+                        }
+                        for &p in &view.battles {
+                            if (p as usize) < geo.provinces.count {
+                                swords(at(geo.provinces.center[p as usize]) + egui::vec2(0.0, -10.0), 1.0);
+                            }
+                        }
+                    }
+                }
+                if let Some((c, text)) = label {
+                    let font = egui::FontId::proportional(13.0);
+                    let galley = ui.painter().layout_no_wrap(text, font, egui::Color32::from_rgb(30, 15, 5));
+                    let box_ = egui::Rect::from_min_size(c + egui::vec2(12.0, -8.0), galley.size() + egui::vec2(8.0, 4.0));
+                    ui.painter().rect_filled(box_, 3.0, egui::Color32::from_rgba_unmultiplied(245, 235, 210, 235));
+                    ui.painter().galley(box_.min + egui::vec2(4.0, 2.0), galley, egui::Color32::BLACK);
+                }
             }
             // Provinces the realms tool picked, ringed at their seats.
             if self.editor.tool == app::editor::Tool::Realms {

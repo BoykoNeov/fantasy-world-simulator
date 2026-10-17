@@ -538,3 +538,27 @@ fn soldiers_cross_the_sea_only_with_ships_enough_to_carry_them() {
     }
     panic!("no crossing on worlds {tried:?}");
 }
+
+#[test]
+fn the_battles_rule_for_drawing_finds_the_battles_going_on() {
+    // A world at war for two years: at every day's end, the provinces `battle_provinces` finds
+    // from the fields alone are the battles Warfare has going on.
+    let mut sim = strict(&config(11, false));
+    sim.run_days(2);
+    let (a, b) = rivals(&sim.world, 4);
+    sim.poke(Event::DeclareWar { attacker: a, defender: b });
+    let mut ships = [false; 64];
+    for k in crate::warfare::kinds(&TroopParams::default()) {
+        ships[k.0 as usize] = k.2;
+    }
+    let mut days = 0;
+    for _ in 0..2 * 364 {
+        sim.run_days(1);
+        let m = sim.modules.iter().find(|m| m.manifest().slot == Slot::Warfare).unwrap();
+        let going_on = crate::warfare::battles_in_state(&m.save_state());
+        assert_eq!(crate::warfare::battle_provinces(&sim.world, |n| ships[n as usize]), going_on, "day {}", sim.day);
+        days += (!going_on.is_empty()) as u32;
+    }
+    assert!(days > 10, "battles were fought ({days} days)");
+    assert_eq!(sim.problems, Problems::default());
+}

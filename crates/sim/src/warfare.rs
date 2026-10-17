@@ -379,9 +379,33 @@ impl TroopParams {
 }
 
 /// The troop kinds of `params`' troop tree (its leaves, in tree order): each one's node, as
-/// `army.kind` holds it, and its name; whether it is a ship. Empty for a tree that doesn't resolve.
-pub fn kinds(params: &TroopParams) -> Vec<(NodeId, String, bool)> {
-    params.resolve().map_or(Vec::new(), |r| r.kinds.iter().map(|k| (k.node, r.tree.name(k.node).to_string(), k.ship)).collect())
+/// `army.kind` holds it, its name, whether it is a ship, and its speed (the share of a way's days
+/// it marches in a day). Empty for a tree that doesn't resolve.
+pub fn kinds(params: &TroopParams) -> Vec<(NodeId, String, bool, f64)> {
+    params.resolve().map_or(Vec::new(), |r| r.kinds.iter().map(|k| (k.node, r.tree.name(k.node).to_string(), k.ship, k.speed)).collect())
+}
+
+/// Whether any two of `realms` (the realms with land soldiers standing in one province) are at
+/// war: then they fight a battle there. The rule Warfare fights by, for the window to draw by.
+pub fn battle_among(w: &World, realms: &[u32]) -> bool {
+    realms.iter().any(|&x| realms.iter().any(|&y| diplomacy::at_war(w, x, y)))
+}
+
+/// The provinces where a battle goes on, by [`battle_among`]: land soldiers (not ships, which
+/// fight only at a landing) of realms at war standing in one province. `ship` says which troop
+/// kinds (by node) are ships. In province order.
+pub fn battle_provinces(w: &World, ship: impl Fn(NodeId) -> bool) -> Vec<u32> {
+    let arm = &w.armies;
+    let mut by: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for a in 0..arm.count() {
+        if arm.size[a] > 0 && !arm.moving(a) && !ship(arm.kind[a]) {
+            let v = by.entry(arm.province[a]).or_default();
+            if !v.contains(&arm.realm[a]) {
+                v.push(arm.realm[a]);
+            }
+        }
+    }
+    by.into_iter().filter(|(_, r)| r.len() > 1 && battle_among(w, r)).map(|(p, _)| p).collect()
 }
 
 /// A group of companies the general sends against one target.
@@ -1438,7 +1462,7 @@ impl Troops {
         for p in cands {
             let sides = self.forces(w, &res, p, false);
             let realms: Vec<u32> = sides.keys().copied().collect();
-            let war = realms.iter().any(|&x| realms.iter().any(|&y| diplomacy::at_war(w, x, y)));
+            let war = battle_among(w, &realms);
             let keep = if war {
                 self.battle_day(w, cx, &res, p, sides);
                 true
@@ -2252,4 +2276,11 @@ fn kind_weights(w: &World, prov: usize, res: &Resolved) -> Vec<u64> {
             (k.weight * land * shore * 1e6).round() as u64
         })
         .collect()
+}
+
+/// The provinces where Warfare's saved state has a battle going on (for tests).
+#[cfg(test)]
+pub(crate) fn battles_in_state(bytes: &[u8]) -> Vec<u32> {
+    let st: State = postcard::from_bytes(bytes).expect("Warfare's state");
+    st.battles.keys().copied().collect()
 }

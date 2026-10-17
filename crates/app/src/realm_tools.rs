@@ -207,7 +207,7 @@ impl RealmTools {
     /// to change them, to place soldiers and to send the field companies elsewhere. `kinds`: the
     /// troop kinds (node, name, ship). Gives back the change asked for, or an order waiting for a
     /// click on where to go (realm, from).
-    pub fn armies(&mut self, ui: &mut egui::Ui, w: &World, names: &Names, p: u32, kinds: &[(u16, String, bool)]) -> (Option<Action>, Option<(u32, u32)>) {
+    pub fn armies(&mut self, ui: &mut egui::Ui, w: &World, names: &Names, p: u32, kinds: &[crate::armies::Kind]) -> (Option<Action>, Option<(u32, u32)>) {
         let arm = &w.armies;
         let kind_name = |node: u16| kinds.iter().find(|k| k.0 == node).map_or(format!("kind {node}"), |k| k.1.clone());
         let here: Vec<usize> = (0..arm.count()).filter(|&a| arm.size[a] > 0 && (arm.province[a] == p || arm.next[a] == p)).collect();

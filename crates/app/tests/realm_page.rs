@@ -82,6 +82,15 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     assert!(broke_away > 0 && earlier_rulers > 0, "breakaways {broke_away}, earlier rulers {earlier_rulers}");
     assert!(truces >= 1, "the forced peace should leave a truce on both pages");
 
+    // The Wars section: wars going on, and the forced peace among the recent ones.
+    let (going, peaces) = inspector::wars(&n, sim.day, &sim.calendar, 5 * sim.calendar.days_per_year() as u64);
+    for line in going.iter().flat_map(|g| std::iter::once(&g.title).chain(&g.lines)).chain(&peaces) {
+        assert!(!raw(line) && !line.contains("realm "), "{line}");
+    }
+    assert!(going.iter().all(|g| sim.world.realms.alive(g.attacker) && sim.world.realms.alive(g.defender)));
+    let (na, nb) = (n.realm(a), n.realm(b));
+    assert!(peaces.iter().any(|p| p.contains(&na) && p.contains(&nb) && p.contains(&format!("{na} won"))), "{peaces:?}");
+
     // Every event in the log, and every province's realm values, in words.
     let mut about_realms = 0;
     for p in &sim.event_log.entries {

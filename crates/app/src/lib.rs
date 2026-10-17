@@ -1,6 +1,7 @@
 //! The map view. The simulation lives in the `sim` crate; this crate only reads its fields and draws
 //! them with egui + wgpu.
 
+pub mod armies;
 pub mod bench;
 pub mod editor;
 pub mod geometry;

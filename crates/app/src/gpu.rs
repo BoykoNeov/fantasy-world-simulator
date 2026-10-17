@@ -56,6 +56,9 @@ pub struct LayerSettings {
     pub roads: bool,
     /// Thick lines between realms (none in a world without realms).
     pub realm_borders: bool,
+    /// Field armies on the map, and battles (drawn by the window over the map, not here).
+    pub armies: bool,
+    pub battles: bool,
 }
 
 impl Default for LayerSettings {
@@ -79,6 +82,8 @@ impl Default for LayerSettings {
             graticule: true,
             roads: false,
             realm_borders: true,
+            armies: true,
+            battles: true,
         }
     }
 }
