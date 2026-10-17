@@ -14,6 +14,8 @@ use sim::world::WorldParams;
 
 fn config(seed: u64) -> Config {
     let mut c = Config::new(WorldParams { n: 32, provinces: 80, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    // Markets as it was built (step 6): no realms, so no tolls nor wars in the trade.
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c
 }

@@ -17,6 +17,7 @@ use crate::world::{World, WorldParams};
 
 fn config(seed: u64) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, ..RealmParams::default() });
     c.modules.characters = Some(RulerParams::default());
     c.modules.diplomacy = Some(WarParams::default());

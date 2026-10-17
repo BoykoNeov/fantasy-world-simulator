@@ -521,10 +521,22 @@ impl Search {
 }
 
 /// The quickest routes from `sources` out over the provinces `allowed` lets in, by land ways, or
-/// by sea ways if `sea`.
-fn search(w: &World, sources: &[u32], allowed: &dyn Fn(u32) -> bool, sea: bool) -> Search {
+/// by sea ways if `sea`. Only the provinces in `wanted` are asked about: the search stops once all
+/// of them are settled, so their distances, the routes back from them and their sources are final
+/// (and the same as a search over the whole map would give); other provinces' may not be.
+fn search(w: &World, sources: &[u32], allowed: &dyn Fn(u32) -> bool, sea: bool, wanted: &[u32]) -> Search {
     let n = w.provinces.count;
     let mut s = Search { dist: vec![u64::MAX; n], parent: vec![NONE; n], origin: vec![NONE; n] };
+    let mut want = vec![false; n];
+    let mut left = 0usize;
+    for &p in wanted {
+        if let Some(x) = want.get_mut(p as usize)
+            && !*x
+        {
+            *x = true;
+            left += 1;
+        }
+    }
     let mut heap = BinaryHeap::new();
     for &p in sources {
         if (p as usize) < n && s.dist[p as usize] != 0 {
@@ -536,6 +548,13 @@ fn search(w: &World, sources: &[u32], allowed: &dyn Fn(u32) -> bool, sea: bool) 
     while let Some(Reverse((d, p))) = heap.pop() {
         if d > s.dist[p as usize] {
             continue;
+        }
+        if want[p as usize] {
+            want[p as usize] = false;
+            left -= 1;
+            if left == 0 {
+                break;
+            }
         }
         for l in w.routes.of(p) {
             let Some(days) = (if sea { l.sea_days } else { l.land_days }) else { continue };
@@ -1773,6 +1792,16 @@ impl Troops {
         self.st.rest.retain(|_, d| *d > day);
         let enemies = diplomacy::enemies(w);
         let people = w.province_population();
+        // Each realm's land, in province order: owners don't change while the generals plan, and a
+        // general looks only at its own land and its enemies'.
+        let mut land: Vec<Vec<u32>> = vec![Vec::new(); w.realms.count()];
+        for q in 0..w.provinces.count {
+            if let Some(v) = land.get_mut(w.owner[q] as usize)
+                && w.provinces.cells[q] > 0
+            {
+                v.push(q as u32);
+            }
+        }
         for r in dirty {
             if !w.realms.alive(r) {
                 continue;
@@ -1785,7 +1814,7 @@ impl Troops {
                 }
                 continue;
             }
-            self.plan(w, cx, &res, r, &foes, &people);
+            self.plan(w, cx, &res, r, &foes, &people, &land);
         }
     }
 
@@ -1802,7 +1831,7 @@ impl Troops {
 
     /// Realm `r`'s general, at war with `foes` (sorted).
     #[allow(clippy::too_many_arguments)]
-    fn plan(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, r: u32, foes: &[u32], people: &[u64]) {
+    fn plan(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, r: u32, foes: &[u32], people: &[u64], land: &[Vec<u32>]) {
         // The settings it needs, copied out (the parameters hold the troop tree).
         struct Knobs {
             outmatch: f64,
@@ -1812,7 +1841,6 @@ impl Troops {
         }
         let p = &self.params;
         let pr = Knobs { outmatch: p.outmatch, home_edge: p.home_edge, siege_min_share: p.siege_min_share, gather_share: p.gather_share };
-        let n = w.provinces.count;
         let day = cx.day;
         // Companies under the player's orders are left alone until they arrive.
         let ordered = std::mem::take(&mut self.st.ordered);
@@ -1889,14 +1917,11 @@ impl Troops {
         // the sea.
         let capital = w.realms.capital[r as usize];
         let staging = |w: &World, q: u32| (w.owner[q as usize] == r && w.occupier[q as usize] == NONE) || w.occupier[q as usize] == r;
-        let near = search(w, &[capital], &|q| ok(w, q), false);
         let mut defend = Vec::new();
         let mut attack = Vec::new();
         let mut sea = Vec::new();
-        for q in 0..n as u32 {
-            if w.provinces.cells[q as usize] == 0 {
-                continue;
-            }
+        // Its land and its enemies' (the order doesn't matter: the lists are sorted below).
+        for &q in std::iter::once(&r).chain(foes).filter_map(|&o| land.get(o as usize)).flatten() {
             let o = w.owner[q as usize];
             if o == r {
                 if w.occupier[q as usize] != NONE || self.enemies_at(w, q, foes) {
@@ -1910,6 +1935,8 @@ impl Troops {
                 }
             }
         }
+        let asked: Vec<u32> = defend.iter().chain(&attack).copied().collect();
+        let near = search(w, &[capital], &|q| ok(w, q), false, &asked);
         let by_near = |v: &mut Vec<u32>| v.sort_by_key(|&q| (near.dist[q as usize], q));
         by_near(&mut defend);
         by_near(&mut attack);
@@ -1957,8 +1984,16 @@ impl Troops {
             }
         }
 
+        // Each target's group, the lowest-numbered of the realm's for it. Each target comes once,
+        // and only its own group is made or dissolved while it is looked at, so this stays true.
+        let mut group_of: BTreeMap<u32, u32> = BTreeMap::new();
+        for (&k, g) in &self.st.groups {
+            if g.realm == r {
+                group_of.entry(g.target).or_insert(k);
+            }
+        }
         for (t, by_sea) in targets {
-            let group = self.st.groups.iter().find(|(_, g)| g.realm == r && g.target == t).map(|(&k, _)| k);
+            let group = group_of.get(&t).copied().filter(|k| self.st.groups.contains_key(k));
             if group.is_none() && !pool.iter().any(|&a| !res.kind(w.armies.kind[a as usize]).ship) {
                 continue;
             }
@@ -2134,7 +2169,8 @@ impl Troops {
             if sources.is_empty() || rest.is_empty() {
                 return None;
             }
-            let s = search(w, &sources, &|q| allowed_for(w, r, foes, q), sea);
+            let asked: Vec<u32> = rest.iter().map(|&a| w.armies.province[a as usize]).collect();
+            let s = search(w, &sources, &|q| allowed_for(w, r, foes, q), sea, &asked);
             let mut order: Vec<(u64, u32)> = rest.iter().map(|&a| (s.dist[w.armies.province[a as usize] as usize], a)).filter(|(d, _)| *d != u64::MAX).collect();
             order.sort_unstable();
             let mut filled = false;
@@ -2167,7 +2203,8 @@ impl Troops {
     /// more soldiers and bring `strength` more. Each with its route. None if they can't.
     #[allow(clippy::too_many_arguments)]
     fn recruit_ships(&self, w: &World, res: &Resolved, r: u32, foes: &[u32], gather: u32, pool: &[u32], carry: f64, strength: f64) -> Option<Sends> {
-        let s = search(w, &[gather], &|q| allowed_for(w, r, foes, q), true);
+        let asked: Vec<u32> = pool.iter().map(|&a| w.armies.province[a as usize]).collect();
+        let s = search(w, &[gather], &|q| allowed_for(w, r, foes, q), true, &asked);
         let mut order: Vec<(u64, u32)> = pool.iter().map(|&a| (s.dist[w.armies.province[a as usize] as usize], a)).filter(|(d, _)| *d != u64::MAX).collect();
         order.sort_unstable();
         let (mut got_c, mut got_s) = (0.0, 0.0);

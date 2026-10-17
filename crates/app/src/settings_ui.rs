@@ -4,7 +4,7 @@
 
 use eframe::egui;
 use sim::config::{Config, ModuleConfig};
-use sim::diplomacy::TreatyParams;
+use sim::module::Slot;
 use sim::settings::{self, Item, When, GROUPS, SECTIONS};
 
 /// Which settings a panel shows.
@@ -99,64 +99,62 @@ fn row(ui: &mut egui::Ui, i: &Item, default: Option<f64>) -> Option<f64> {
     out
 }
 
-/// The slots of step 7, not among the combination tester's choices yet, with their versions.
-pub const STEP7: &[(&str, &[&str])] = &[
-    ("Realms", &["off", "basic"]),
-    ("Characters", &["off", "rulers"]),
-    ("Diplomacy", &["off", "wars", "treaties"]),
-    ("Warfare", &["off", "troops"]),
-];
-
-/// The version of a step-7 slot (by its name in [`STEP7`]) in `m`.
-pub fn step7_choice(m: &ModuleConfig, slot: &str) -> &'static str {
-    match slot {
-        "Realms" if m.realms.is_some() => "basic",
-        "Characters" if m.characters.is_some() => "rulers",
-        "Diplomacy" => match &m.diplomacy {
-            None => "off",
-            Some(d) if d.treaties.is_some() => "treaties",
-            Some(_) => "wars",
-        },
-        "Warfare" if m.warfare.is_some() => "troops",
-        _ => "off",
-    }
-}
-
-/// Pick a version of a step-7 slot, with default settings, switching on what it needs (realms;
-/// armies, for treaties) and off what needs what is switched off.
-pub fn set_step7(m: &mut ModuleConfig, slot: &str, version: &str) {
+/// Pick `version` for `slot` (as [`sim::config::CHOICES`] names them), switching on what it needs (realms need
+/// people; rulers, diplomacy and armies need realms; realms choosing war and peace need armies)
+/// and off what needs what is switched off. A version switched on gets its default settings, or
+/// keeps those it had.
+pub fn choose(m: &mut ModuleConfig, slot: Slot, version: &str) {
+    m.set_choice(slot, version).expect("a version offered for the slot");
     let on = version != "off";
     match slot {
-        "Realms" => {
-            if on {
-                m.realms.get_or_insert_with(Default::default);
-            } else {
-                (m.realms, m.characters, m.diplomacy, m.warfare) = (None, None, None, None);
-            }
+        Slot::Population | Slot::Realms if !on => {
+            m.without_realms();
         }
-        "Characters" => m.characters = on.then(|| m.characters.take().unwrap_or_default()),
-        "Diplomacy" => {
-            m.diplomacy = on.then(|| m.diplomacy.take().unwrap_or_default());
-            if let Some(d) = &mut m.diplomacy {
-                d.treaties = (version == "treaties").then(|| d.treaties.take().unwrap_or_else(TreatyParams::default));
-                if d.treaties.is_some() {
-                    m.warfare.get_or_insert_with(Default::default);
-                }
-            }
+        Slot::Characters | Slot::Diplomacy | Slot::Warfare if on => {
+            m.set_choice(Slot::Realms, "basic").expect("a version");
+            m.set_choice(Slot::Population, "basic").expect("a version");
         }
-        "Warfare" => {
-            m.warfare = on.then(|| m.warfare.take().unwrap_or_default());
-            if let Some(d) = m.diplomacy.as_mut().filter(|_| !on) {
-                d.treaties = None;
-            }
-        }
-        _ => unreachable!("a slot of STEP7"),
+        _ => {}
     }
-    if on && slot != "Realms" {
-        m.realms.get_or_insert_with(Default::default);
+    if slot == Slot::Realms && on {
+        m.set_choice(Slot::Population, "basic").expect("a version");
+    }
+    if slot == Slot::Diplomacy && version == "treaties" {
+        m.set_choice(Slot::Warfare, "troops").expect("a version");
+    }
+    if slot == Slot::Warfare && !on && m.choice(Slot::Diplomacy) == Some("treaties") {
+        m.set_choice(Slot::Diplomacy, "wars").expect("a version");
     }
 }
 
 fn number(x: f64, whole: bool) -> String {
     if whole { format!("{x:.0}") } else { format!("{x}") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sim::combos::Mix;
+
+    #[test]
+    fn choosing_a_version_switches_on_what_it_needs_and_off_what_needs_it() {
+        let mut m = ModuleConfig::default();
+        choose(&mut m, Slot::Population, "off");
+        assert!(m.realms.is_none() && m.characters.is_none() && m.diplomacy.is_none() && m.warfare.is_none());
+        choose(&mut m, Slot::Diplomacy, "treaties");
+        assert!(m.population.is_some() && m.realms.is_some() && m.warfare.is_some());
+        choose(&mut m, Slot::Warfare, "off");
+        assert_eq!(m.choice(Slot::Diplomacy), Some("wars"));
+        choose(&mut m, Slot::Realms, "off");
+        assert!(m.diplomacy.is_none());
+        // Whatever is picked, the mix is one the engine takes (with an economy for the people).
+        for &(slot, versions) in sim::config::CHOICES {
+            for &v in versions {
+                let mut m = ModuleConfig::default();
+                choose(&mut m, slot, v);
+                let refused = Mix::of(&m).check().err();
+                assert!(refused.is_none() || slot == Slot::Economics, "{slot:?}={v}: {refused:?}");
+            }
+        }
+    }
 }

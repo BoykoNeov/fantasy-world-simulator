@@ -10,6 +10,11 @@
 //! changed hands, and when its coins and trade fell to half; then, for comparison, how many of the
 //! richest 2% (any province) changed hands at a peace.
 //!
+//! A "big river" is one the map draws ([`RIVER_MIN_FLOW`], the line `province.river_km` counts
+//! too): the project's own meaning of the words, not tuned for the story. The city counts as taken
+//! when it changes hands at a peace to the realm that occupied it in that war, and its decline is
+//! looked for from the year it changed hands on.
+//!
 //! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...]
 //!
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
@@ -24,6 +29,7 @@ use sim::world::{World, WorldParams, RIVER_MIN_FLOW};
 
 fn config(seed: u64, set: &[(String, f64)]) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c.modules.realms = Some(Default::default());
     c.modules.characters = Some(Default::default());
@@ -92,7 +98,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
     for year in 1..=years {
         let end = sim.calendar.year_start(start + year);
         while sim.day < end {
-            let owners = sim.world.owner.clone();
+            let (owners, occupiers) = (sim.world.owner.clone(), sim.world.occupier.clone());
             sim.step_day();
             let w = &sim.world;
             if w.trade.day != last_trade && !w.trade.shipments.is_empty() {
@@ -122,8 +128,16 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
                         if rich[p] {
                             rich_handed += 1;
                         }
-                        if t[p].longest >= 10 {
+                        // Taken in the war whose peace hands it over: the new owner occupied it.
+                        if t[p].longest >= 10 && occupiers[p] == w.owner[p] {
                             t[p].handed.push(year);
+                        }
+                        if t[p].longest >= 10 && is_mouth[p] {
+                            let peaces: Vec<String> = sim.delivered_today().iter().filter_map(|e| match e.event {
+                                Event::Peace { attacker, defender, winner, rebellion, .. } => Some(format!("{attacker} v {defender} won by {winner} rebellion {rebellion}")),
+                                _ => None,
+                            }).collect();
+                            println!("  year {year}: rich river city {p} went from realm {} to {} (occupied by {} the day before); peaces: {}", owners[p], w.owner[p], occupiers[p] as i64, peaces.join("; "));
                         }
                     }
                 }
@@ -164,7 +178,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
         if k.longest < 10 {
             continue;
         }
-        let pass = !k.handed.is_empty() && k.occupied_days > 0 && k.poorer.is_some() && k.less_trade.is_some();
+        let pass = !k.handed.is_empty() && k.poorer.is_some() && k.less_trade.is_some();
         passed |= pass;
         println!(
             "  province {p} (river {flow:.1}× a big river's water): {} years in a row among the richest 2%, peak {} coins, a capital {} years, a war's target {} times, occupied {} days, changed hands at a peace in years {:?}, coins under half the peak from year {:?}, trade under half from year {:?}{}",

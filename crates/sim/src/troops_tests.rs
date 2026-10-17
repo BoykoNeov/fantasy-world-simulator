@@ -21,6 +21,7 @@ use crate::world::{World, WorldParams};
 /// Realms (no unrest, so wars come only from pokes), wars and troops; markets if `markets`.
 fn config(seed: u64, markets: bool) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, unrest: None, ..RealmParams::default() });
     c.modules.diplomacy = Some(WarParams::default());
     c.modules.warfare = Some(TroopParams::default());
@@ -94,8 +95,9 @@ fn next_month(sim: &mut Sim, then: u64) {
 }
 
 #[test]
-fn troops_are_off_by_default_and_need_realms() {
-    assert!(Config::new(WorldParams::preset(crate::world::Size::Small, 1)).modules.warfare.is_none());
+fn troops_are_on_by_default_and_need_realms() {
+    // On by default since step 7's checks; scenario files that don't name it have none.
+    assert!(Config::new(WorldParams::preset(crate::world::Size::Small, 1)).modules.warfare.is_some());
     let mut c = config(1, false);
     c.modules.realms = None;
     c.modules.diplomacy = None;

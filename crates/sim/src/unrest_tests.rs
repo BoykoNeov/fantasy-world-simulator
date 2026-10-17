@@ -17,6 +17,7 @@ use crate::world::{World, WorldParams};
 
 fn config(economics: &str, seed: u64) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, economics).unwrap();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, ..RealmParams::default() });
     c.modules.characters = Some(RulerParams::default());
@@ -407,6 +408,7 @@ fn bad_unrest_settings_are_refused() {
 #[test]
 fn story_1_s_drought_stirs_its_region_to_rise_up() {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.realms = Some(RealmParams::default());
     c.modules.characters = Some(RulerParams::default());
     c.modules.diplomacy = Some(WarParams::default());

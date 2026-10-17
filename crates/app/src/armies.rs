@@ -174,6 +174,7 @@ mod tests {
 
     fn world() -> (Sim, Vec<Kind>) {
         let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+        c.modules.without_realms();
         c.modules.realms = Some(sim::realms::RealmParams { unrest: None, ..Default::default() });
         c.modules.diplomacy = Some(WarParams::default());
         c.modules.warfare = Some(Default::default());

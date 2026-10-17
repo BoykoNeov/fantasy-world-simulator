@@ -272,6 +272,18 @@ impl World {
     }
 
     /// A copy of one field's values.
+    /// Whether every value of field `id` lies within `[min, max]`, looked at in place, for the
+    /// big fields a daily module keeps (armies' soldiers and roles, tens of thousands of entries);
+    /// `None` for the rest, which the caller copies to look.
+    pub fn within(&self, id: FieldId, min: f64, max: f64) -> Option<bool> {
+        let fits = |x: f64| x >= min && x <= max;
+        match id.def().name {
+            "army.size" => Some(self.armies.size.iter().all(|&x| fits(x as f64))),
+            "army.role" => Some(self.armies.role.iter().all(|&x| fits(x as f64))),
+            _ => None,
+        }
+    }
+
     pub fn field(&self, id: FieldId) -> FieldData {
         use FieldData::*;
         let p = &self.provinces;

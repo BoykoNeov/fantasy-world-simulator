@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 
 fn config(realms: RealmParams, seed: u64) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, ..realms });
     c.modules.characters = Some(RulerParams::default());
     c

@@ -5,4 +5,11 @@
 # when = ["economics=food", "weather=off"]   # versions the mix must have
 # problem = "all_gone"                         # crash, contract_violated, conservation_broken,
 #                                              # stuck_at_top, all_gone, stagnant or expectation
+# field = "province.unrest"                   # only findings about this field (may be left out)
 # note = "why, or where it is tracked"
+
+[[quirk]]
+when = ["realms=basic"]
+problem = "stuck_at_top"
+field = "province.unrest"
+note = "Unrest stays at the line (1,000) while a province that has risen up, or can't rise (a capital, occupied land), goes on starving: the uprising lasts as long as the hunger. Each test world gets a drought, so famines last months. Found at step 7's checks (Oct 17), when realms first joined the tester; the rule as designed (unrest halves in two quiet years)."

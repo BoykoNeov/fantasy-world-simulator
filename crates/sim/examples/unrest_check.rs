@@ -7,7 +7,7 @@
 //! same for the same world without the drought. Then how many months of famine (more than half a
 //! percent of the people starving) the provinces had, at most, within any two years.
 //!
-//! cargo run --release -p sim --example unrest_check -- [food|markets] [seed] [quiet|drought] [years] [famine] [armies]
+//! cargo run --release -p sim --example unrest_check -- [food|markets] [seed] [quiet|drought] [years] [famine] [armies] [KEY=VALUE ...]
 //!
 //! `famine` sets what a month of famine adds to unrest, to try other settings. `armies`, anywhere
 //! among the arguments, has provinces raise troops too; `quiet` then also prints the people who
@@ -30,8 +30,9 @@ use sim::world::WorldParams;
 const FAMINE: f64 = 0.005;
 const WINDOW: usize = 24;
 
-fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties: bool, untolled: bool) -> Sim {
+fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties: bool, untolled: bool, set: &[(String, f64)]) -> Sim {
     let mut config = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
+    config.modules.without_realms();
     config.modules.set_choice(Slot::Economics, economics).unwrap();
     let mut realms = sim::realms::RealmParams::default();
     if let (Some(f), Some(u)) = (famine, realms.unrest.as_mut()) {
@@ -53,6 +54,9 @@ fn world(economics: &str, seed: u64, famine: Option<f64>, armies: bool, treaties
         if let Some(t) = config.modules.diplomacy.as_mut().and_then(|d| d.treaties.as_mut()) {
             t.trade_opinion = 0.0;
         }
+    }
+    for (k, v) in set {
+        sim::settings::set(&mut config, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
     }
     Sim::new(&config).unwrap()
 }
@@ -171,13 +175,15 @@ fn main() {
     let armies = all.iter().any(|a| a == "armies");
     let treaties = all.iter().any(|a| a == "treaties");
     let untolled = all.iter().any(|a| a == "untolled");
-    let args: Vec<String> = all.into_iter().filter(|a| a != "armies" && a != "treaties" && a != "untolled").collect();
+    // `KEY=VALUE` anywhere changes a setting (keys as `simrun --settings` lists them).
+    let set: Vec<(String, f64)> = all.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
+    let args: Vec<String> = all.into_iter().filter(|a| a != "armies" && a != "treaties" && a != "untolled" && !a.contains('=')).collect();
     let economics = args.first().map_or("food", |s| s.as_str());
     let seed: u64 = args.get(1).map_or(21, |s| s.parse().expect("seed"));
     let drought = args.get(2).is_some_and(|s| s == "drought");
     let years: i64 = args.get(3).map_or(if drought { 5 } else { 150 }, |s| s.parse().expect("years"));
     let famine: Option<f64> = args.get(4).map(|s| s.parse().expect("famine"));
-    let mut sim = world(economics, seed, famine, armies, treaties, untolled);
+    let mut sim = world(economics, seed, famine, armies, treaties, untolled, &set);
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let year = sim.calendar.days_per_year() as u64;

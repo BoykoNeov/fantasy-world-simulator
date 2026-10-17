@@ -74,6 +74,7 @@ impl Module for Pantry {
 
 fn config() -> Config {
     let mut c = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.population = None;
     c
 }
@@ -272,6 +273,7 @@ static GRAIN_FISH_LIVESTOCK: Manifest = larder(&["grain", "fish", "livestock", "
 
 fn eating_config(tree: Option<&str>) -> Config {
     let mut config = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    config.modules.without_realms();
     if let Some(t) = tree {
         config.goods = TreeDef::from_toml(t).unwrap();
     }
@@ -414,6 +416,7 @@ fn a_good_kept_only_inside_a_bigger_whole_cannot_be_set_alone() {
 #[test]
 fn edits_to_what_no_module_keeps_are_refused() {
     let mut config = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    config.modules.without_realms();
     (config.modules.economics, config.modules.population) = (None, None);
     let mut sim = Sim::new(&config).unwrap();
     sim.strict = true;

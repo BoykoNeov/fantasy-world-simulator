@@ -51,7 +51,7 @@ use sim::edit::{Edit, PopValues, SettingChange};
 use sim::events::Event;
 use sim::fields::{FieldId, Tier};
 use sim::grid::NONE;
-use sim::module::{Manifest, Slot};
+use sim::module::Slot;
 use sim::sim::{Sim, Stage, Trace, NEVER};
 use sim::world::{Size, World, WorldParams, RIVER_MIN_FLOW};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -373,16 +373,8 @@ impl WorldInfo {
             })
             .collect();
         let mc = &sim.config.modules;
-        let mut versions: Vec<(String, &'static str)> = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
-        // Realms, rulers, wars and troops aren't among the tester's choices yet (until step 7's
-        // checks): a world running them is a mix the tester never ran, whatever its table says for
-        // the rest.
-        let untested: Vec<&Manifest> = manifests.iter().copied().filter(|m| matches!(m.slot, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare)).collect();
-        versions.extend(untested.iter().map(|m| (inspector::slot_name(m.slot).to_string(), m.version)));
-        let verdict = match untested.is_empty() {
-            true => table.as_ref().map(|t| t.verdict_for(mc)).map_err(|e| e.clone()),
-            false => Ok(None),
-        };
+        let versions: Vec<(String, &'static str)> = CHOICES.iter().map(|c| (inspector::slot_name(c.0).to_string(), mc.choice(c.0).expect("a slot with a choice"))).collect();
+        let verdict = table.as_ref().map(|t| t.verdict_for(mc)).map_err(|e| e.clone());
         let modules = ModulesInfo { versions, verdict, tested_on: tested_on(table) };
         let goods = &sim.world.goods;
         let coin_columns = mc.markets.as_ref().and_then(|m| goods.columns_under(goods.tree.find(&m.money)?)).unwrap_or_default();
@@ -1500,28 +1492,13 @@ impl MapApp {
                         }
                     });
                     if Some(v) != nw.config.modules.choice(slot) {
-                        nw.config.modules.set_choice(slot, v).expect("a version offered for the slot");
-                        nw.confirm = false;
-                    }
-                    ui.end_row();
-                }
-                // Realms, rulers, diplomacy and armies: not among the tester's choices yet.
-                for &(name, versions) in settings_ui::STEP7 {
-                    ui.label(name).on_hover_text("not yet tried by the combination tester");
-                    let mut v = settings_ui::step7_choice(&nw.config.modules, name);
-                    egui::ComboBox::from_id_salt(("new world version", name)).selected_text(v).show_ui(ui, |ui| {
-                        for &x in versions {
-                            ui.selectable_value(&mut v, x, x);
-                        }
-                    });
-                    if v != settings_ui::step7_choice(&nw.config.modules, name) {
-                        settings_ui::set_step7(&mut nw.config.modules, name, v);
+                        settings_ui::choose(&mut nw.config.modules, slot, v);
                         nw.confirm = false;
                     }
                     ui.end_row();
                 }
             });
-            ui.small("Rulers, diplomacy and armies need realms; realms choosing war and peace need armies. Picking one switches on what it needs.");
+            ui.small("Realms need people; rulers, diplomacy and armies need realms; realms choosing war and peace need armies. Picking one switches on what it needs, and switching one off switches off what needs it.");
             egui::CollapsingHeader::new("settings").id_salt("new world settings").default_open(open_settings).show(ui, |ui| {
                 ui.small("Every setting of the world to make, with what it does. Those \"fixed once made\" shape the map or the start; the others can also be changed later, while the world runs (Settings, above).");
                 let defaults = sim::settings::defaults_for(&nw.config);
@@ -1541,11 +1518,7 @@ impl MapApp {
             });
             // What the tester found for these versions, as they are picked.
             let m = &nw.config.modules;
-            let untested = m.realms.is_some() || m.characters.is_some() || m.diplomacy.is_some() || m.warfare.is_some();
-            let verdict = match untested {
-                true => Ok(None),
-                false => self.table.as_ref().map(|t| t.verdict_for(m)).map_err(|e| e.clone()),
-            };
+            let verdict = self.table.as_ref().map(|t| t.verdict_for(m)).map_err(|e| e.clone());
             let refused = matches!(verdict, Ok(Some((Verdict::Refused, _))));
             Self::verdict_line(ui, &verdict, &tested_on(&self.table), "new world");
             Self::changed_line(ui, &nw.config);

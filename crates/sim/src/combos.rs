@@ -18,7 +18,7 @@
 use crate::config::{Config, ModuleConfig, CHOICES};
 use crate::events::Event;
 use crate::fields::{quantity_total, FieldId, Quantity};
-use crate::module::{plan, Manifest};
+use crate::module::{plan, Manifest, Slot};
 use crate::scenario::{Scenario, ScenarioCommand, ScenarioTimeline, SCENARIO_FORMAT};
 use crate::sim::Sim;
 use crate::world::WorldParams;
@@ -183,14 +183,19 @@ pub fn all_pairs(seed: u64) -> Vec<Mix> {
                 out.push(m);
             }
             None => {
-                // Look for the first remaining pair on its own.
+                // Look for the first remaining pair on its own: with the defaults, then with
+                // everything that needs other modules off (realms and what needs them), then with
+                // versions picked at random.
                 let p = *uncovered.iter().next().expect("not empty");
-                let found = (0..200u64).find_map(|t| {
-                    let mut v: Vec<&'static str> = (0..n).map(|k| CHOICES[k].1[(crate::rng::mix(seed ^ round ^ (t * 977) ^ k as u64) % CHOICES[k].1.len() as u64) as usize]).collect();
+                let with_pair = |mut v: Vec<&'static str>| {
                     v[p.a.0] = p.a.1;
                     v[p.b.0] = p.b.1;
                     let m = Mix(v);
                     m.check().is_ok().then_some(m)
+                };
+                let bare: Vec<&'static str> = (0..n).map(|k| if matches!(CHOICES[k].0, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare) { "off" } else { CHOICES[k].1[0] }).collect();
+                let found = with_pair(Mix::defaults().0).or_else(|| with_pair(bare)).or_else(|| {
+                    (0..200u64).find_map(|t| with_pair((0..n).map(|k| CHOICES[k].1[(crate::rng::mix(seed ^ round ^ (t * 977) ^ k as u64) % CHOICES[k].1.len() as u64) as usize]).collect()))
                 });
                 match found {
                     Some(m) => {
@@ -390,6 +395,21 @@ struct Watch {
     breaks: Option<usize>,
 }
 
+/// Fields whose top is an ordinary value, not a sign that something piles up against a bound:
+/// kinds and marks (a field company's role is 1 for as long as it marches, a ruler put on the
+/// throne by the player is so for life) and 0-to-100 scales (a ruler may be as greedy as can be).
+const ORDINARY_AT_TOP: &[&str] = &[
+    "army.role",
+    "army.kind",
+    "character.succession",
+    "character.martial",
+    "character.greed",
+    "character.ability",
+    "war.cause",
+    "relation.a_of_b",
+    "relation.b_of_a",
+];
+
 impl Watch {
     fn new(sim: &Sim) -> Watch {
         let owned = |id: FieldId| sim.plan.owner[id.0 as usize].is_some();
@@ -402,7 +422,7 @@ impl Watch {
             .filter(|q| running.contains(&q.fields()[0]))
             .map(|q| (q, quantity_total(&sim.world, q), None))
             .collect();
-        let tops = running.iter().filter(|id| id.def().max.is_finite()).map(|&id| (id, None)).collect();
+        let tops = running.iter().filter(|id| id.def().max.is_finite() && !ORDINARY_AT_TOP.contains(&id.def().name)).map(|&id| (id, None)).collect();
         Watch { totals, tops, problems: sim.problems, changed: sim.day, still: (0, sim.day), findings: Vec::new(), clamps: None, breaks: None }
     }
 
@@ -543,6 +563,10 @@ pub struct Quirk {
     /// `slot=version` pairs a mix must have, e.g. `["economics=food", "weather=off"]`.
     pub when: Vec<String>,
     pub problem: Problem,
+    /// The field it is about, if only that one (the finding names it first, as in
+    /// "province.unrest of 45 held at its bound").
+    #[serde(default)]
+    pub field: Option<String>,
     /// What is known about it: an issue, an explanation.
     pub note: String,
 }
@@ -561,7 +585,8 @@ impl Quirks {
         let label = r.mix.label();
         let has: BTreeSet<&str> = label.split(' ').collect();
         for f in &mut r.findings {
-            if let Some(q) = self.quirk.iter().find(|q| q.problem == f.problem && q.when.iter().all(|w| has.contains(w.as_str()))) {
+            let about = |q: &Quirk| q.field.as_ref().is_none_or(|name| f.what.starts_with(&format!("{name} ")));
+            if let Some(q) = self.quirk.iter().find(|q| q.problem == f.problem && q.when.iter().all(|w| has.contains(w.as_str())) && about(q)) {
                 f.known = Some(q.note.clone());
             }
         }
@@ -735,7 +760,7 @@ mod tests {
     #[test]
     fn mixes_name_and_parse_their_versions() {
         let d = Mix::defaults();
-        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts");
+        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops");
         assert_eq!(Mix::of(&ModuleConfig::default()), d);
         let m = Mix::parse("economics=off, population=off").unwrap();
         assert_eq!(Mix::of(&m.modules()), m);
@@ -748,8 +773,20 @@ mod tests {
         assert!(markets.modules().markets.is_some() && markets.modules().economics.is_none());
         assert_eq!(Mix::of(&markets.modules()), markets);
         // Markets needs people to do the work.
-        assert!(Mix::parse("economics=markets,population=off").unwrap().check().unwrap_err().contains("requires pop.size"));
-        assert_eq!(all_mixes().len(), 48);
+        let bare = "realms=off,characters=off,diplomacy=off,warfare=off";
+        assert!(Mix::parse(&format!("economics=markets,population=off,{bare}")).unwrap().check().unwrap_err().contains("requires pop.size"));
+        // Realms need people; rulers and wars need realms; realms choosing wars need armies.
+        assert!(Mix::parse("population=off").unwrap().check().unwrap_err().contains("requires pop.size"));
+        assert!(Mix::parse("realms=off").unwrap().check().unwrap_err().contains("realm.capital"));
+        assert!(Mix::parse("warfare=off").unwrap().check().is_err());
+        assert!(Mix::parse("diplomacy=wars,warfare=off").unwrap().check().is_ok());
+        let wars = Mix::parse("diplomacy=wars").unwrap();
+        assert!(wars.modules().diplomacy.as_ref().is_some_and(|d| d.treaties.is_none()));
+        assert_eq!(Mix::of(&wars.modules()), wars);
+        let mut off = ModuleConfig::default();
+        off.without_realms();
+        assert_eq!(Mix::of(&off), Mix::parse(bare).unwrap());
+        assert_eq!(all_mixes().len(), 48 * 24);
     }
 
     #[test]
@@ -808,7 +845,7 @@ mod tests {
     fn the_scorer_catches_planted_faults() {
         quiet_panics();
         // Food from nowhere, on the first day (a month start): blamed on the economy.
-        let f = rogue_run("population=off", Slot::Economics, 1, |w, _| w.stock[0] += 1);
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off", Slot::Economics, 1, |w, _| w.stock[0] += 1);
         assert_eq!(problems(&f), vec![Problem::ConservationBroken]);
         assert_eq!(f[0].day, 0);
         assert!(f[0].what.contains("food was") && f[0].what.contains("Economics"), "{}", f[0].what);
@@ -824,7 +861,7 @@ mod tests {
         assert!(f[0].what.contains("which it does not own"), "{}", f[0].what);
 
         // All the food thrown away every month, declared: nothing is broken, but nothing is left.
-        let f = rogue_run("population=off", Slot::Economics, 1, |w, cx| {
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off", Slot::Economics, 1, |w, cx| {
             let all: u64 = w.stock.iter().sum();
             w.stock.iter_mut().for_each(|s| *s = 0);
             cx.flow(Quantity::Goods(0), Cause::Spoilage, -(all as i64));
@@ -832,7 +869,7 @@ mod tests {
         assert_eq!(problems(&f), vec![Problem::AllGone], "{f:?}");
 
         // An economy that does nothing: the food store never changes.
-        let f = rogue_run("population=off", Slot::Economics, 7, |_, _| {});
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off", Slot::Economics, 7, |_, _| {});
         assert_eq!(problems(&f), vec![Problem::Stagnant], "{f:?}");
         assert_eq!(worst(&f), Verdict::Yellow);
 
@@ -865,8 +902,9 @@ mod tests {
         let (v, notes) = table.verdict_for(&Mix::parse("terrain=null,weather=off").unwrap().modules()).unwrap();
         assert_eq!(v, Verdict::Red);
         assert!(notes.iter().any(|n| n.starts_with("climate=latitude with weather=off: Red, e.g. ")), "{notes:?}");
-        // The shipped table reads, and has every mix.
-        assert_eq!(Table::shipped().unwrap().mix.len(), all_mixes().len());
+        // The shipped table reads, and has the mixes the tester runs (every pair of versions
+        // together, since step 7's slots made too many mixes to run them all).
+        assert_eq!(Table::shipped().unwrap().mix.len(), all_pairs(0).len());
     }
 
     #[test]
@@ -891,5 +929,11 @@ mod tests {
         q.apply(&mut other);
         assert_eq!(other.verdict(), Verdict::Red);
         assert!(Quirks::parse("[[quirk]]\nwhen = [\"weather=rain\"]\nproblem = \"crash\"\nnote = \"\"\n").is_err());
+        // A quirk about one field explains findings about that field only.
+        let q = Quirks::parse("[[quirk]]\nwhen = []\nproblem = \"stuck_at_top\"\nfield = \"province.unrest\"\nnote = \"\"\n").unwrap();
+        let stuck = |what: &str| Finding { problem: Problem::StuckAtTop, day: 3, what: what.into(), known: None };
+        let mut r = RunResult { mix: Mix::defaults(), findings: vec![stuck("province.unrest of 45 held at its bound 1000 for 180 days"), stuck("province.stock of 2 held")], ..r.clone() };
+        q.apply(&mut r);
+        assert_eq!((r.findings[0].verdict(), r.findings[1].verdict()), (Verdict::Yellow, Verdict::Red));
     }
 }

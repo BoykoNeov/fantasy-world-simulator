@@ -482,20 +482,29 @@ impl FieldData {
     /// Entities whose value differs from `new`'s, bit for bit. Entities only `new` has count as
     /// changed.
     pub fn differences(&self, new: &FieldData) -> Vec<u32> {
-        fn go<T: PartialEq>(a: &[T], b: &[T]) -> Vec<u32> {
-            (0..b.len()).filter(|&i| a.get(i) != Some(&b[i])).map(|i| i as u32).collect()
+        // Block by block, skipping blocks that are alike as a whole: a field a daily module keeps
+        // changes in a few places (found at step 7's checks: 38,000 army entries compared daily).
+        fn go<T, K: PartialEq>(a: &[T], b: &[T], key: impl Fn(&T) -> K) -> Vec<u32> {
+            const BLOCK: usize = 64;
+            let mut out = Vec::new();
+            for start in (0..b.len()).step_by(BLOCK) {
+                let end = (start + BLOCK).min(b.len());
+                let alike = end <= a.len() && a[start..end].iter().zip(&b[start..end]).all(|(x, y)| key(x) == key(y));
+                if !alike {
+                    out.extend((start..end).filter(|&i| a.get(i).map(&key) != Some(key(&b[i]))).map(|i| i as u32));
+                }
+            }
+            out
         }
         // Floats compare by bits, so a NaN that stays NaN is not a change.
-        let bits32 = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
-        let bits64 = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
         match (self, new) {
-            (FieldData::F32(a), FieldData::F32(b)) => go(&bits32(a), &bits32(b)),
-            (FieldData::F64(a), FieldData::F64(b)) => go(&bits64(a), &bits64(b)),
-            (FieldData::U64(a), FieldData::U64(b)) => go(a, b),
-            (FieldData::U32(a), FieldData::U32(b)) => go(a, b),
-            (FieldData::U16(a), FieldData::U16(b)) => go(a, b),
-            (FieldData::U8(a), FieldData::U8(b)) => go(a, b),
-            (FieldData::Dir(a), FieldData::Dir(b)) => go(a, b),
+            (FieldData::F32(a), FieldData::F32(b)) => go(a, b, |x| x.to_bits()),
+            (FieldData::F64(a), FieldData::F64(b)) => go(a, b, |x| x.to_bits()),
+            (FieldData::U64(a), FieldData::U64(b)) => go(a, b, |x| *x),
+            (FieldData::U32(a), FieldData::U32(b)) => go(a, b, |x| *x),
+            (FieldData::U16(a), FieldData::U16(b)) => go(a, b, |x| *x),
+            (FieldData::U8(a), FieldData::U8(b)) => go(a, b, |x| *x),
+            (FieldData::Dir(a), FieldData::Dir(b)) => go(a, b, |x| x.map(f64::to_bits)),
             _ => (0..new.len() as u32).collect(),
         }
     }

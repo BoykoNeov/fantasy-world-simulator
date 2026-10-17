@@ -841,7 +841,23 @@ impl Sim {
                 t.steps.push(TraceStep { stage: Stage::Deliver, module: p.emitter, what: Traced::Delivered(p.event.clone()) });
             }
         }
-        let runtime = self.plan.runtime.clone();
+        // Only the modules that receive one of today's events can change anything, so only they
+        // are the stage's actors and only their fields are watched: a day with a few events for
+        // one module doesn't copy and compare every module's fields (found at step 7's checks:
+        // with wars going on, armies send events nearly every day).
+        let runtime: Vec<usize> = self
+            .plan
+            .runtime
+            .iter()
+            .copied()
+            .filter(|&i| {
+                let m = self.modules[i].manifest();
+                events.iter().any(|p| match &p.event {
+                    Event::Granted { request, .. } => request.requester == m.slot,
+                    e => m.handles.contains(&e.kind()),
+                })
+            })
+            .collect();
         self.stage(Stage::Deliver, &runtime, |s| {
             let mut outs = Vec::new();
             for p in &events {
@@ -906,8 +922,16 @@ impl Sim {
             if conserve { self.world.quantities().into_iter().partition(|q| q.fields().iter().any(|&f| owned_by_actors(self, f))) } else { (Vec::new(), Vec::new()) };
         let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();
         // Only the actors can change anything (strict mode checks it), so only their fields are watched.
-        let watched: Vec<(FieldId, FieldData)> =
-            if conserve { FieldId::all().filter(|&id| owned_by_actors(self, id)).map(|id| (id, self.world.field(id))).collect() } else { Vec::new() };
+        // Armies' values aren't stamped with the day they last changed unless a day is being
+        // explained: nothing reads their stamps, and there are tens of thousands of companies
+        // (numbers never reused), copied and compared every day of a war (found at step 7's
+        // checks: a third of a day's cost on a large world at war).
+        let stamped = |s: &Self, id: FieldId| id.def().tier != Tier::Army || s.trace.is_some();
+        let watched: Vec<(FieldId, FieldData)> = if conserve {
+            FieldId::all().filter(|&id| owned_by_actors(self, id) && stamped(self, id)).map(|id| (id, self.world.field(id))).collect()
+        } else {
+            Vec::new()
+        };
 
         let outs = body(self);
 
@@ -1001,7 +1025,32 @@ impl Sim {
         if def.min == f64::NEG_INFINITY && def.max == f64::INFINITY {
             return;
         }
+        // Nor where the field's type can't hold a value outside its bounds (a u16 kind up to
+        // 65,535, a u32 count from 0 up): no need to copy it to look. Each field's type is fixed
+        // in code, so it is learnt from its first copy.
+        static TYPE_FITS: [std::sync::atomic::AtomicU8; 512] = [const { std::sync::atomic::AtomicU8::new(0) }; 512];
+        let fits = &TYPE_FITS[id.0 as usize];
+        if fits.load(std::sync::atomic::Ordering::Relaxed) == 1 {
+            return;
+        }
+        if self.world.within(id, def.min, def.max) == Some(true) {
+            return;
+        }
         let mut data = self.world.field(id);
+        if fits.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            let (lo, hi) = match data {
+                FieldData::U8(_) => (0.0, u8::MAX as f64),
+                FieldData::U16(_) => (0.0, u16::MAX as f64),
+                FieldData::U32(_) => (0.0, u32::MAX as f64),
+                FieldData::U64(_) => (0.0, u64::MAX as f64),
+                _ => (f64::NEG_INFINITY, f64::INFINITY),
+            };
+            let ok = lo >= def.min && hi <= def.max;
+            fits.store(if ok { 1 } else { 2 }, std::sync::atomic::Ordering::Relaxed);
+            if ok {
+                return;
+            }
+        }
         let goods = self.world.goods.clone();
         let before = if def.conserved { goods.totals(id, &data) } else { Vec::new() };
         let moved = data.clamp(def.min, def.max);
@@ -1078,7 +1127,9 @@ mod tests {
     use crate::world::WorldParams;
 
     fn small() -> Sim {
-        Sim::new(&Config::new(WorldParams { n: 24, provinces: 40, seed: 11, land_fraction: 0.4, radius_km: 6371.0 })).unwrap()
+        let mut c = Config::new(WorldParams { n: 24, provinces: 40, seed: 11, land_fraction: 0.4, radius_km: 6371.0 });
+        c.modules.without_realms();
+        Sim::new(&c).unwrap()
     }
 
     fn slot_index(sim: &Sim, slot: Slot) -> usize {

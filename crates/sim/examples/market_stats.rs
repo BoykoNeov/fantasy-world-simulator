@@ -22,6 +22,7 @@ fn main() {
     let get = |name: &str, default: u64| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map_or(default, |v| v.parse().expect("a number"));
     let params = WorldParams { n: get("--n", 48) as usize, provinces: get("--provinces", 200) as usize, seed: get("--seed", 1), land_fraction: 0.36, radius_km: 6371.0 };
     let mut config = Config::new(params);
+    config.modules.without_realms();
     if !args.iter().any(|a| a == "--food") {
         config.modules.set_choice(Slot::Economics, "markets").unwrap();
         if args.iter().any(|a| a == "--no-trade") {

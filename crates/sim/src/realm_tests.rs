@@ -175,7 +175,9 @@ impl Module for Muster {
 }
 
 fn config() -> Config {
-    Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 })
+    let mut c = Config::new(WorldParams { n: 24, provinces: 40, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
+    c
 }
 
 /// The province the army is raised from: the first pop's.

@@ -3,10 +3,11 @@
 //! share of all coins in the richest 50 provinces, every few years; with realms, also the
 //! treasuries' share of the coins their land holds.
 //!
-//! cargo run --release -p sim --example coin_spread -- [seed] [years] [armies]
+//! cargo run --release -p sim --example coin_spread -- [seed] [years] [armies|defaults]
 //!
-//! `armies` also runs the world with realms, wars and troops, whose bounties for soldiers raised
-//! move coins from the treasuries back into the provinces.
+//! `armies` runs the world with realms, wars and troops instead, whose bounties for soldiers raised
+//! move coins from the treasuries back into the provinces; `defaults`, with the default modules
+//! (everything on since step 7's checks: rulers, and realms choosing war and peace too).
 
 use sim::config::Config;
 use sim::grid::NONE;
@@ -55,25 +56,30 @@ fn main() {
     let seed: u64 = args.first().map_or(7, |s| s.parse().expect("seed"));
     let years: i64 = args.get(1).map_or(50, |s| s.parse().expect("years"));
     let armies = args.get(2).is_some_and(|s| s == "armies");
-    let runs: &[(bool, bool)] = if armies { &[(true, true)] } else { &[(false, false), (true, false)] };
+    let defaults = args.get(2).is_some_and(|s| s == "defaults");
+    let runs: &[(bool, bool)] = if armies || defaults { &[(true, true)] } else { &[(false, false), (true, false)] };
     for &(realms, armies) in runs {
         let mut config = Config::new(WorldParams::preset(Size::Large, seed));
+        if !defaults {
+            config.modules.without_realms();
+        }
         config.modules.set_choice(Slot::Economics, "markets").unwrap();
-        if realms {
+        if realms && !defaults {
             config.modules.realms = Some(RealmParams::default());
         }
-        if armies {
+        if armies && !defaults {
             config.modules.diplomacy = Some(Default::default());
             config.modules.warfare = Some(Default::default());
         }
         println!("{}", match (realms, armies) {
+            _ if defaults => "with the default modules",
             (_, true) => "with realms, taxes, wars and troops",
             (true, false) => "with realms and taxes",
             _ => "without realms",
         });
         let mut sim = Sim::new(&config).unwrap();
         let start = sim.calendar.date(0).year;
-        for y in [1, 2, 3, 5, 10, 20, 30, 40, 50].into_iter().filter(|&y| y <= years) {
+        for y in [1, 2, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].into_iter().filter(|&y| y <= years) {
             sim.run_to_year(start + y);
             report(&sim, y);
         }

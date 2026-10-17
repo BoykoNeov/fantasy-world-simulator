@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 /// with the settings given (`None`: "wars").
 fn config(seed: u64, treaties: Option<TreatyParams>) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, unrest: None, ..RealmParams::default() });
     c.modules.diplomacy = Some(WarParams { treaties, ..WarParams::default() });

@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 /// Realms (no unrest unless asked), wars and troops.
 fn config(seed: u64, unrest: bool) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     let realms = RealmParams { provinces_per_realm: 8.0, ..RealmParams::default() };
     c.modules.realms = Some(if unrest { realms } else { RealmParams { unrest: None, ..realms } });
     c.modules.diplomacy = Some(WarParams::default());

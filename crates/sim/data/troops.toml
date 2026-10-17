@@ -62,9 +62,10 @@ rest_days = 10
 # siege_base_days × (1 + its people / the people of the world's middle province) days, times
 # capital_siege for a capital, and then at most siege_max_days: about a month for a small province,
 # two for a middling one. Freeing a province of one's own takes free_siege of that. Besiegers fewer
-# than siege_min_share of its people make no progress.
+# than siege_min_share of its people make no progress. A capital holds out no longer than any
+# province (1; it was 2 until step 7's checks, when rich capitals were found never to fall).
 siege_base_days = 30.0
-capital_siege = 2.0
+capital_siege = 1.0
 siege_max_days = 180.0
 free_siege = 0.5
 siege_min_share = 0.01

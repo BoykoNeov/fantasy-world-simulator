@@ -18,6 +18,7 @@ use std::sync::Arc;
 #[test]
 fn every_realm_has_a_page_from_what_the_window_is_sent() {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, ..RealmParams::default() });
     c.modules.characters = Some(Default::default());

@@ -4,7 +4,7 @@
 use crate::biome::{BiomeParams, Biomes};
 use crate::calendar::{Calendar, CalendarDef};
 use crate::characters::{RulerParams, Rulers};
-use crate::diplomacy::{WarParams, WarState};
+use crate::diplomacy::{TreatyParams, WarParams, WarState};
 use crate::climate::{ClimateParams, LatitudeClimate, NullClimate};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::{RiverParams, Rivers};
@@ -74,23 +74,23 @@ pub struct ModuleConfig {
     /// set). Scenario files written before it existed have neither key and get none.
     #[serde(default)]
     pub markets: Option<MarketParams>,
-    /// Realms v1, "basic": the starting realms and their claims (step 7). Off by default until
-    /// step 7's checks; scenario files written before it existed have no key and get none. Not in
-    /// [`CHOICES`] yet, so the tester's table stays as it is until then.
+    /// Realms v1, "basic": the starting realms, their claims, taxes and unrest (step 7). On by
+    /// default since step 7's checks; scenario files written before it existed have no key and get
+    /// none, so they make the worlds they made.
     #[serde(default)]
     pub realms: Option<RealmParams>,
-    /// Characters v1, "rulers": every realm's ruler and heir (step 7). Needs realms. Off by default
-    /// and out of [`CHOICES`] until step 7's checks, as realms are.
+    /// Characters v1, "rulers": every realm's ruler and heir (step 7). Needs realms. On by default,
+    /// off in files that don't name it, as realms are.
     #[serde(default)]
     pub characters: Option<RulerParams>,
     /// Diplomacy v0, "wars": wars, peace and truces between realms, by the player's pokes (step 7);
     /// v1, "treaties", when its parameters hold [`crate::diplomacy::TreatyParams`]: realms choose war
-    /// and make peace themselves (needs armies). Needs realms. Off by default and out of [`CHOICES`]
-    /// until step 7's checks, as realms are.
+    /// and make peace themselves (needs armies). Needs realms. "treaties" by default, off in files
+    /// that don't name it, as realms are.
     #[serde(default)]
     pub diplomacy: Option<WarParams>,
-    /// Warfare v1, "troops": provinces raise soldiers who eat and desert (step 7). Needs realms. Off
-    /// by default and out of [`CHOICES`] until step 7's checks, as realms are.
+    /// Warfare v1, "troops": provinces raise soldiers, and armies and fleets move and fight (step
+    /// 7). Needs realms. On by default, off in files that don't name it, as realms are.
     #[serde(default)]
     pub warfare: Option<TroopParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
@@ -119,10 +119,10 @@ impl Default for ModuleConfig {
             population: Some(PopParams::default()),
             weather: true,
             markets: None,
-            realms: None,
-            characters: None,
-            diplomacy: None,
-            warfare: None,
+            realms: Some(RealmParams::default()),
+            characters: Some(RulerParams::default()),
+            diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
+            warfare: Some(TroopParams::default()),
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -134,6 +134,14 @@ impl Default for ModuleConfig {
 }
 
 impl ModuleConfig {
+    /// Realms, rulers, diplomacy and armies switched off: the world as it was before step 7 (they
+    /// are on by default since step 7's checks). For tests of what came before, and for worlds
+    /// without people, which realms need.
+    pub fn without_realms(&mut self) -> &mut Self {
+        (self.realms, self.characters, self.diplomacy, self.warfare) = (None, None, None, None);
+        self
+    }
+
     /// The chosen modules, in slot order. Biomes, rivers, farmland and provinces have one version
     /// each for now.
     pub fn build(&self) -> Vec<Box<dyn Module>> {
@@ -190,6 +198,10 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Economics, &["food", "markets", "off"]),
     (Slot::Population, &["basic", "off"]),
     (Slot::Weather, &["droughts", "off"]),
+    (Slot::Realms, &["basic", "off"]),
+    (Slot::Characters, &["rulers", "off"]),
+    (Slot::Diplomacy, &["treaties", "wars", "off"]),
+    (Slot::Warfare, &["troops", "off"]),
 ];
 
 impl ModuleConfig {
@@ -212,6 +224,14 @@ impl ModuleConfig {
             },
             Slot::Population => on(self.population.is_some(), "basic"),
             Slot::Weather => on(self.weather, "droughts"),
+            Slot::Realms => on(self.realms.is_some(), "basic"),
+            Slot::Characters => on(self.characters.is_some(), "rulers"),
+            Slot::Diplomacy => match &self.diplomacy {
+                None => "off",
+                Some(d) if d.treaties.is_some() => "treaties",
+                Some(_) => "wars",
+            },
+            Slot::Warfare => on(self.warfare.is_some(), "troops"),
             _ => return None,
         })
     }
@@ -233,6 +253,19 @@ impl ModuleConfig {
             }
             Slot::Population => self.population = if on { self.population.take().or_else(|| Some(PopParams::default())) } else { None },
             Slot::Weather => self.weather = on,
+            Slot::Realms => self.realms = if on { self.realms.take().or_else(|| Some(RealmParams::default())) } else { None },
+            Slot::Characters => self.characters = if on { self.characters.take().or_else(|| Some(RulerParams::default())) } else { None },
+            Slot::Diplomacy => {
+                self.diplomacy = match version {
+                    "off" => None,
+                    _ => {
+                        let mut d = self.diplomacy.take().unwrap_or_default();
+                        d.treaties = if version == "treaties" { d.treaties.take().or_else(|| Some(TreatyParams::default())) } else { None };
+                        Some(d)
+                    }
+                }
+            }
+            Slot::Warfare => self.warfare = if on { self.warfare.take().or_else(|| Some(TroopParams::default())) } else { None },
             _ => unreachable!("checked against CHOICES"),
         }
         Ok(())

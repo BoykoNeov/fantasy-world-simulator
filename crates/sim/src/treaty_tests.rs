@@ -16,7 +16,11 @@ use std::collections::BTreeMap;
 /// with the settings given. No rulers: every realm is neither warlike nor greedy.
 fn config(seed: u64, t: TreatyParams) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
-    c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, unrest: None, ..RealmParams::default() });
+    c.modules.without_realms();
+    // Capitals counted three times in spending, as when these tests were written (1 since step 7's
+    // checks), so the richest provinces they look for are where they were.
+    let taxes = crate::realms::TaxParams { capital_weight: 3.0, ..Default::default() };
+    c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, unrest: None, taxes, ..RealmParams::default() });
     c.modules.diplomacy = Some(WarParams { treaties: Some(t), ..WarParams::default() });
     c.modules.warfare = Some(TroopParams::default());
     c

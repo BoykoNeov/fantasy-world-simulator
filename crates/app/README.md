@@ -126,10 +126,8 @@ What exists:
     trade between two realms ("X sold N coins' worth of goods to Y last month, and bought M coins'
     worth") has its words, but isn't kept in the event log (hundreds a month).
   - Hovering says which realm owns a province, who occupies it, and how restless it is.
-  - The Modules section lists the realms, rulers and wars versions running. They aren't among the
-    combination tester's choices until step 7's checks, so a world running them, or a new world
-    made with them, says "not in the combination tester's table yet" rather than the table's
-    verdict on the rest.
+  - The Modules section lists the realms, rulers, diplomacy and armies versions running, with the
+    combination tester's verdict for the mix (they joined its choices at step 7's checks).
 - **Armies, battles and wars** (step 7's window part 2; `armies.rs`, only where armies are kept):
   - "armies" draws field armies marching, gathering, besieging or fighting: one marker per realm
     and place (a province's seat, or along the way it is on), in the realm's colour, larger with
@@ -176,8 +174,9 @@ What exists:
   timeline. The Modules section says how many settings differ from the defaults, since the
   combination tester ran only the defaults.
 - **New world** (step 6): pick a size, a seed, the years to run before showing it, and a version
-  for each module, realms, rulers, diplomacy ("wars" or "treaties") and armies included (Oct 17;
-  picking one switches on what it needs); what the combination tester found for those versions
+  for each module, realms, rulers, diplomacy ("wars" or "treaties") and armies included (all on
+  by default since step 7's checks; picking one switches on what it needs, and switching one off
+  switches off what needs it, as realms with people); what the combination tester found for those versions
   shows as they are picked, and a mix it refuses can't be made. Its "settings" holds every
   setting of the world to make, as the Settings section does, those that shape the map or the
   start ("fixed once made") too, and the parts that switch on and off (trade, unrest, realms
@@ -197,12 +196,13 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 
 - `--size small|medium|large|huge`, `--seed S`, `--n FACE`, `--provinces N`: the world (default: large, seed 7).
 - `--terrain null|noise`, `--climate null|latitude`: module versions (default: noise, latitude).
-- `--modules SLOT=VERSION,...`: any module versions, e.g. `economics=off,population=off` or
-  `weather=off` (slots: terrain, climate, economics, population, weather).
-- `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`, `--armies`: realms (with the ways
-  to start weighted as given), rulers and heirs, wars and truces, and troops, as in `simrun`. Realms
-  are off by default until step 7's checks; `--rulers`, `--wars` or `--armies` alone turn them on
-  the default way; `--treaties` has realms choose war and peace themselves (with armies).
+- `--modules SLOT=VERSION,...`: any module versions, e.g. `weather=off` or
+  `realms=off,characters=off,diplomacy=off,warfare=off` (slots: terrain, climate, economics,
+  population, weather, realms, characters, diplomacy, warfare). Realms, rulers, realms choosing
+  war and peace, and armies are on by default since step 7's checks.
+- `--realms settled=W,city=W,frontier=W`, `--rulers`, `--wars`, `--armies`, `--treaties`: realms
+  with the ways to start weighted as given, and the others as in `simrun` (`--wars`: wars only by
+  pokes and rebels).
 - `--years Y`: how long to run before showing it (default 20).
 - `--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS`: start a drought after those years. `best` centres it
   on the province that grows the most food (2,000 km radius, 70% of the rain, 3 years).

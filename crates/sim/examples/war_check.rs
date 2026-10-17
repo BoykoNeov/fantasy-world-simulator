@@ -28,6 +28,7 @@ use sim::world::WorldParams;
 
 fn config(economics: &str, seed: u64, unrest: bool, armies: bool) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, economics).unwrap();
     c.modules.realms = Some(if unrest { RealmParams::default() } else { RealmParams { unrest: None, ..RealmParams::default() } });
     c.modules.characters = Some(Default::default());

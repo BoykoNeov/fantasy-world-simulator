@@ -33,6 +33,7 @@ use std::collections::BTreeMap;
 
 fn config(params: WorldParams, unrest: bool, untolled: bool) -> Config {
     let mut c = Config::new(params);
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c.modules.realms = Some(if unrest { RealmParams::default() } else { RealmParams { unrest: None, ..RealmParams::default() } });
     c.modules.characters = Some(Default::default());

@@ -82,10 +82,10 @@ Loads refuse other format versions,
   | Economics | `food` (default): monthly harvest and spoilage, keeps one store per province of the "food" class; `markets`: the eight goods and coins, made by workers from the land, used up and priced (see below); or off | monthly |
   | Population | `basic`: asks for a month's food (the tree's "food", however it is kept), then is born or starves on the grant; or off | monthly |
   | Weather | `droughts`: owns each province's rain shortfall; droughts start with a poke; or off | monthly |
-  | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below); or off (the default until step 7's checks) | monthly |
-  | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; or off (the default until step 7's checks) | monthly |
-  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; or off (the default until step 7's checks) | monthly, and on pokes |
-  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off (the default until step 7's checks) | daily (raising and eating monthly) |
+  | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below), the default since step 7's checks; or off | monthly |
+  | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; the default since step 7's checks; or off | monthly |
+  | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; the default since step 7's checks; or off | monthly, and on pokes |
+  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; the default since step 7's checks; or off | daily (raising and eating monthly) |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -263,9 +263,8 @@ Loads refuse other format versions,
     or armies. Old scenario files make the same worlds value for value; fingerprints differ only
     because the new fields are hashed.
 - **Realms at world creation** (step 7; Realms "basic", `realms.rs`, tests in
-  `realm_start_tests.rs`). Off by default, and not among the tester's choices yet, so its table is
-  unchanged; a configuration (`ModuleConfig::realms`), a scenario file or `simrun --realms` turns it
-  on. Realms are made once the people are placed, over settled land (provinces with people), and
+  `realm_start_tests.rs`). On by default since step 7's checks (off in a scenario file that doesn't
+  name it, so old files make the worlds they made); `--modules realms=off` turns it off. Realms are made once the people are placed, over settled land (provinces with people), and
   need Population (refused without it).
   - **Three ways to start, mixable** (`RealmParams`, a weight for each): realms over settled land
     (the default; about one realm per 25 provinces, every settled province owned), city-states (one
@@ -333,9 +332,9 @@ Loads refuse other format versions,
     largest realm's ruler and heir.
   - The engine gives each new realm a ruler and heir of nobody (`World::fit_realm_rows`, as it does
     its stores), so a world with realms but no rulers saves and loads.
-- **Wars** (step 7; Diplomacy "wars", `diplomacy.rs`, tests in `war_tests.rs`). Off by default and
-  not among the tester's choices yet, like realms; a configuration (`ModuleConfig::diplomacy`), a
-  scenario file or `simrun --wars` turns it on. It needs realms (refused without them).
+- **Wars** (step 7; Diplomacy "wars", `diplomacy.rs`, tests in `war_tests.rs`). The default since
+  step 7's checks is "treaties" (below); `--modules diplomacy=wars` (or `simrun --wars`) picks this
+  one. It needs realms (refused without them).
   - **Wars** are entities like realms, kept as parallel arrays (`war.*` fields): the realm that
     declared it and the one it was declared on, why (`war.cause`: the player's poke, or rebels who
     broke away),
@@ -458,8 +457,8 @@ Loads refuse other format versions,
   - `simrun` prints how many provinces are in uprising, how many are at least half way there, and
     how many realms have broken away.
 - **Troops** (step 7; Warfare "troops", `warfare.rs`, `data/troops.toml`, tests in
-  `troops_tests.rs`). Off by default and not among the tester's choices yet, like realms; a
-  configuration (`ModuleConfig::warfare`), a scenario file or `simrun --armies` turns it on. It needs
+  `troops_tests.rs`). On by default since step 7's checks, like realms; `--modules warfare=off`
+  turns it off. It needs
   realms (refused without them). How they move and fight is the next section.
   - **Troop kinds are data**, a tree like the goods tree saved with the world: levies, heavy
     infantry and cavalry on land, ships at sea. Each kind has a weight, the land that suits it (land
@@ -587,9 +586,8 @@ Loads refuse other format versions,
     hold around its stage, and checks the rest by their flows, which must come to nothing (before,
     every stage summed every quantity: a daily module cost 15 ms a day).
 - **Realms choosing war and peace** (step 7; Diplomacy "treaties", `diplomacy.rs`, tests in
-  `treaty_tests.rs`). Off by default, like the other step 7 slots; `WarParams::treaties` (a
-  scenario file's `[modules.diplomacy.treaties]`), `simrun --treaties` or the window's `--treaties`
-  turns it on. It needs armies (refused without them: with nothing occupied and no battle fought,
+  `treaty_tests.rs`). The default since step 7's checks; `WarParams::treaties` (a scenario file's
+  `[modules.diplomacy.treaties]`) holds its settings, and a file without it runs "wars". It needs armies (refused without them: with nothing occupied and no battle fought,
   every war would end with nobody winning). "wars" stays as it was, pokes only; worlds running it
   come out the same as before this piece (`war_check` one war and 40 years with rebellions, both
   economies, compared output for output with the build before).
@@ -758,6 +756,17 @@ Loads refuse other format versions,
     leads there).
   - Old scenario files reproduce value for value; the tester's table is unchanged.
 
+- **Step 7's checks** (Oct 17): realms, rulers, Diplomacy "treaties" and troops are on by default
+  (`ModuleConfig::without_realms()` switches all four off; scenario files keep what they name, so
+  old ones make the worlds they made). Capitals are counted once in their realm's spending
+  (`taxes.capital_weight` 1, was 3; a file from before taxes keeps 3) and besieged like any province
+  (`capital_siege` 1, was 2), so rich ports can be taken (story 2, which still fails and moved to
+  step 8: `examples/story2.rs`). Story 1 in full is a test (`tests/stories.rs`). The tester runs
+  its pairs mode over the nine slots' 1,152 mixes; unrest held at the line through a famine is a
+  known quirk (`data/known_quirks.toml`, which can now name the one field a quirk is about).
+  `examples/day_cost.rs` measures a large world's day as processor time (fairer on a busy
+  machine) and prints the world's fingerprint, for checking that a speed-up changed nothing.
+
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
   and the sea can rise or fall everywhere. Flattening below 0 m makes sea, so an inland sea or a
@@ -823,7 +832,8 @@ Loads refuse other format versions,
   and granted, events sent and delivered, and every value that changed. Tracing is off unless asked
   for; modules check one number before explaining anything.
 - **Last changed**: for every value a running module owns, the engine stamps the day it last
-  changed (`Sim::last_change`).
+  changed (`Sim::last_change`), but armies' values (since step 7's checks: tens of thousands of
+  entries a day of war, and nothing reads their stamps; a day explained still lists their changes).
 - **Story 1, first half** (`tests/stories.rs`): a three-year drought over the province that grows the
   most food. In that test world, harvests fall to about 30% of normal, the region's stores fall to
   18% of normal, and 22% of its people starve in the worst year (hardly anyone without the drought).
@@ -909,6 +919,29 @@ on one free core it would not. Once the load fell to about 7 of 16 cores busy, c
 as when trade was built. With every core busy, markets on all cores was slower than on one (4.7–6.5
 ms against about 3.4 ms): each month's work waits for its slowest share. Capping its cores, or
 handing out work in bigger shares, could help.
+
+## Measured speed with everything on (Oct 17, 2026, step 7's checks)
+
+Large world (seed 7) with the default modules, Economics v0 unless said, one worker thread
+(`RAYON_NUM_THREADS=1`), processor time a day (`examples/day_cost.rs`; another project's tests kept
+the machine busy throughout, so the clock meant little). Before and after the speed work of step 7's
+checks, which left every world the same, fingerprint for fingerprint:
+
+| | Before | After | Budget |
+| --- | --- | --- | --- |
+| Year 5 (12 wars going on, 37,000 army entries) | 1.98 ms | 0.77 ms | 1.5 ms |
+| Year 40 (24 wars, 64,000 army entries) | 3.86 ms | 1.46 ms | 1.5 ms |
+| Markets, year 5 (14 wars) | 5.07 ms | 3.43 ms | (markets alone: 1.89 ms) |
+| Without realms, rulers, diplomacy and armies | 0.17 ms | 0.17 ms | |
+
+What it was: the engine around the armies more than the armies. Delivering a day's events watched
+every module's fields (now only those of the modules receiving events); every army entry (numbers
+are never reused, so they only grow: 43,000 at year 10, 71,000 at 60, about 17,000 with soldiers)
+was copied and compared twice a day to stamp the day each value last changed (army values aren't
+stamped now unless a day is explained; nothing reads those stamps); and the generals' route searches
+covered the whole map (they stop now once the provinces asked about are settled). No day is idle
+in such a world: some war goes on every day. Worlds grow more warlike as rebellions split realms, so
+a day costs more in later years.
 
 ## Measured speed (Oct 14, 2026, Ryzen 7800X3D, release build)
 

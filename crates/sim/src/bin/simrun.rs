@@ -5,7 +5,12 @@
 //!        [--terrain null|noise] [--climate null|latitude] [--out DIR] [--width PX]
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
-//!        [--armies] [--treaties] [--set KEY=VALUE ...] [--settings]
+//!        [--armies] [--treaties] [--modules SLOT=VERSION,...] [--set KEY=VALUE ...] [--settings]
+//!
+//! The world gets the default modules: since step 7's checks, realms, rulers, realms choosing war
+//! and peace, and armies too. `--modules realms=off,diplomacy=wars` picks any versions, as the
+//! combination tester names them (`realms=off` with `characters=off,diplomacy=off,warfare=off` for
+//! a world as it was before step 7).
 //!
 //! `--load` continues a saved world for `--years` more years (world options are then ignored);
 //! `--save` writes the world at the end. `--scenario` opens a scenario (its played timeline) instead,
@@ -63,6 +68,10 @@ fn main() {
     }
     if let Some(v) = get("--economics") {
         config.modules.set_choice(sim::module::Slot::Economics, &v).unwrap_or_else(|e| panic!("--economics: {e}"));
+    }
+    // Any versions, as the combination tester names them: `--modules realms=off,diplomacy=wars`.
+    if let Some(v) = get("--modules") {
+        sim::combos::choose(&mut config.modules, &v).unwrap_or_else(|e| panic!("--modules: {e}"));
     }
     if let Some(v) = get("--realms") {
         let mut r = sim::realms::RealmParams { settled: 0.0, ..Default::default() };

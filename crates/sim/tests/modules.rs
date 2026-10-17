@@ -17,6 +17,8 @@ fn params(seed: u64) -> WorldParams {
 /// Harsh harvests, so famines happen within a few years.
 fn harsh(seed: u64) -> Config {
     let mut c = Config::new(params(seed));
+    // No realms: the yearly books below count births and deaths, not soldiers raised and killed.
+    c.modules.without_realms();
     c.modules.economics = Some(FoodParams { harvest_variability: 1.2, ..FoodParams::default() });
     c
 }
@@ -87,6 +89,8 @@ fn famines_happen_and_are_announced_the_day_after() {
 #[test]
 fn turning_off_economics_while_people_still_eat_is_refused() {
     let mut c = Config::new(params(1));
+    // Realms need people too: off here, so the refusal is the economy's.
+    c.modules.without_realms();
     c.modules.economics = None;
     let e = Sim::new(&c).err().expect("refused");
     assert!(e.0.contains("Population \"basic\" sends change requests to province.stock, but no active module owns it"), "{e}");

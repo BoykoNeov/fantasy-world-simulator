@@ -15,8 +15,12 @@ use crate::world::{World, WorldParams};
 
 fn config(economics: &str, seed: u64) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, economics).unwrap();
-    c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, ..RealmParams::default() });
+    // The capital counted three times, as the tests below check (the default was 3 then; it is 1
+    // since step 7's checks).
+    let taxes = crate::realms::TaxParams { capital_weight: 3.0, ..Default::default() };
+    c.modules.realms = Some(RealmParams { provinces_per_realm: 8.0, taxes, ..RealmParams::default() });
     c.modules.diplomacy = Some(WarParams::default());
     c
 }

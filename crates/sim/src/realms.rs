@@ -34,11 +34,12 @@
 //!
 //! Under an economy with coins (markets), realms tax and spend ([`TaxParams`]): each month a realm
 //! takes a share of each of its provinces' coins into its treasury, and spends a share of the
-//! treasury back into its provinces by their people, the capital's counted several times over, so
-//! the treasury settles where the two meet. Taxes go by coins and spending by people, so within a
-//! realm coins drift toward where people live, and the capital settles a few times richer a person
-//! than the rest, not ever richer (a fixed share of the spending would heap half the realm's coins
-//! on the capital: found at this piece's check). A province an enemy occupies pays nobody and is paid
+//! treasury back into its provinces by their people (the capital's counted
+//! [`TaxParams::capital_weight`] times, once by default since step 7's checks), so the treasury
+//! settles where the two meet. Taxes go by coins and spending by people, so within a realm coins
+//! drift toward where people live. Counting the capital more makes it settle that many times richer
+//! a person than the rest, not ever richer (a fixed share of the spending would heap half the
+//! realm's coins on the capital: found at this piece's check). A province an enemy occupies pays nobody and is paid
 //! nothing. A dissolved realm's coins go to the land it last had as its capital. The coins are
 //! kept by the economics module (coins keep one keeper), so all of it is asked of that module by
 //! moves; the realms module is built with a manifest that asks for coins only when the world keeps
@@ -115,8 +116,9 @@ pub struct RealmParams {
     #[serde(default = "city_state_max")]
     pub city_state_max: u32,
     /// Taxes and spending, in a world that keeps coins. Scenario files written before taxes get
-    /// the defaults.
-    #[serde(default)]
+    /// the values taxes had then ([`TaxParams::before_files_named_them`]), so they make the same
+    /// worlds whatever the defaults become.
+    #[serde(default = "TaxParams::before_files_named_them")]
     pub taxes: TaxParams,
     /// Unrest and rebellion; none for no unrest. Scenario files written before unrest have none, so
     /// they make the same world they made then.
@@ -188,9 +190,19 @@ pub struct TaxParams {
     pub capital_weight: f64,
 }
 
+impl TaxParams {
+    /// Taxes as they were when scenario files began to name them (Oct 15): the capital counted 3
+    /// times.
+    pub fn before_files_named_them() -> TaxParams {
+        TaxParams { capital_weight: 3.0, ..TaxParams::default() }
+    }
+}
+
 impl Default for TaxParams {
     fn default() -> Self {
-        TaxParams { per_month: 0.01, spent_per_month: 0.1, capital_weight: 3.0 }
+        // The capital counted once, like any province (3 until step 7's checks: capitals then held
+        // so many of the coins that the rich cities were always capitals, and never fell).
+        TaxParams { per_month: 0.01, spent_per_month: 0.1, capital_weight: 1.0 }
     }
 }
 

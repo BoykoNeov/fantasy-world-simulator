@@ -8,7 +8,10 @@ use sim::sim::{Sim, Traced};
 use sim::world::WorldParams;
 
 fn world() -> Sim {
-    let mut sim = Sim::new(&Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.36, radius_km: 6371.0 })).unwrap();
+    // Story 1's famine half, as it was checked at step 4: no realms (the full story is below).
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.without_realms();
+    let mut sim = Sim::new(&c).unwrap();
     sim.strict = true;
     sim
 }
@@ -116,6 +119,7 @@ fn story_1_a_drought_in_the_breadbasket_brings_famine() {
 /// Story 1's world with Economics v1, "markets", with or without trade.
 fn markets_world(trade: bool) -> Sim {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.without_realms();
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     if !trade {
         c.modules.markets.as_mut().unwrap().trade = None;
@@ -224,5 +228,61 @@ fn story_1_on_markets_the_drought_region_buys_food_in() {
     assert!(starved(&dry) < starved(&alone), "{}", report());
     for r in [&dry, &normal, &alone] {
         assert_eq!(r.sim.problems, Default::default());
+    }
+}
+
+/// Story 1 in full, on one seed and economy, with the default modules (realms, rulers, realms
+/// choosing war and peace, armies): story 1's world, the drought poked in after three years over
+/// the province that grows the most food, then five years watched. Whether, with the drought and
+/// in the same world without it, a drought province rose up (an uprising begun there) or its realm
+/// declared a war for food.
+fn story_1_full(economics: &str, seed: u64) -> (bool, bool) {
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.set_choice(Slot::Economics, economics).unwrap();
+    let mut sim = Sim::new(&c).unwrap();
+    let start = sim.calendar.date(0).year;
+    sim.run_to_year(start + 3);
+    let mut twin = sim.fork();
+    let (count, heart) = {
+        let p = &sim.world.provinces;
+        (p.count, (0..p.count).max_by_key(|&i| p.food_capacity[i]).unwrap())
+    };
+    let (lon, lat) = sim::grid::dir_to_lonlat(sim.world.provinces.center[heart]);
+    sim.poke(Event::Drought { lon: lon.to_degrees(), lat: lat.to_degrees(), radius_km: 2000.0, shortfall: 700, days: DROUGHT_YEARS as u64 * 364 });
+    let mut probe = sim.fork();
+    probe.run_days(2);
+    let region: Vec<u32> = (0..count as u32).filter(|&i| probe.world.rain_shortfall[i as usize] > 0).collect();
+    let mut realms: Vec<u32> = region.iter().map(|&q| sim.world.owner[q as usize]).filter(|&r| r != sim::grid::NONE).collect();
+    realms.sort_unstable();
+    realms.dedup();
+    let end = sim.day + 5 * sim.calendar.days_per_year() as u64;
+    let watch = |s: &mut Sim| {
+        let mut happened = false;
+        while s.day < end {
+            s.step_day();
+            for e in s.delivered_today() {
+                happened |= match e.event {
+                    Event::Uprising { province, seat, .. } => province == seat && region.contains(&province),
+                    Event::WarDeclared { attacker, cause, .. } => cause == sim::diplomacy::WarCause::Food && realms.contains(&attacker),
+                    _ => false,
+                };
+            }
+        }
+        assert_eq!(s.problems, Default::default(), "{economics}, seed {seed}");
+        happened
+    };
+    (watch(&mut sim), watch(&mut twin))
+}
+
+#[test]
+fn story_1_in_full_a_drought_brings_an_uprising_or_a_war_for_food() {
+    // Passes if on at least 2 of 3 seeds the drought brings an uprising in its region or a war for
+    // food by its realm within 5 years, and on at least 2 of 3 the same world without it has
+    // neither; under both economies (the pass numbers the user approved, Oct 15).
+    for economics in ["food", "markets"] {
+        let runs: Vec<(bool, bool)> = [21, 3, 7].into_iter().map(|seed| story_1_full(economics, seed)).collect();
+        let with = runs.iter().filter(|r| r.0).count();
+        let quiet = runs.iter().filter(|r| !r.1).count();
+        assert!(with >= 2 && quiet >= 2, "{economics}: with the drought {with} of 3, quiet without it {quiet} of 3: {runs:?}");
     }
 }
