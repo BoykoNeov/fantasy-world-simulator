@@ -825,6 +825,18 @@ The three planning agents' drafts, shortened. Questions marked *(default)* are e
 - Culture's question about returning soldiers changes `warfare.rs`, which logistics owns: measure now, change only after logistics merges.
 - Two interactions to re-check at whole-wave time: scholars' and soldiers' wages both drain treasuries (which feed story 2); story 1 under Economics v0 sits at exactly 2 of 3 seeds, and foraging, stripping and culture's extra pop rows can tip it.
 
+**The user's choices on the drafts (Oct 17):**
+- **Massing armies:** instead of only lifting the 10% gathering limit, the user wants soldiers from several provinces combined into bigger armies, or several armies acting together against one target. Logistics designs this (soldiers marching in from inner provinces to join, several groups launched together) and brings a concrete version to the user after its probe (piece 1).
+- **Foraging:** soldiers on enemy land take food before civilians (recommended).
+- **Plunder:** 20% of a taken city's coins, coin economy only (recommended).
+- **Pay:** guards are paid too, not only field soldiers (overrode the recommendation): peace costs realms coins every month.
+- **Research pays** scholars' wages from the treasury (recommended).
+- **Knowledge spreads** from neighbours **and trade partners** (overrode "neighbours only"). Trade partners come from the monthly Trade event per realm pair, which needs no change to `markets.rs`; under Economics v0 there is no trade, so neighbours only.
+- **Cultures start by region** (recommended).
+- **Unrest from foreign-culture rule** is wired into Realms in this wave, by the main session at merge, as a setting (recommended).
+- **Everything else as recommended:** rebels inherit knowledge, conquest passes none, the 24-tech tree as a first draft, research pass bars, rulers slowly assimilate even fully foreign provinces, splits in v1 as a switchable part, a realm's culture is its capital's, winter settings as drafted, and the defaults marked *(default)*.
+- **Go-ahead:** the main session builds the setup commit, then launches the three building agents without asking again and merges them one at a time.
+
 #### Logistics and support (step 8)
 
 Armies must be fed, paid and kept through winter, and cities can be starved out. Not a new slot: four switchable parts of Warfare (`modules.warfare.supply`, `.seasons`, `.pay`, `.sieges`, each an `Option` in `TroopParams`), code in a new `logistics.rs` of `impl Troops` helpers, so effects on `army.size` stay with its owner and no army fields need copying for a read loop. New Warfare version "campaigns" = "troops" with all four parts; with all parts off Warfare is exactly step 7.
