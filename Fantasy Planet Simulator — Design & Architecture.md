@@ -778,6 +778,40 @@ Start with a thin slice you can watch, and pull the framework out of real module
 
 After step 5 the game is already a watchable, editable living map; everything after is depth.
 
+## Building several modules at once with agents
+
+Planned Oct 17. Not started: no agent is launched until the user says go. This is how several Claude Code subagents can build modules at the same time without breaking each other's work, while every design choice stays with the user.
+
+**The problem.** A new module is mostly its own file and its own tests, but it must also be added to about a dozen shared lists: the configuration (`config.rs`), the settings descriptions (`settings.rs`), the save format number (`save.rs`, a single counter), fields, events, the world's arrays, the run order, the random-number purposes, the combination tester, the command line, the window, the READMEs and this document. Diplomacy v1 touched 20 files. Two agents editing those at once would clash, and both would claim the next save format.
+
+**The shape: plan in parallel, decide together, set up the shared parts once, build in parallel, merge one at a time.**
+
+1. **Planning agents (parallel, read-only).** Up to three, one per module. Each reads the code and this document and returns a draft plan in the style of the step entries above: what the module does, the fields it owns and reads, its requests and events, its settings with ranges, its version name, where it sits in the run order, which story or check it serves, the risks, and **open questions, each with a recommendation**. They decide nothing and edit nothing. They don't build, so they need no worktree and no disk.
+2. **The user decides, in one batch.** The main session checks the drafts against each other (two modules owning one field, a same-day read loop the load check would refuse, two modules needing the same file) and puts every question to the user at once, in plain words. The answers go into this document under each module's entry and under Decisions.
+3. **Shared parts set up once (main session, one commit).** For every module in the wave: its `ModuleConfig` entry (off by default, with a serde default so old files make the same worlds), its fields and owners, event kinds, random-number purpose names, its settings described in `settings.rs`, an empty module that runs and does nothing, any groundwork two modules share (see Culture below), and **one** save format bump for the whole wave. All tests pass before anything fans out.
+4. **Building agents (parallel, each in its own git worktree and branch).** Up to three. Each writes only its own module file, its tests and its examples. If it needs a shared file changed, it doesn't edit it: it lists the change in its report. It runs its tests and the full suite at below-normal priority, commits on its branch, and reports what it built, what it measured, what it changed from the plan, and any new questions.
+5. **Merging (main session, one branch at a time).** Bring the branch onto main, apply its shared-file changes, then run everything: all tests, old scenario files value for value, every setting at its minimum and maximum, determinism, the combination tester, the stories. The next branch merges only when this one is in. Clashes and surprises go to the user, never decided silently.
+6. **Whole-wave checks (main session).** Turn the new modules on by default if the user wants, measure speed on a quiet machine, rerun the stories, update the READMEs, this document and the memory, delete the worktrees and temporary folders, commit and push.
+
+**What each building agent is told.** Its settled plan and the user's answers. The project rules: every number a setting with a plain-words description, serde defaults, the save format left to the main session. No `cd`, absolute paths only. Tests at below-normal priority with the exact command from the user's global rules. Kill only a process by the ID it started. Full paths in its report. Never edit the shared files. Never decide a design question: stop and report it. Never push.
+
+**Rules that keep parallel work safe.**
+- The main session is the only one that edits shared files. Agents own only their module's files.
+- What one new module does to another (say, knowledge making troops better) is wired up by the main session after both are merged, not by either agent.
+- Speed is never measured while other builds run; agents' numbers are only rough.
+- At most three agents at once on this 16-core machine, every build and test at below-normal priority, so the user can keep working.
+
+**Disk.** Each worktree builds its own copy of the program in its own `target` folder (the main one is already large). W: has 57 GB free and has run out before, so the worktrees and their build folders go on M: (1.1 TB free) rather than under `W:\temp\claude`, if the user agrees. They are deleted after merging.
+
+**Proposed first wave.**
+- **Logistics and support (step 8):** supply lines, pay, foraging, seasons, deeper sieges, attrition, the battle inspector and story 2. It lives almost entirely in `warfare.rs` and touches markets, so it is one stream, and nothing else in the wave may touch those two files.
+- **Research v1 (step 9):** a tech tree with costs, per realm, in a new file. For now it only produces knowledge; what knowledge does to troops or harvests is wired up after merging.
+- **Culture v1 (step 9):** cultures spread and people assimilate. Pops already carry culture and religion numbers (all 0 today), but nothing can move people from one culture to another. That needs a new kind of request to Population, done as groundwork in point 3, because religion will use it too.
+
+**Second wave:** Religion v1 (follows culture's pattern once it works), Natural world v1 (forests, wildlife, timber and fish; touches the economy's land formulas, so not beside logistics), Disease v1 (plagues along trade routes, story 3).
+
+**Watch for:** new modules that read each other on the same day can hit the run-order loop the trade piece solved with "read yesterday's values". The planning agents must list every read, so this shows up before building, not after.
+
 ## Decisions
 
 - **Time:** the base step is one day; modules run their main logic on their own cadence. An event on day N takes effect on day N+1, with a documented priority order for same-day conflicts.
