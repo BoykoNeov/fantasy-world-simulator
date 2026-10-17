@@ -24,6 +24,7 @@ fn everything() -> Config {
     c.modules.characters = Some(Default::default());
     c.modules.warfare = Some(Default::default());
     c.modules.research = Some(Default::default());
+    c.modules.culture = Some(Default::default());
     c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
     c
 }

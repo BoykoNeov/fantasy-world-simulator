@@ -311,7 +311,9 @@ impl Edit {
             // Checked by the modules that carry them out ([`crate::module::Module::check_edit`]);
             // with those off, there is nothing to set.
             Edit::SetTech { realm, .. } => living(w, realm),
-            Edit::SetCulture { .. } | Edit::NewCulture { .. } => Err("no module keeps cultures".into()),
+            // The shape here; the culture module checks the culture (with it off, the engine has
+            // already refused: nobody keeps `culture.hearth`).
+            Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => with_land(w, provinces),
         }
     }
 

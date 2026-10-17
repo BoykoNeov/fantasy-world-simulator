@@ -8,7 +8,7 @@ years = 20
 seeds = [1, 2, 3]
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -49,7 +49,60 @@ what = "province.unrest of 259 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation"
+verdict = "yellow"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 2484
+what = "province.unrest of 254 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run]]
+seed = 3
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 848
+what = "province.unrest of 45 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4124
+what = "province.unrest of 101 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 5760
+what = "province.unrest of 77 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 6094
+what = "province.unrest of 210 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 6458
+what = "province.unrest of 194 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -90,7 +143,7 @@ what = "province.unrest of 259 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -131,7 +184,7 @@ what = "province.unrest of 259 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -167,7 +220,7 @@ what = "province.unrest of 259 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=food population=off weather=droughts realms=off characters=off diplomacy=off warfare=off research=off"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=assimilation"
 verdict = "green"
 
 [[mix.run]]
@@ -186,7 +239,61 @@ verdict = "green"
 finding = []
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off"
+versions = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off"
+verdict = "yellow"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4518
+what = "province.unrest of 154 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run]]
+seed = 3
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 5790
+what = "province.unrest of 106 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 6582
+what = "province.unrest of 259 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=food population=off weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=off"
+verdict = "green"
+
+[[mix.run]]
+seed = 1
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
+
+[[mix.run]]
+seed = 3
+verdict = "green"
+finding = []
+
+[[mix]]
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -227,7 +334,7 @@ what = "province.unrest of 96 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -274,7 +381,7 @@ what = "province.unrest of 126 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off"
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -315,7 +422,7 @@ what = "province.unrest of 51 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=off characters=off diplomacy=off warfare=off research=off"
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=off"
 verdict = "green"
 
 [[mix.run]]
@@ -334,7 +441,7 @@ verdict = "green"
 finding = []
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -363,7 +470,7 @@ what = "province.unrest of 119 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=latitude economics=off population=off weather=droughts realms=off characters=off diplomacy=off warfare=off research=off"
+versions = "terrain=noise climate=latitude economics=off population=off weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=off"
 verdict = "green"
 
 [[mix.run]]
@@ -382,7 +489,7 @@ verdict = "green"
 finding = []
 
 [[mix]]
-versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off"
+versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -418,7 +525,7 @@ what = "province.unrest of 33 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -448,7 +555,7 @@ what = "province.unrest of 33 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree"
+versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -478,7 +585,7 @@ what = "province.unrest of 33 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off"
+versions = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -508,7 +615,7 @@ what = "province.unrest of 33 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=null economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation"
 verdict = "yellow"
 
 [[mix.run]]
@@ -517,8 +624,8 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4638
-what = "province.unrest of 62 held at its bound 1000 for 180 days"
+day = 4608
+what = "province.unrest of 38 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run]]
@@ -527,83 +634,7 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 1058
-what = "province.unrest of 140 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 2972
-what = "province.unrest of 3 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 3760
-what = "province.unrest of 21 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run]]
-seed = 3
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 878
-what = "province.unrest of 110 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 2728
-what = "province.unrest of 111 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 4882
-what = "province.unrest of 120 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 5790
-what = "province.unrest of 47 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 6582
-what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix]]
-versions = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree"
-verdict = "yellow"
-
-[[mix.run]]
-seed = 1
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 4762
-what = "province.unrest of 72 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run]]
-seed = 2
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 2972
-what = "province.unrest of 3 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 3730
+day = 3700
 what = "province.unrest of 21 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
@@ -619,8 +650,14 @@ known = "Unrest stays at the line (1,000) while a province starves on: it reache
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 5790
-what = "province.unrest of 47 held at its bound 1000 for 180 days"
+day = 2608
+what = "province.unrest of 111 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4912
+what = "province.unrest of 1 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
@@ -630,7 +667,7 @@ what = "province.unrest of 33 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=noise climate=null economics=off population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off"
+versions = "terrain=noise climate=null economics=off population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off culture=off"
 verdict = "green"
 
 [[mix.run]]
@@ -649,7 +686,7 @@ verdict = "green"
 finding = []
 
 [[mix]]
-versions = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off"
+versions = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -689,7 +726,7 @@ what = "province.unrest of 61 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off"
+versions = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -729,7 +766,7 @@ what = "province.unrest of 61 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree"
+versions = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -758,7 +795,41 @@ what = "province.unrest of 61 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree"
+versions = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off"
+verdict = "yellow"
+
+[[mix.run]]
+seed = 1
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 300
+what = "province.unrest of 76 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run]]
+seed = 2
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 3790
+what = "province.unrest of 82 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run]]
+seed = 3
+verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 5790
+what = "province.unrest of 141 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix]]
+versions = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -768,7 +839,7 @@ verdict = "yellow"
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 514
-what = "province.unrest of 2 held at its bound 1000 for 180 days"
+what = "province.unrest of 66 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
@@ -795,32 +866,26 @@ known = "Unrest stays at the line (1,000) while a province starves on: it reache
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 2972
+day = 3002
 what = "province.unrest of 0 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3820
-what = "province.unrest of 27 held at its bound 1000 for 180 days"
+what = "province.unrest of 23 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4214
-what = "province.unrest of 84 held at its bound 1000 for 180 days"
+day = 4334
+what = "province.unrest of 38 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 6702
-what = "province.unrest of 32 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 6976
-what = "province.unrest of 163 held at its bound 1000 for 180 days"
+day = 6732
+what = "province.unrest of 83 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run]]
@@ -835,24 +900,30 @@ known = "Unrest stays at the line (1,000) while a province starves on: it reache
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4154
-what = "province.unrest of 106 held at its bound 1000 for 180 days"
+day = 4094
+what = "province.unrest of 144 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 5520
+day = 5854
 what = "province.unrest of 141 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
+day = 6368
+what = "province.unrest of 89 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
 day = 7066
-what = "province.unrest of 181 held at its bound 1000 for 180 days"
+what = "province.unrest of 67 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=null climate=latitude economics=off population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off"
+versions = "terrain=null climate=latitude economics=off population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off culture=off"
 verdict = "green"
 
 [[mix.run]]
@@ -871,53 +942,7 @@ verdict = "green"
 finding = []
 
 [[mix]]
-versions = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off"
-verdict = "yellow"
-
-[[mix.run]]
-seed = 1
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 300
-what = "province.unrest of 2 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 878
-what = "province.unrest of 41 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run]]
-seed = 2
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 968
-what = "province.unrest of 120 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 4334
-what = "province.unrest of 52 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run]]
-seed = 3
-verdict = "yellow"
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 5760
-what = "province.unrest of 48 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix]]
-versions = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree"
+versions = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation"
 verdict = "yellow"
 
 [[mix.run]]
@@ -952,6 +977,24 @@ day = 3032
 what = "province.unrest of 193 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 3850
+what = "province.unrest of 64 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4094
+what = "province.unrest of 154 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4334
+what = "province.unrest of 52 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
 [[mix.run]]
 seed = 3
 verdict = "yellow"
@@ -964,12 +1007,18 @@ known = "Unrest stays at the line (1,000) while a province starves on: it reache
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 5730
+day = 5700
 what = "province.unrest of 48 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 6672
+what = "province.unrest of 175 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
 [[mix]]
-versions = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off"
+versions = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off"
 verdict = "yellow"
 
 [[mix.run]]
@@ -1021,12 +1070,18 @@ what = "province.unrest of 35 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix]]
-versions = "terrain=null climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off"
+versions = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation"
 verdict = "yellow"
 
 [[mix.run]]
 seed = 1
 verdict = "yellow"
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 394
+what = "province.unrest of 91 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
@@ -1040,7 +1095,13 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 1880
+day = 908
+what = "province.unrest of 120 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 1850
 what = "province.unrest of 139 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
@@ -1062,57 +1123,51 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 878
+day = 848
 what = "province.unrest of 38 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 6368
-what = "province.unrest of 11 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 6672
-what = "province.unrest of 86 held at its bound 1000 for 180 days"
+day = 1880
+what = "province.unrest of 156 held at its bound 1000 for 180 days"
 known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
 
 [[pair]]
 a = "terrain=noise"
 b = "climate=latitude"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "climate=null"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "terrain=null"
 b = "climate=latitude"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "climate=null"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "terrain=noise"
 b = "economics=food"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "economics=markets"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
@@ -1123,13 +1178,13 @@ verdict = "green"
 a = "terrain=null"
 b = "economics=food"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "economics=markets"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
@@ -1140,7 +1195,7 @@ verdict = "green"
 a = "terrain=noise"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
@@ -1151,7 +1206,7 @@ verdict = "green"
 a = "terrain=null"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
@@ -1162,31 +1217,31 @@ verdict = "green"
 a = "terrain=noise"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=null"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off seed 1"
 
 [[pair]]
 a = "terrain=noise"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
@@ -1197,7 +1252,7 @@ verdict = "green"
 a = "terrain=null"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
@@ -1208,72 +1263,73 @@ verdict = "green"
 a = "terrain=noise"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=null"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off seed 1"
 
 [[pair]]
 a = "terrain=noise"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "terrain=noise"
 b = "diplomacy=off"
-verdict = "green"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=null"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=noise"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
@@ -1284,55 +1340,79 @@ verdict = "green"
 a = "terrain=null"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=noise"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "terrain=noise"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "terrain=null"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
 
 [[pair]]
 a = "terrain=null"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off seed 1"
+
+[[pair]]
+a = "terrain=noise"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "terrain=noise"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "terrain=null"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=null climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 1"
+
+[[pair]]
+a = "terrain=null"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=latitude"
 b = "economics=food"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "economics=markets"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
@@ -1343,13 +1423,13 @@ verdict = "green"
 a = "climate=null"
 b = "economics=food"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "economics=markets"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1360,7 +1440,7 @@ verdict = "green"
 a = "climate=latitude"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
@@ -1371,7 +1451,7 @@ verdict = "green"
 a = "climate=null"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
@@ -1382,31 +1462,31 @@ verdict = "green"
 a = "climate=latitude"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=null"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=latitude"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
@@ -1417,7 +1497,7 @@ verdict = "green"
 a = "climate=null"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
@@ -1428,127 +1508,151 @@ verdict = "green"
 a = "climate=latitude"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=null"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=latitude"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=latitude"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=null"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=latitude"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "climate=null"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=latitude"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "climate=latitude"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "climate=null"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 3"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "climate=null"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 3"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "climate=latitude"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "climate=latitude"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "climate=null"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 3"
+
+[[pair]]
+a = "climate=null"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "economics=food"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
@@ -1559,7 +1663,7 @@ verdict = "green"
 a = "economics=markets"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=off"
@@ -1570,25 +1674,25 @@ verdict = "green"
 a = "economics=food"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=off"
@@ -1604,7 +1708,7 @@ verdict = "green"
 a = "economics=food"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
@@ -1615,7 +1719,7 @@ verdict = "green"
 a = "economics=markets"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
@@ -1631,25 +1735,25 @@ verdict = "green"
 a = "economics=food"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "economics=off"
@@ -1660,37 +1764,37 @@ verdict = "green"
 a = "economics=food"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "economics=food"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "economics=off"
@@ -1701,37 +1805,37 @@ verdict = "green"
 a = "economics=food"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "economics=markets"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "economics=off"
@@ -1742,42 +1846,71 @@ verdict = "green"
 a = "economics=food"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=food"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "economics=markets"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "economics=off"
 b = "research=off"
+verdict = "green"
+
+[[pair]]
+a = "economics=food"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "economics=food"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "economics=markets"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "economics=markets"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "economics=off"
+b = "culture=off"
 verdict = "green"
 
 [[pair]]
 a = "population=basic"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "weather=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "population=off"
@@ -1793,7 +1926,7 @@ verdict = "green"
 a = "population=basic"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
@@ -1809,13 +1942,13 @@ verdict = "green"
 a = "population=basic"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "population=off"
@@ -1826,19 +1959,19 @@ verdict = "green"
 a = "population=basic"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "population=basic"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "population=off"
@@ -1849,19 +1982,19 @@ verdict = "green"
 a = "population=basic"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "population=off"
@@ -1872,24 +2005,41 @@ verdict = "green"
 a = "population=basic"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "population=basic"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "population=off"
 b = "research=off"
+verdict = "green"
+
+[[pair]]
+a = "population=basic"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "population=basic"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "population=off"
+b = "culture=off"
 verdict = "green"
 
 [[pair]]
 a = "weather=droughts"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
@@ -1900,7 +2050,7 @@ verdict = "green"
 a = "weather=off"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
@@ -1911,132 +2061,157 @@ verdict = "green"
 a = "weather=droughts"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "weather=off"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "weather=droughts"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "weather=off"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "weather=off"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "weather=off"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "weather=off"
 b = "warfare=off"
-verdict = "green"
+verdict = "yellow"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "weather=droughts"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=droughts"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=markets population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "weather=off"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "weather=droughts"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "weather=droughts"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "weather=off"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
+
+[[pair]]
+a = "weather=off"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "realms=basic"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=basic"
 b = "characters=off"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=off"
@@ -2047,19 +2222,19 @@ verdict = "green"
 a = "realms=basic"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=basic"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "realms=basic"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=off"
@@ -2070,19 +2245,19 @@ verdict = "green"
 a = "realms=basic"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "realms=basic"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=basic"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "realms=off"
@@ -2093,233 +2268,376 @@ verdict = "green"
 a = "realms=basic"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "realms=basic"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "realms=off"
 b = "research=off"
+verdict = "green"
+
+[[pair]]
+a = "realms=basic"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "realms=basic"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "realms=off"
+b = "culture=off"
+verdict = "green"
+
+[[pair]]
+a = "realms=off"
+b = "culture=assimilation"
 verdict = "green"
 
 [[pair]]
 a = "characters=rulers"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=rulers"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "characters=rulers"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "characters=off"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off seed 1"
 
 [[pair]]
 a = "characters=off"
 b = "diplomacy=wars"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "characters=off"
 b = "diplomacy=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=rulers"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "characters=rulers"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=rulers"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "characters=off"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=off"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "characters=off"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "characters=rulers"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=rulers"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "characters=off"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "characters=off"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "characters=rulers"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "characters=rulers"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "characters=off"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
+
+[[pair]]
+a = "characters=off"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "diplomacy=treaties"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "diplomacy=treaties"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "diplomacy=wars"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "diplomacy=wars"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "diplomacy=wars"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "diplomacy=off"
 b = "warfare=troops"
 verdict = "yellow"
-example = "terrain=null climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "diplomacy=off"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=campaigns research=off culture=off seed 3"
 
 [[pair]]
 a = "diplomacy=off"
 b = "warfare=off"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "diplomacy=treaties"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "diplomacy=treaties"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "diplomacy=wars"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off seed 3"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
 
 [[pair]]
 a = "diplomacy=wars"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "diplomacy=off"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=campaigns research=off seed 1"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
 
 [[pair]]
 a = "diplomacy=off"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "diplomacy=treaties"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "diplomacy=treaties"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "diplomacy=wars"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off seed 3"
+
+[[pair]]
+a = "diplomacy=wars"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "diplomacy=off"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=off seed 2"
+
+[[pair]]
+a = "diplomacy=off"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=null climate=null economics=markets population=basic weather=droughts realms=basic characters=off diplomacy=off warfare=off research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "warfare=troops"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
 
 [[pair]]
 a = "warfare=troops"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
 
 [[pair]]
 a = "warfare=campaigns"
 b = "research=off"
 verdict = "yellow"
-example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off seed 2"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
 
 [[pair]]
 a = "warfare=campaigns"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree seed 1"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "warfare=off"
 b = "research=off"
-verdict = "green"
+verdict = "yellow"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
 
 [[pair]]
 a = "warfare=off"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=null climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=off warfare=off research=tree seed 1"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "warfare=troops"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=off seed 2"
+
+[[pair]]
+a = "warfare=troops"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "warfare=campaigns"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "warfare=campaigns"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "warfare=off"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=off research=off culture=off seed 1"
+
+[[pair]]
+a = "warfare=off"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=null climate=null economics=food population=basic weather=droughts realms=basic characters=off diplomacy=wars warfare=off research=tree culture=assimilation seed 1"
+
+[[pair]]
+a = "research=off"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=off culture=off seed 2"
+
+[[pair]]
+a = "research=off"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off culture=assimilation seed 2"
+
+[[pair]]
+a = "research=tree"
+b = "culture=off"
+verdict = "yellow"
+example = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=off seed 2"
+
+[[pair]]
+a = "research=tree"
+b = "culture=assimilation"
+verdict = "yellow"
+example = "terrain=noise climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[scenario]]
 name = "drought_famine.toml"

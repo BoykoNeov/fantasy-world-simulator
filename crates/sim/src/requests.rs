@@ -282,8 +282,9 @@ fn key(pops: &crate::pops::Pops, field: &str, k: usize) -> u16 {
     }
 }
 
-/// Move `n` of pop `k`'s people to the value `to` of `field`; `of` is its province's pops.
-fn shift_part(pops: &mut crate::pops::Pops, of: &mut Vec<usize>, field: &str, k: usize, n: u64, to: u16) {
+/// Move `n` of pop `k`'s people to the value `to` of `field`; `of` is its province's pops. (The
+/// culture module's edits use it too, so an edit moves people exactly as a shift request does.)
+pub(crate) fn shift_part(pops: &mut crate::pops::Pops, of: &mut Vec<usize>, field: &str, k: usize, n: u64, to: u16) {
     let same = |pops: &crate::pops::Pops, j: usize| {
         key(pops, field, j) == to
             && ["pop.culture", "pop.religion", "pop.species"].iter().filter(|&&f| f != field).all(|&f| key(pops, f, j) == key(pops, f, k))

@@ -203,7 +203,7 @@ impl ModuleConfig {
             out.push(Box::new(Research::new(params.clone(), self.markets.is_some())));
         }
         if let Some(params) = &self.culture {
-            out.push(Box::new(Assimilation { params: params.clone() }));
+            out.push(Box::new(Assimilation::new(params.clone())));
         }
         out
     }
@@ -222,6 +222,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
     (Slot::Warfare, &["troops", "campaigns", "off"]),
     (Slot::Research, &["off", "tree"]),
+    (Slot::Culture, &["off", "assimilation"]),
 ];
 
 impl ModuleConfig {
@@ -257,6 +258,7 @@ impl ModuleConfig {
                 Some(_) => "troops",
             },
             Slot::Research => on(self.research.is_some(), "tree"),
+            Slot::Culture => on(self.culture.is_some(), "assimilation"),
             _ => return None,
         })
     }
@@ -306,6 +308,7 @@ impl ModuleConfig {
                 }
             }
             Slot::Research => self.research = if on { self.research.take().or_else(|| Some(ResearchParams::default())) } else { None },
+            Slot::Culture => self.culture = if on { self.culture.take().or_else(|| Some(CultureParams::default())) } else { None },
             _ => unreachable!("checked against CHOICES"),
         }
         Ok(())
