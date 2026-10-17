@@ -513,6 +513,8 @@ pub enum Logged {
 impl LogEntry {
     pub fn of_event(p: &Posted, goods: &Goods) -> LogEntry {
         let source = match (p.emitter, &p.event) {
+            // The answer to a poke of the player's goes with the pokes, so it shows wherever they do.
+            (_, Event::Refused { .. }) => Source::Player,
             (Some(s), _) => Source::Module(s),
             (None, Event::Drought { .. } | Event::DeclareWar { .. } | Event::ForcePeace { .. } | Event::KillRuler { .. } | Event::Breakaway { .. } | Event::March { .. }) => Source::Player,
             (None, _) => Source::Engine,
@@ -572,6 +574,17 @@ pub fn trace_step(s: &TraceStep, cal: &Calendar, goods: &Goods, names: &Names) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_poke_is_logged_with_the_players_pokes() {
+        let world = World::empty(&sim::world::WorldParams::preset(sim::world::Size::Small, 1));
+        let names = Names { world: &world, realms: &[] };
+        let posted = Posted { day: 9, emitter: Some(Slot::Warfare), seq: 0, event: Event::Refused { why: "no way leads there".into() } };
+        let e = LogEntry::of_event(&posted, &world.goods);
+        // The province page shows entries about no province only when they are the player's.
+        assert_eq!((e.source, e.province, e.day), (Source::Player, None, 10));
+        assert_eq!(e.text(&Calendar::standard(), &world.goods, &names), "your poke was turned down: no way leads there");
+    }
 
     #[test]
     fn per_good_values_have_their_own_units() {

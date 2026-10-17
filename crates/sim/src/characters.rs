@@ -189,7 +189,7 @@ static V1: Manifest = Manifest {
     moves: &[],
     // Rulers rule realms: without them there is nothing to rule.
     requires: &["realm.capital"],
-    emits: &[EventKind::Succession],
+    emits: &[EventKind::Succession, EventKind::Refused],
     handles: &[EventKind::KillRuler],
     state_schema: "none",
     goods: &[],

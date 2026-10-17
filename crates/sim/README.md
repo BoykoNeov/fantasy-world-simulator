@@ -730,7 +730,8 @@ Loads refuse other format versions,
       join the realm's idle company of that kind there, so a province keeps one of each; elsewhere
       a new company, homed at the realm's capital. The world's rules then hold: in peace, field
       companies standing idle at home go home at the next month's start.
-    - `SetArmy { army, size, kind }`: a company's soldiers (0 empties it) and kind.
+    - `SetArmy { army, size, kind }`: a company's soldiers (0 empties it) and kind; ships only on a
+      coast, and no change between ships and land troops while it is on the move or in a group.
   - **Edits a module carries out** (`Module::check_edit`, `Module::carry_out`): an edit that needs
     what only the module keeping its fields knows is that module's to check and make. Warfare
     makes the army edits (the troop tree is in its settings, not in the world, and only it can file

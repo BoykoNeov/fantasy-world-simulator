@@ -686,6 +686,9 @@ Start with a thin slice you can watch, and pull the framework out of real module
        - An order holds until the company stops: at the province it was sent to, or where enemies standing in its way stop it, as any company is stopped (its route may cross enemy land). Found by the test: a long march across enemy land ended early that way.
        - Warfare puts itself right after an edit only when the edit changed the map or who holds land, so worlds with other edits (a pop, a store) run exactly as before.
        - The window rings picked provinces at their seats rather than outlining them (no change to the map's drawing); `--open-section change-realm` opens the realm controls for scripted screenshots.
+       - Changing a company's kind is refused for ships away from a coast, and between ships and land troops while the company is on the move or in a group (its route and any crossing were worked out for its kind). Realms remembers capitals after every edit, so a realm made and dissolved within a month leaves its coins at its capital (tested). A refusal shows in the window's log with the player's pokes.
+       - A ruler set aside by a new ruler shows among "earlier rulers" only once dead, and then as having ruled until death: nothing records being set aside (told to the user).
+       - Checked: the combination tester's table is unchanged (`combos --check`: up to date); the editor's tests pass in a debug build too.
        - Not built: an edit of a war itself (its truce, its tallies): declaring war and forcing peace cover what a player needs. Heirs can be killed and given traits but not named by hand.
      - User's choices (Oct 17):
        - **An order to an army holds until it arrives.** The player sends a realm's field companies standing in a province to another province; they march there by the ways their realm may use, and once there the automatic general takes them over again.

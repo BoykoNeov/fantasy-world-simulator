@@ -551,3 +551,81 @@ fn every_new_edit_and_poke_survives_saving_loading_going_back_and_a_scenario_fil
     assert_eq!((back.day, back.fingerprint()), (sim.day, sim.fingerprint()));
     assert_eq!(sim.problems, Problems::default());
 }
+
+#[test]
+fn a_realm_made_and_dissolved_within_a_month_leaves_its_coins_at_its_capital() {
+    let mut c = config(5, false);
+    c.modules.set_choice(Slot::Economics, "markets").unwrap();
+    let mut sim = strict(&c);
+    sim.run_days(40);
+    let r = alive_realms(&sim.world)[0];
+    let part: Vec<u32> = land_of(&sim.world, r).into_iter().filter(|&q| q != sim.world.realms.capital[r as usize]).take(2).collect();
+    let new = sim.world.realms.count() as u32;
+    sim.edit(Edit::NewRealm { provinces: part.clone() }).unwrap();
+    let capital = sim.world.realms.capital[new as usize];
+    sim.edit(Edit::SetRealmStock { realm: new, good: "coin".into(), amount: 5_000_000 }).unwrap();
+    let before = coins(&sim.world, &sim.world.stock, capital as usize);
+    sim.edit(Edit::SetOwner { provinces: part, realm: r }).unwrap();
+    assert!(!sim.world.realms.alive(new));
+    past_month_start(&mut sim);
+    let w = &sim.world;
+    assert_eq!(coins(w, &w.realm_stock, new as usize), 0, "a dead realm keeps no coins");
+    assert!(coins(w, &w.stock, capital as usize) >= before + 4_000_000, "they went to its capital");
+    assert_eq!(sim.problems, Problems::default(), "the coins add up");
+}
+
+#[test]
+fn a_realm_dissolved_with_opinions_and_wars_leaves_nothing_behind() {
+    let mut c = config(5, false);
+    c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
+    let mut sim = strict(&c);
+    sim.run_days(40);
+    let (a, b) = rivals(&sim.world, 4);
+    sim.edit(Edit::SetOpinion { a, b, a_of_b: -100.0, b_of_a: -100.0 }).unwrap();
+    sim.poke(Event::DeclareWar { attacker: a, defender: b });
+    sim.run_days(30);
+    sim.edit(Edit::SetOwner { provinces: land_of(&sim.world, a), realm: NONE }).unwrap();
+    past_month_start(&mut sim);
+    let w = &sim.world;
+    assert!((0..w.wars.count() as u32).all(|k| !(w.wars.ongoing(k) && w.wars.between(k, a, b))), "its wars ended");
+    assert!(w.relations.find(a, b).is_some(), "the relation keeps its entry, as numbers are never reused");
+    sim.run_days(400);
+    let w = &sim.world;
+    assert!(!(0..w.wars.count()).any(|k| w.wars.began[k] > 70 && (w.wars.attacker[k] == a || w.wars.defender[k] == a)), "no new war with a dissolved realm");
+    assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn soldiers_placed_at_home_at_war_are_taken_over_by_the_general() {
+    let mut sim = strict(&config(5, false));
+    sim.run_days(2);
+    let (a, b) = rivals(&sim.world, 4);
+    sim.poke(Event::DeclareWar { attacker: a, defender: b });
+    sim.run_days(3);
+    let p = border_province(&sim.world, a, Some(b));
+    sim.edit(Edit::PlaceArmy { province: p, realm: a, kind: "heavy_infantry".into(), size: 20_000 }).unwrap();
+    let k = (0..sim.world.armies.count()).find(|&k| sim.world.armies.province[k] == p && sim.world.armies.realm[k] == a && sim.world.armies.role[k] == FIELD && sim.world.armies.size[k] >= 20_000).unwrap();
+    let mut marched = false;
+    for _ in 0..120 {
+        sim.run_days(1);
+        if sim.world.armies.next[k] != NONE || sim.world.armies.province[k] != p {
+            marched = true;
+            break;
+        }
+    }
+    assert!(marched, "the general sends it somewhere");
+    assert_eq!(sim.problems, Problems::default());
+}
+
+#[test]
+fn a_company_changes_kind_only_where_the_new_kind_can_be() {
+    let mut sim = strict(&config(5, false));
+    sim.run_days(2);
+    let w = &sim.world;
+    let inland = (0..w.provinces.count as u32).find(|&p| w.owner[p as usize] != NONE && w.provinces.cells[p as usize] > 0 && w.provinces.coast_km[p as usize] <= 0.0).expect("an inland province");
+    let r = w.owner[inland as usize];
+    sim.edit(Edit::PlaceArmy { province: inland, realm: r, kind: "levies".into(), size: 100 }).unwrap();
+    let k = sim.world.armies.count() as u32 - 1;
+    assert!(sim.edit(Edit::SetArmy { army: k, size: 100, kind: "ships".into() }).unwrap_err().contains("coast"));
+    sim.edit(Edit::SetArmy { army: k, size: 100, kind: "cavalry".into() }).unwrap();
+}

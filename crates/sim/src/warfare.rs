@@ -765,7 +765,19 @@ impl Module for Troops {
         let res = || self.resolved.clone().map_or_else(|| self.params.resolve().map(Arc::new), Ok);
         match edit {
             Edit::PlaceArmy { province, realm, kind, .. } => Some(res().and_then(|res| placeable(w, &res, *province, *realm, kind).map(|_| ()))),
-            Edit::SetArmy { kind, .. } => Some(res().and_then(|res| res.named(kind).map(|_| ()))),
+            Edit::SetArmy { army, kind, .. } => Some(res().and_then(|res| {
+                let node = res.named(kind)?;
+                let a = *army as usize;
+                let (ship, was) = (res.kind(node).ship, res.kind(w.armies.kind[a]).ship);
+                if ship && w.provinces.coast_km.get(w.armies.province[a] as usize).is_none_or(|&c| c <= 0.0) {
+                    return Err(format!("{kind} need a coast"));
+                }
+                // A route by sea or by land, and a crossing's ships, were worked out for its kind.
+                if ship != was && (w.armies.moving(a) || w.armies.group[a] != NONE) {
+                    return Err(format!("company {army} is on the move or in a group: it can't change between ships and land troops now"));
+                }
+                Ok(())
+            })),
             _ => None,
         }
     }

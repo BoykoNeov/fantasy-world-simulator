@@ -374,6 +374,12 @@ impl Module for Founding {
         }
     }
 
+    /// An edit may have made, moved or dissolved realms' capitals between months: a realm
+    /// dissolved later leaves its coins where its capital last was.
+    fn edited(&mut self, w: &mut World, _edit: &crate::edit::Edit) {
+        self.remember(w);
+    }
+
     fn save_state(&self) -> Vec<u8> {
         crate::sim::to_bytes(&(&self.last_capital, &self.starved))
     }
