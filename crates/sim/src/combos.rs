@@ -185,7 +185,7 @@ pub fn all_pairs(seed: u64) -> Vec<Mix> {
             None => {
                 // Look for the first remaining pair on its own: with the defaults, then with
                 // everything that needs other modules off (realms and what needs them), then with
-                // versions picked at random.
+                // every slot that can be off off, then with versions picked at random.
                 let p = *uncovered.iter().next().expect("not empty");
                 let with_pair = |mut v: Vec<&'static str>| {
                     v[p.a.0] = p.a.1;
@@ -194,7 +194,8 @@ pub fn all_pairs(seed: u64) -> Vec<Mix> {
                     m.check().is_ok().then_some(m)
                 };
                 let bare: Vec<&'static str> = (0..n).map(|k| if matches!(CHOICES[k].0, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare) { "off" } else { CHOICES[k].1[0] }).collect();
-                let found = with_pair(Mix::defaults().0).or_else(|| with_pair(bare)).or_else(|| {
+                let least: Vec<&'static str> = (0..n).map(|k| if CHOICES[k].1.contains(&"off") { "off" } else { CHOICES[k].1[0] }).collect();
+                let found = with_pair(Mix::defaults().0).or_else(|| with_pair(bare)).or_else(|| with_pair(least)).or_else(|| {
                     (0..200u64).find_map(|t| with_pair((0..n).map(|k| CHOICES[k].1[(crate::rng::mix(seed ^ round ^ (t * 977) ^ k as u64) % CHOICES[k].1.len() as u64) as usize]).collect()))
                 });
                 match found {
@@ -760,7 +761,7 @@ mod tests {
     #[test]
     fn mixes_name_and_parse_their_versions() {
         let d = Mix::defaults();
-        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops");
+        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=off");
         assert_eq!(Mix::of(&ModuleConfig::default()), d);
         let m = Mix::parse("economics=off, population=off").unwrap();
         assert_eq!(Mix::of(&m.modules()), m);
@@ -786,7 +787,7 @@ mod tests {
         let mut off = ModuleConfig::default();
         off.without_realms();
         assert_eq!(Mix::of(&off), Mix::parse(bare).unwrap());
-        assert_eq!(all_mixes().len(), 48 * 24);
+        assert_eq!(all_mixes().len(), 48 * 24 * 2);
     }
 
     #[test]

@@ -75,7 +75,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 25 (the first wave of modules built side by side, Oct 17): the fields, events, causes,
 /// edits and settings of logistics, research and culture, and shift requests (a request's new
 /// `shift`, saved in pending grants).
-pub const FORMAT_VERSION: u32 = 25;
+/// Format 26 (Research merged): Research's settings and its tech tree in the configuration.
+pub const FORMAT_VERSION: u32 = 26;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

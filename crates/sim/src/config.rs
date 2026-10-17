@@ -221,6 +221,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Characters, &["rulers", "off"]),
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
     (Slot::Warfare, &["troops", "off"]),
+    (Slot::Research, &["off", "tree"]),
 ];
 
 impl ModuleConfig {
@@ -251,6 +252,7 @@ impl ModuleConfig {
                 Some(_) => "wars",
             },
             Slot::Warfare => on(self.warfare.is_some(), "troops"),
+            Slot::Research => on(self.research.is_some(), "tree"),
             _ => return None,
         })
     }
@@ -285,6 +287,7 @@ impl ModuleConfig {
                 }
             }
             Slot::Warfare => self.warfare = if on { self.warfare.take().or_else(|| Some(TroopParams::default())) } else { None },
+            Slot::Research => self.research = if on { self.research.take().or_else(|| Some(ResearchParams::default())) } else { None },
             _ => unreachable!("checked against CHOICES"),
         }
         Ok(())
