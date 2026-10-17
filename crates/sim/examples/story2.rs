@@ -10,7 +10,9 @@
 //! changed hands, and when its coins and trade fell to half; then, for comparison, how many of the
 //! richest 2% (any province) changed hands at a peace.
 //!
-//! cargo run --release -p sim --example story2 -- [years] [seed ...]
+//! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...]
+//!
+//! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
 
 use sim::config::Config;
 use sim::diplomacy::{TreatyParams, WarParams};
@@ -20,13 +22,16 @@ use sim::module::Slot;
 use sim::sim::Sim;
 use sim::world::{World, WorldParams, RIVER_MIN_FLOW};
 
-fn config(seed: u64) -> Config {
+fn config(seed: u64, set: &[(String, f64)]) -> Config {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
     c.modules.realms = Some(Default::default());
     c.modules.characters = Some(Default::default());
     c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
     c.modules.warfare = Some(Default::default());
+    for (k, v) in set {
+        sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
+    }
     c
 }
 
@@ -73,8 +78,8 @@ struct Track {
     less_trade: Option<i64>,
 }
 
-fn run(seed: u64, years: i64) -> bool {
-    let mut sim = Sim::new(&config(seed)).unwrap();
+fn run(seed: u64, years: i64, set: &[(String, f64)]) -> bool {
+    let mut sim = Sim::new(&config(seed, set)).unwrap();
     let start = sim.calendar.date(0).year;
     let n = sim.world.provinces.count;
     let mouth = mouths(&sim.world);
@@ -187,6 +192,7 @@ fn main() {
     let years: i64 = args.first().and_then(|a| a.parse().ok()).unwrap_or(150);
     let seeds: Vec<u64> = args.iter().skip(1).filter_map(|a| a.parse().ok()).collect();
     let seeds = if seeds.is_empty() { vec![21, 7, 1] } else { seeds };
-    let passed = seeds.iter().filter(|&&s| run(s, years)).count();
+    let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
+    let passed = seeds.iter().filter(|&&s| run(s, years, &set)).count();
     println!("story 2 passes on {passed} of {} seeds", seeds.len());
 }
