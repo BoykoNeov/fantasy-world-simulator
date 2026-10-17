@@ -98,11 +98,13 @@ pub struct ModuleConfig {
     #[serde(default)]
     pub warfare: Option<TroopParams>,
     /// Research v1, "tree": realms study and learn techs (step 9). Needs realms. Off by default
-    /// while it is built, and in files that don't name it.
+    /// until techs do something (the user, Oct 18: scholars cost realms about 5% of their taxes),
+    /// and in files that don't name it.
     #[serde(default)]
     pub research: Option<ResearchParams>,
     /// Culture v1, "assimilation": peoples spread and people take up the culture that pulls hardest
-    /// (step 9). Needs Population. Off by default while it is built, and in files that don't name it.
+    /// (step 9). Needs Population. On by default since the first wave's checks, off in files that
+    /// don't name it.
     #[serde(default)]
     pub culture: Option<CultureParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
@@ -136,7 +138,7 @@ impl Default for ModuleConfig {
             diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
             warfare: Some(campaigns(TroopParams::default())),
             research: None,
-            culture: None,
+            culture: Some(CultureParams::default()),
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -157,11 +159,13 @@ fn campaigns(mut t: TroopParams) -> TroopParams {
 }
 
 impl ModuleConfig {
-    /// Realms, rulers, diplomacy and armies switched off: the world as it was before step 7 (they
-    /// are on by default since step 7's checks). For tests of what came before, and for worlds
-    /// without people, which realms need.
+    /// Realms, rulers, diplomacy and armies switched off, and research and culture, which came after
+    /// them: the world as it was before step 7 (they are on by default since step 7's checks, and
+    /// the first wave's). For tests of what came before, and for worlds without people, which
+    /// realms and culture need.
     pub fn without_realms(&mut self) -> &mut Self {
         (self.realms, self.characters, self.diplomacy, self.warfare) = (None, None, None, None);
+        (self.research, self.culture) = (None, None);
         self
     }
 
@@ -233,7 +237,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
     (Slot::Warfare, &["campaigns", "troops", "off"]),
     (Slot::Research, &["off", "tree"]),
-    (Slot::Culture, &["off", "assimilation"]),
+    (Slot::Culture, &["assimilation", "off"]),
 ];
 
 impl ModuleConfig {

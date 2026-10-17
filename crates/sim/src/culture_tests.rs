@@ -214,7 +214,8 @@ fn cut_off_groups_split_off_as_new_cultures() {
 #[test]
 fn edits_set_and_make_cultures_and_a_culture_with_nobody_left_is_gone() {
     let mut c = config(7);
-    c.modules.without_realms();
+    let culture = c.modules.culture.take();
+    c.modules.without_realms().culture = culture;
     let mut s = sim(&c);
     let w = &s.world;
     let main = main_cultures(w);
@@ -292,7 +293,8 @@ fn saved_loaded_gone_back_and_replayed_worlds_are_the_same() {
 #[test]
 fn without_realms_neighbours_still_pull_and_there_is_no_ruler() {
     let mut c = config(7);
-    c.modules.without_realms();
+    let culture = c.modules.culture.take();
+    c.modules.without_realms().culture = culture;
     let mut s = sim(&c);
     assert!(s.world.realm_culture.is_empty());
     let before: u64 = foreign_share(&s.world).iter().sum();
@@ -377,7 +379,8 @@ fn culture_speed_on_a_large_world() {
 #[test]
 fn people_coming_home_to_a_mixed_province_join_every_culture_by_size() {
     let mut c = config(21);
-    c.modules.without_realms();
+    let culture = c.modules.culture.take();
+    c.modules.without_realms().culture = culture;
     let mut s = sim(&c);
     s.run_days(10);
     let w = &s.world;

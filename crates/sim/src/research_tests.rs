@@ -119,7 +119,8 @@ fn a_tree_that_doesnt_fit_together_is_refused() {
 #[test]
 fn research_needs_realms() {
     let mut c = config("food", 1);
-    c.modules.without_realms();
+    let research = c.modules.research.take();
+    c.modules.without_realms().research = research;
     let e = Sim::new(&c).err().expect("refused");
     assert!(e.0.contains("Research \"tree\""), "{e}");
 }

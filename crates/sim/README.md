@@ -85,7 +85,9 @@ Loads refuse other format versions,
   | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below), the default since step 7's checks; or off | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; the default since step 7's checks; or off | monthly |
   | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; the default since step 7's checks; or off | monthly, and on pokes |
-  | Warfare | `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; the default since step 7's checks; or off | daily (raising and eating monthly) |
+  | Warfare | `campaigns` (the default since the first wave's checks): `troops` with sieges in depth (see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Supply lines, winter, pay and armies acting together are parts switched on alone | daily (raising and eating monthly) |
+  | Research | `tree`: realms study and learn techs (see below); needs realms; off by default until techs do something; or off | monthly |
+  | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -766,6 +768,53 @@ Loads refuse other format versions,
   known quirk (`data/known_quirks.toml`, which can now name the one field a quirk is about).
   `examples/day_cost.rs` measures a large world's day as processor time (fairer on a busy
   machine) and prints the world's fingerprint, for checking that a speed-up changed nothing.
+
+- **Logistics and support** (step 8; parts of Warfare, `logistics.rs`, tests in
+  `tests/logistics.rs`, `examples/story2.rs`, `examples/campaigns_check.rs`). Five parts, each its
+  own table in `modules.warfare`, each switched on or off alone (New world's sections); with all
+  five off Warfare is exactly "troops". **Sieges in depth** (`sieges`, in "campaigns"): a besieged
+  province (`province.besieger`) loses a quarter of its food store a month to the besiegers, falls
+  three times as fast once it is starving, and, where the world keeps coins, its taker carries off
+  a fifth of its coins; trade with it is cut. **Supply** (`supply`): companies outside their own land
+  are fed from home along a line up to 2 provinces beyond it (`reach_ways`), losing some food a day
+  of the way; further out they forage, before the people there on enemy land, and lose soldiers to
+  camp disease (`army.supply`: 0 at home, 1 on a line, 2 foraging). **Winter** (`seasons`): by
+  latitude and time of year, marches slow, soldiers away from home die, foragers find less, and no
+  attack begins in deep winter. **Pay** (`pay`): with coins, every soldier, guards too, is paid a coin
+  a month into their home province; the unpaid desert. **Armies acting together** (`massing`): a
+  group gathering against a target sets off once the companies already there outmatch the
+  defence, leaving stragglers free; a group still gathering after 60 days is broken up, and none
+  takes more than 60% of its realm's free soldiers. Story 2 (a rich river city taken in war, then
+  declining) over 9 seeds, counting cities taken in a normal war: sieges alone 6, sieges with
+  armies acting together 3, the first four parts 3, all five 2, plain troops 0; so "campaigns" is
+  sieges alone, and the others wait to be tuned.
+- **Research** (step 9; Research "tree", `research.rs`, `data/research.toml`, tests in
+  `research_tests.rs` and `tests/research.rs`). 24 techs in six fields (farming, crafts, trade, war,
+  sea, learning), 5–25 years of study each, 313 in all. Each month every realm banks study (0.6
+  years a year for a middle-sized realm; bigger realms more, less than in proportion; able rulers
+  faster), and a tech its neighbours and trade partners know costs less. A learned tech is a
+  `Discovery` event and a day in `realm.tech` (one column per tech, A to Z). Under markets the
+  scholars (0.5% of the people) are paid from the treasury, about 5% of taxes; unpaid scholars
+  don't study. Rebels know what their old realm knew; conquest teaches nothing. Techs do nothing
+  yet: their effects come later. 150 years: the middle realm knows 12–13 techs, the leader 16–19.
+- **Culture** (step 9; Culture "assimilation", `culture.rs`, tests in `culture_tests.rs` and
+  `tests/culture.rs`). 30 starting cultures spread by region across realm borders, with mixed
+  borderlands. Each month the culture that pulls hardest on a province (its share of the people
+  there, of next door's, and being the ruler's culture) wins people over from the others, about 3%
+  a year for a pull short by 1; small groups join it at once. Groups of provinces cut off from
+  their culture for 60 years may split off as a new one. People change culture by a shift request
+  to Population (`Ctx::ask_shift`), which moves people between a pop key's values keeping every
+  total exact. A realm's culture is its capital's (`realm.culture`); Realms adds unrest in provinces
+  whose people are not of it (`unrest.foreign`, 5 a month for a wholly foreign province). Soldiers
+  coming home to a mixed province join its pops by size. Events `CultureBorn`, `CultureGone`,
+  `Assimilated`. 150 years: the largest culture levels off at 8–10% of the people.
+- **The first wave's checks** (Oct 18): Warfare "campaigns" (troops with sieges in depth) and
+  Culture "assimilation" are on by default; Research stays off until techs do something (its
+  scholars cost realms about 5% of their taxes for no effect yet) (`ModuleConfig::without_realms()`
+  switches research and culture off too: the world as it was before step 7); files that don't name
+  them keep them off, so old ones make the worlds they made (save format 29). The three were built
+  at once by agents, each in its own copy of the repository (see the design document, "Building
+  several modules at once with agents").
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

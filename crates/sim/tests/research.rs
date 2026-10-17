@@ -1,6 +1,5 @@
 //! Research "tree" with every other module on: each of its settings at both ends of its range, and
-//! the module keeping its state when every live setting is changed. (`tests/settings.rs` makes its
-//! worlds without Research while it is off by default.)
+//! the module keeping its state when every live setting is changed.
 
 use sim::config::Config;
 use sim::diplomacy::{TreatyParams, WarParams};

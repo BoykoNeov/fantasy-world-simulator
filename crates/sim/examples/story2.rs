@@ -20,7 +20,7 @@
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
 //! `campaigns` switches on Warfare "campaigns" (sieges in depth, the default for new worlds);
 //! `supply`, `seasons`, `pay`, `sieges` and `massing` switch on one part each. With none, armies
-//! are plain "troops".
+//! are plain "troops". `culture` and `research` switch those modules on (both off without them).
 //!
 //! The probe (logistics piece 1, reads only, so the world is the same): for every rich river city,
 //! month by month while a realm is at war with its owner, what stands in the way of that realm
@@ -77,6 +77,12 @@ fn config(seed: u64, set: &[(String, f64)], parts: &[String]) -> Config {
     }
     if on("massing") {
         t.massing = Some(Default::default());
+    }
+    if on("culture") {
+        c.modules.culture = Some(Default::default());
+    }
+    if on("research") {
+        c.modules.research = Some(Default::default());
     }
     for (k, v) in set {
         sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
@@ -667,7 +673,7 @@ fn main() {
     let seeds: Vec<u64> = args.iter().skip(1).filter_map(|a| a.parse().ok()).collect();
     let seeds = if seeds.is_empty() { vec![21, 7, 1] } else { seeds };
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
-    let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing"].contains(&a.as_str())).cloned().collect();
+    let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing", "culture", "research"].contains(&a.as_str())).cloned().collect();
     let passed = seeds.iter().filter(|&&s| run(s, years, &set, &parts)).count();
     println!("story 2 passes on {passed} of {} seeds", seeds.len());
 }
