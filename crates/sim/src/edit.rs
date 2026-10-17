@@ -93,6 +93,33 @@ pub enum Edit {
     /// Change settings that may change while the world runs ([`crate::settings::When::Live`]):
     /// from this day on, the modules run with the new values. Refused whole if any change is.
     Settings { changes: Vec<SettingChange> },
+    /// The provinces go to realm `realm` (a living one), or to nobody ([`NONE`]). An occupation
+    /// ends where its occupier is the new owner or isn't at war with it, and an uprising ends where
+    /// the owner changed; a realm left with no land is dissolved. Merging a realm into another, and
+    /// dissolving one, are this edit.
+    SetOwner { provinces: Vec<u32>, realm: u32 },
+    /// The provinces become a new realm, at peace with everyone, its capital the most populous of
+    /// them: a quiet split, or a realm made on land nobody holds.
+    NewRealm { provinces: Vec<u32> },
+    /// Set how much of one good a living realm has stored (its treasury is its coins), as
+    /// [`Edit::SetStock`] sets a province's.
+    SetRealmStock { realm: u32, good: String, amount: u64 },
+    /// Set what two living realms think of each other, from −100 to 100 ([`crate::diplomacy::OPINION`]):
+    /// `a_of_b` is what `a` thinks of `b`. A pair with no relation gets one.
+    SetOpinion { a: u32, b: u32, a_of_b: f32, b_of_a: f32 },
+    /// Set a living character's traits, 0 to 100 each.
+    SetTraits { character: u32, martial: u8, greed: u8, ability: u8 },
+    /// A new character, `age` years old today, takes a living realm's throne, put there by the
+    /// player ([`crate::characters::Succession::Placed`]). The ruler before, if any, is set aside
+    /// and lives on; the heir stays heir. Carried out by the characters module (it knows the day).
+    NewRuler { realm: u32, age: f64, martial: u8, greed: u8, ability: u8 },
+    /// `size` soldiers of troop kind `kind` (named as the troop tree names it) for a field company
+    /// of realm `realm`, standing in `province`: the realm's own land, or land of a realm it is at
+    /// war with. They come from nothing. Carried out by the armies module (it keeps the troop tree).
+    PlaceArmy { province: u32, realm: u32, kind: String, size: u64 },
+    /// Set company `army`'s soldiers (0 empties it: they are gone) and its troop kind. Carried out by
+    /// the armies module.
+    SetArmy { army: u32, size: u64, kind: String },
 }
 
 /// One setting changed, by its key in the configuration (see [`crate::settings`]).
@@ -219,15 +246,64 @@ impl Edit {
             Edit::SeaLevel { rise_m } => if rise_m.is_finite() { Ok(()) } else { Err("the rise must be a number".into()) },
             // The engine checks settings against the modules ([`crate::sim::Sim`]).
             Edit::Settings { ref changes } => if changes.is_empty() { Err("no settings changed".into()) } else { Ok(()) },
+            Edit::SetOwner { ref provinces, realm } => {
+                if realm != NONE {
+                    living(w, realm)?;
+                }
+                with_land(w, provinces)?;
+                if provinces.iter().all(|&p| w.owner[p as usize] == realm) {
+                    return Err("those provinces are already held so".into());
+                }
+                Ok(())
+            }
+            Edit::NewRealm { ref provinces } => with_land(w, provinces),
+            Edit::SetRealmStock { realm, ref good, amount } => {
+                living(w, realm)?;
+                stock_column(w, good)?;
+                count("realm.stock", amount)
+            }
+            Edit::SetOpinion { a, b, a_of_b, b_of_a } => {
+                living(w, a)?;
+                living(w, b)?;
+                if a == b {
+                    return Err("a realm has no opinion of itself to set".into());
+                }
+                let o = crate::diplomacy::OPINION;
+                if [a_of_b, b_of_a].iter().all(|x| (-o..=o).contains(x)) { Ok(()) } else { Err(format!("opinions go from {} to {o}", -o)) }
+            }
+            Edit::SetTraits { character, martial, greed, ability } => {
+                if !w.characters.alive(character) {
+                    return Err(format!("no living character {character}"));
+                }
+                traits_in_range([martial, greed, ability])
+            }
+            Edit::NewRuler { realm, age, martial, greed, ability } => {
+                living(w, realm)?;
+                if !(0.0..=100.0).contains(&age) {
+                    return Err("a ruler is from 0 to 100 years old".into());
+                }
+                traits_in_range([martial, greed, ability])
+            }
+            Edit::PlaceArmy { province: p, realm, size, .. } => {
+                province(p)?;
+                living(w, realm)?;
+                if size == 0 {
+                    return Err("place at least one soldier".into());
+                }
+                count("army.size", size)
+            }
+            Edit::SetArmy { army, size, .. } => {
+                if army as usize >= w.armies.count() {
+                    return Err(format!("no company {army}"));
+                }
+                count("army.size", size)
+            }
         }
     }
 
     /// Whether the edit changes the map (cell and province-shape fields).
     pub fn changes_map(&self) -> bool {
-        match self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } | Edit::Settings { .. } => false,
-            Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => true,
-        }
+        matches!(self, Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. })
     }
 
     /// The map part. Depends on the map alone; called after [`Edit::check`] passed. `regenerate`
@@ -237,7 +313,19 @@ impl Edit {
         let count = w.provinces.count;
         let of_cell = &mut w.provinces.of_cell;
         let count = match *self {
-            Edit::SetPop { .. } | Edit::AddPop { .. } | Edit::SetFoodStock { .. } | Edit::SetStock { .. } | Edit::Settings { .. } => return,
+            Edit::SetPop { .. }
+            | Edit::AddPop { .. }
+            | Edit::SetFoodStock { .. }
+            | Edit::SetStock { .. }
+            | Edit::Settings { .. }
+            | Edit::SetOwner { .. }
+            | Edit::NewRealm { .. }
+            | Edit::SetRealmStock { .. }
+            | Edit::SetOpinion { .. }
+            | Edit::SetTraits { .. }
+            | Edit::NewRuler { .. }
+            | Edit::PlaceArmy { .. }
+            | Edit::SetArmy { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -312,14 +400,43 @@ impl Edit {
                 }
                 share_out(w, &moved);
                 crate::realms::repair(w);
+                rehome_armies(w, if let Edit::Merge { from, into } = *self { Some((from, into)) } else { None });
             }
             Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } => {
                 w.grow_province_fields();
                 let emptied = map.expect("a height edit changes the map").emptied_provinces();
                 flows = rehouse(w, &emptied);
                 crate::realms::repair(w);
+                rehome_armies(w, None);
             }
             Edit::Settings { .. } => {}
+            Edit::SetOwner { ref provinces, realm } => hand_over(w, provinces, realm),
+            Edit::NewRealm { ref provinces } => {
+                let people = w.province_population();
+                let capital = *provinces.iter().max_by(|&&a, &&b| people[a as usize].cmp(&people[b as usize]).then(b.cmp(&a))).expect("checked: some");
+                let realm = w.realms.count() as u32;
+                w.realms.capital.push(capital);
+                w.fit_realm_rows();
+                hand_over(w, provinces, realm);
+            }
+            Edit::SetRealmStock { realm, ref good, amount } => {
+                let c = stock_column(w, good).expect("checked: the good is kept");
+                let at = w.goods.index(realm as usize, c);
+                flows.add(Quantity::Goods(w.goods.class_of_column(c)), Cause::Edit, amount as i64 - w.realm_stock[at] as i64);
+                w.realm_stock[at] = amount;
+            }
+            Edit::SetOpinion { a, b, a_of_b, b_of_a } => {
+                let rel = &mut w.relations;
+                let k = rel.find(a, b).unwrap_or_else(|| rel.push(a, b, 0.0));
+                rel.set(k, a, a_of_b);
+                rel.set(k, b, b_of_a);
+            }
+            Edit::SetTraits { character, martial, greed, ability } => {
+                let (c, ch) = (character as usize, &mut w.characters);
+                (ch.martial[c], ch.greed[c], ch.ability[c]) = (martial, greed, ability);
+            }
+            // Carried out by the modules that keep them ([`crate::module::Module::carry_out`]).
+            Edit::NewRuler { .. } | Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => {}
         }
         flows
     }
@@ -347,7 +464,11 @@ impl Edit {
                 v
             }
             Edit::SeaLevel { .. } => (0..w.provinces.count as u32).collect(),
-            Edit::Settings { .. } => Vec::new(),
+            Edit::Settings { .. } | Edit::SetOpinion { .. } | Edit::SetTraits { .. } => Vec::new(),
+            Edit::SetOwner { ref provinces, .. } | Edit::NewRealm { ref provinces } => provinces.clone(),
+            Edit::SetRealmStock { realm, .. } | Edit::NewRuler { realm, .. } => w.realms.capital.get(realm as usize).copied().filter(|&c| c != NONE).into_iter().collect(),
+            Edit::PlaceArmy { province, .. } => vec![province],
+            Edit::SetArmy { army, .. } => w.armies.province.get(army as usize).copied().into_iter().collect(),
             Edit::River { ref path, .. } => {
                 let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -399,6 +520,15 @@ impl Edit {
             }
             Edit::River { path, spring: 0 } => format!("a riverbed carved along {} points", path.len()),
             Edit::River { path, spring } => format!("a river drawn along {} points, its spring adding {spring} thousand m³ a year", path.len()),
+            Edit::SetOwner { provinces, realm } if *realm == NONE => format!("{} provinces given to nobody", provinces.len()),
+            Edit::SetOwner { provinces, realm } => format!("{} provinces given to realm {realm}", provinces.len()),
+            Edit::NewRealm { provinces } => format!("{} provinces made a new realm", provinces.len()),
+            Edit::SetRealmStock { realm, good, amount } => format!("realm {realm}'s store of {good} set to {amount}"),
+            Edit::SetOpinion { a, b, a_of_b, b_of_a } => format!("what realm {a} thinks of realm {b} set to {a_of_b:.0}, and {b} of {a} to {b_of_a:.0}"),
+            Edit::SetTraits { character, martial, greed, ability } => format!("character {character}'s traits set to warlike {martial}, greed {greed}, ability {ability}"),
+            Edit::NewRuler { realm, age, .. } => format!("a new ruler, aged {age:.0}, put on realm {realm}'s throne"),
+            Edit::PlaceArmy { province, realm, kind, size } => format!("{size} soldiers ({kind}) of realm {realm} placed in province {province}"),
+            Edit::SetArmy { army, size, kind } => format!("company {army} set to {size} soldiers ({kind})"),
         }
     }
 
@@ -409,7 +539,100 @@ impl Edit {
         match self {
             Edit::SetPop { .. } | Edit::AddPop { .. } => &["pop.size"],
             Edit::SetFoodStock { .. } | Edit::SetStock { .. } => &["province.stock"],
+            Edit::SetOwner { .. } | Edit::NewRealm { .. } => &["province.owner"],
+            Edit::SetRealmStock { .. } => &["realm.stock"],
+            Edit::SetOpinion { .. } => &["relation.a_of_b"],
+            Edit::SetTraits { .. } => &["character.martial"],
+            Edit::NewRuler { .. } => &["realm.ruler"],
+            Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => &["army.size"],
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } | Edit::Settings { .. } => &[],
+        }
+    }
+}
+
+/// Refuse a realm that doesn't exist or was dissolved.
+fn living(w: &World, realm: u32) -> Result<(), String> {
+    if w.realms.alive(realm) { Ok(()) } else { Err(format!("no living realm {realm}")) }
+}
+
+/// Refuse an empty list of provinces, or one naming a province that doesn't exist or has no land.
+fn with_land(w: &World, provinces: &[u32]) -> Result<(), String> {
+    if provinces.is_empty() {
+        return Err("no provinces".into());
+    }
+    for &p in provinces {
+        match w.provinces.cells.get(p as usize) {
+            None => return Err(format!("no province {p}")),
+            Some(0) => return Err(format!("province {p} has no land")),
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn traits_in_range(traits: [u8; 3]) -> Result<(), String> {
+    if traits.iter().all(|&t| t <= 100) { Ok(()) } else { Err("traits go from 0 to 100".into()) }
+}
+
+/// `provinces` go to `realm` (or to nobody). An uprising ends where the owner changed, and an
+/// occupation where its occupier is the new owner or isn't at war with it: a peace ends only
+/// occupations between the two at war, so one left standing would never end. Then the realms are
+/// put right (a lost capital moves, a realm with no land is dissolved).
+fn hand_over(w: &mut World, provinces: &[u32], realm: u32) {
+    for &p in provinces {
+        let p = p as usize;
+        if w.owner[p] != realm {
+            w.owner[p] = realm;
+            if let Some(u) = w.uprising.get_mut(p) {
+                *u = NONE;
+            }
+        }
+        let by = w.occupier.get(p).copied().unwrap_or(NONE);
+        if by != NONE && (realm == NONE || by == realm || !crate::diplomacy::at_war(w, by, realm)) {
+            w.occupier[p] = NONE;
+        }
+    }
+    crate::realms::repair(w);
+}
+
+/// After the map changed: a company standing in, or from, a province left with no land moves to
+/// the province it merged into (`merged`: from, into), or else the nearest province with land (as
+/// the people of sunk land go), and a company on its way to such a province stops where it is.
+/// Soldiers sent home to a province with no land would otherwise join a pop there. The armies
+/// module files them again ([`crate::module::Module::edited`]).
+fn rehome_armies(w: &mut World, merged: Option<(u32, u32)>) {
+    let landless = |w: &World, p: u32| (p as usize) < w.provinces.count && w.provinces.cells[p as usize] == 0;
+    let mut nearest: HashMap<u32, u32> = HashMap::new();
+    let mut to_land = |w: &World, p: u32| -> u32 {
+        if !landless(w, p) {
+            return p;
+        }
+        if let Some((from, into)) = merged
+            && p == from
+        {
+            return into;
+        }
+        *nearest.entry(p).or_insert_with(|| {
+            let c = w.provinces.center[p as usize];
+            (0..w.provinces.count)
+                .filter(|&q| w.provinces.cells[q] > 0)
+                .max_by(|&a, &b| dot(c, w.provinces.center[a]).total_cmp(&dot(c, w.provinces.center[b])).then(b.cmp(&a)))
+                .map_or(p, |q| q as u32)
+        })
+    };
+    for a in 0..w.armies.count() {
+        let (at, home) = (w.armies.province[a], w.armies.home[a]);
+        let (at2, home2) = (to_land(w, at), to_land(w, home));
+        let arm = &mut w.armies;
+        (arm.province[a], arm.home[a]) = (at2, home2);
+        let (next, dest) = (arm.next[a], arm.dest[a]);
+        let lost_way = next != NONE && (at2 != at || landless(w, next) || landless(w, dest));
+        let arm = &mut w.armies;
+        if lost_way {
+            (arm.next[a], arm.dest[a], arm.days_left[a]) = (NONE, NONE, 0.0);
+        }
+        if at2 != at {
+            arm.siege_days[a] = 0;
         }
     }
 }

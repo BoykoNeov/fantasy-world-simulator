@@ -216,6 +216,7 @@ pub fn realms_in(e: &Event) -> Vec<u32> {
         Event::Rebellion { realm, from, .. } => vec![realm, from],
         Event::Battle { ref sides, .. } => sides.iter().map(|s| s.0).collect(),
         Event::Trade { a, b, .. } => vec![a, b],
+        Event::March { realm, .. } => vec![realm],
         _ => Vec::new(),
     }
 }
@@ -452,6 +453,10 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Trade { a, b, a_to_b, b_to_a } => {
             format!("{} sold {} coins' worth of goods to {} last month, and bought {} coins' worth", realm(a), group(*a_to_b), realm(b), group(*b_to_a))
         }
+        Event::KillRuler { character } => format!("{} is to die", names.person(*character)),
+        Event::Breakaway { provinces } => format!("{} province{} to break away", provinces.len(), if provinces.len() == 1 { " is" } else { "s are" }),
+        Event::March { realm: r, to, .. } => format!("{}'s field companies here are to march to province {to}", realm(r)),
+        Event::Refused { why } => format!("your poke was turned down: {why}"),
     }
 }
 
@@ -509,7 +514,7 @@ impl LogEntry {
     pub fn of_event(p: &Posted, goods: &Goods) -> LogEntry {
         let source = match (p.emitter, &p.event) {
             (Some(s), _) => Source::Module(s),
-            (None, Event::Drought { .. }) => Source::Player,
+            (None, Event::Drought { .. } | Event::DeclareWar { .. } | Event::ForcePeace { .. } | Event::KillRuler { .. } | Event::Breakaway { .. } | Event::March { .. }) => Source::Player,
             (None, _) => Source::Engine,
         };
         let province = p.event.province().or(match &p.event {

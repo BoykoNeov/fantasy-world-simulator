@@ -173,7 +173,7 @@ impl Relations {
         if self.a[ku] == x { self.a_of_b[ku] } else { self.b_of_a[ku] }
     }
 
-    fn set(&mut self, k: u32, x: u32, value: f32) {
+    pub(crate) fn set(&mut self, k: u32, x: u32, value: f32) {
         let ku = k as usize;
         let v = value.clamp(-OPINION, OPINION);
         if self.a[ku] == x {
@@ -183,7 +183,7 @@ impl Relations {
         }
     }
 
-    fn push(&mut self, x: u32, y: u32, start: f32) -> u32 {
+    pub(crate) fn push(&mut self, x: u32, y: u32, start: f32) -> u32 {
         let k = self.count() as u32;
         self.a.push(x.min(y));
         self.b.push(x.max(y));

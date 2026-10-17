@@ -99,6 +99,8 @@ pub enum Succession {
     Child = 3,
     /// No heir: a contested succession, won by a claimant from outside the line.
     Claimant = 4,
+    /// Put on the throne by the player (an edit), not by the world's rules.
+    Placed = 5,
 }
 
 impl Succession {
@@ -108,6 +110,7 @@ impl Succession {
             2 => Succession::Heir,
             3 => Succession::Child,
             4 => Succession::Claimant,
+            5 => Succession::Placed,
             _ => Succession::Never,
         }
     }
@@ -120,6 +123,7 @@ impl Succession {
             Succession::Heir => "a grown heir: a smooth succession",
             Succession::Child => "a child heir: a weak succession",
             Succession::Claimant => "a claimant, with no heir: a contested succession",
+            Succession::Placed => "put on the throne by the player",
         }
     }
 }
@@ -186,7 +190,7 @@ static V1: Manifest = Manifest {
     // Rulers rule realms: without them there is nothing to rule.
     requires: &["realm.capital"],
     emits: &[EventKind::Succession],
-    handles: &[],
+    handles: &[EventKind::KillRuler],
     state_schema: "none",
     goods: &[],
 };
@@ -217,6 +221,44 @@ impl Module for Rulers {
                 found(w, cx, r, false);
             }
         }
+    }
+
+    /// The player's poke: a ruler or an heir dies today. A ruler's heir, or a claimant, takes the
+    /// throne at once, as at the month's start after a death.
+    fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
+        let Event::KillRuler { character: c } = *e else { return };
+        let realm = w.characters.realm.get(c as usize).copied().unwrap_or(NONE);
+        let r = realm as usize;
+        let ruling = w.realms.alive(realm) && w.realms.ruler[r] == c;
+        let heir = w.realms.alive(realm) && w.realms.heir[r] == c;
+        if !w.characters.alive(c) || !(ruling || heir) {
+            cx.emit(Event::Refused { why: format!("character {c} is not a living ruler or heir") });
+            return;
+        }
+        w.characters.died[c as usize] = cx.day;
+        if heir {
+            w.realms.heir[r] = NONE;
+        } else {
+            succeed(w, cx, realm, c);
+        }
+    }
+
+    fn check_edit(&self, w: &World, edit: &crate::edit::Edit) -> Option<Result<(), String>> {
+        // Checked as an edit (`Edit::check`): nothing more to refuse.
+        matches!(edit, crate::edit::Edit::NewRuler { .. }).then(|| if w.realms.ruler.len() == w.realms.count() { Ok(()) } else { Err("the realms have no thrones yet".into()) })
+    }
+
+    /// A new ruler put on the throne: the one before is set aside and lives on, the heir stays.
+    fn carry_out(&mut self, w: &mut World, edit: &crate::edit::Edit, day: u64, calendar: &crate::calendar::Calendar) -> crate::module::Flows {
+        if let crate::edit::Edit::NewRuler { realm, age, martial, greed, ability } = *edit {
+            let c = w.characters.count() as u32;
+            let born = day as f64 - (age * calendar.days_per_year() as f64).round();
+            w.characters.push(realm, NONE, c, born, [martial, greed, ability]);
+            w.realms.ruler[realm as usize] = c;
+            w.characters.crowned[c as usize] = day;
+            w.characters.succession[c as usize] = Succession::Placed as u8;
+        }
+        crate::module::Flows::default()
     }
 
     /// Deaths, then successions, then heirs for realms that have none.

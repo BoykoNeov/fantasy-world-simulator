@@ -237,8 +237,8 @@ static V1: Manifest = Manifest {
     moves: &[],
     // Realms are made over settled land: without people there is none.
     requires: &["pop.size"],
-    emits: &[EventKind::Uprising, EventKind::Calmed, EventKind::Rebellion],
-    handles: &[EventKind::Occupied, EventKind::Peace, EventKind::Famine, EventKind::Succession, EventKind::Battle],
+    emits: &[EventKind::Uprising, EventKind::Calmed, EventKind::Rebellion, EventKind::Refused],
+    handles: &[EventKind::Occupied, EventKind::Peace, EventKind::Famine, EventKind::Succession, EventKind::Battle, EventKind::Breakaway],
     state_schema: "capitals-hunger-1",
     goods: &[],
 };
@@ -318,6 +318,7 @@ impl Module for Founding {
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         match *e {
             Event::Occupied { province, by } => occupy(w, cx, province, by),
+            Event::Breakaway { ref provinces } => breakaway(w, cx, provinces),
             Event::Peace { war, attacker, defender, winner, rebellion } => {
                 // The peace may dissolve a realm: its capital is kept first.
                 self.remember(w);
@@ -525,7 +526,7 @@ fn succession(w: &mut World, cx: &mut Ctx, u: &UnrestParams, realm: u32, how: cr
     let add = match how {
         Succession::Child => u.child_heir,
         Succession::Claimant => u.claimant,
-        Succession::Never | Succession::Founded | Succession::Heir => return,
+        Succession::Never | Succession::Founded | Succession::Heir | Succession::Placed => return,
     } as u64;
     for p in 0..w.provinces.count {
         if w.owner[p] == realm && w.provinces.cells[p] > 0 {
@@ -625,6 +626,50 @@ fn break_away(w: &mut World, cx: &mut Ctx, u: &UnrestParams) {
         }
         cx.emit(Event::Rebellion { realm, from, capital, provinces: group.len() as u32 });
     }
+}
+
+/// The player's poke: `provinces`, all of one living realm and not its capital, break away as a
+/// new realm at war with it, as rebels do (but any number of them, held together or not). Its
+/// capital is the most populous of them. Occupations of them end (the new realm is at war with
+/// nobody yet), and so do uprisings; their unrest is spent, as a rebellion's is.
+fn breakaway(w: &mut World, cx: &mut Ctx, provinces: &[u32]) {
+    let n = w.provinces.count;
+    let from = provinces.first().and_then(|&p| w.owner.get(p as usize).copied()).unwrap_or(NONE);
+    let why = if provinces.is_empty() {
+        Some("no provinces to break away".to_string())
+    } else if provinces.iter().any(|&p| p as usize >= n || w.provinces.cells[p as usize] == 0) {
+        Some("a province to break away has no land".into())
+    } else if !w.realms.alive(from) || provinces.iter().any(|&p| w.owner[p as usize] != from) {
+        Some("the provinces to break away aren't all of one realm".into())
+    } else if provinces.contains(&w.realms.capital[from as usize]) {
+        Some("a realm's capital can't break away from it".into())
+    } else {
+        None
+    };
+    if let Some(why) = why {
+        cx.emit(Event::Refused { why });
+        return;
+    }
+    let mut group = provinces.to_vec();
+    group.sort_unstable();
+    group.dedup();
+    let people = w.province_population();
+    let realm = w.realms.count() as u32;
+    let capital = *group.iter().max_by(|&&a, &&b| people[a as usize].cmp(&people[b as usize]).then(b.cmp(&a))).expect("not empty");
+    w.realms.capital.push(capital);
+    w.realms.broke_from.push(from);
+    for &p in &group {
+        let p = p as usize;
+        w.owner[p] = realm;
+        w.occupier[p] = NONE;
+        w.uprising[p] = NONE;
+        w.unrest[p] = 0;
+        if cx.traced(p as u32) {
+            cx.note(format!("{} provinces break away from realm {from} as realm {realm}, by the player's poke", group.len()));
+        }
+    }
+    settle(w);
+    cx.emit(Event::Rebellion { realm, from, capital, provinces: group.len() as u32 });
 }
 
 /// `spend` coins shared out over `paying`, a realm's provinces, by their people, the capital's

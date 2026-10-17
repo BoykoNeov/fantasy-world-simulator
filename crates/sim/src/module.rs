@@ -261,6 +261,24 @@ pub trait Module: Send {
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
         if bytes.is_empty() { Ok(()) } else { Err(format!("{:?} keeps no private state", self.manifest().slot)) }
     }
+
+    /// Edits this module carries out itself, because they need what only it knows (its settings, its
+    /// private state): `None` for an edit that isn't its own, else whether it fits the world as it
+    /// is. Nothing changes yet. The engine asks the module that keeps the fields the edit sets.
+    fn check_edit(&self, _w: &World, _edit: &crate::edit::Edit) -> Option<Result<(), String>> {
+        None
+    }
+
+    /// Carry out an edit [`Module::check_edit`] took as its own and passed, at the start of `day`,
+    /// and report every person or good it made or removed.
+    fn carry_out(&mut self, _w: &mut World, _edit: &crate::edit::Edit, _day: u64, _calendar: &Calendar) -> Flows {
+        Flows::default()
+    }
+
+    /// An edit (not a settings change) has changed the world from outside: put right whatever the
+    /// module works out from the fields and keeps between days. It may put its own fields right too,
+    /// moving nobody and nothing.
+    fn edited(&mut self, _w: &mut World, _edit: &crate::edit::Edit) {}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

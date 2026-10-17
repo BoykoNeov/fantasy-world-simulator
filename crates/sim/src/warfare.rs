@@ -72,10 +72,11 @@
 //! on them (they may not: warfare reads theirs). They learn of battles and occupations by events.
 
 use crate::diplomacy;
+use crate::edit::Edit;
 use crate::events::{Event, EventKind};
 use crate::fields::{known, Goods, Quantity, Tier};
 use crate::grid::{dot, NONE};
-use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
+use crate::module::{Cadence, Ctx, Flows, Manifest, Module, Slot};
 use crate::requests::{split_proportional, Cause, Dest, Priority, Request};
 use crate::rng::{purpose, round_stochastic, unit, Module as Rng};
 use crate::taxonomy::{NodeId, Taxonomy, TreeDef};
@@ -283,11 +284,21 @@ struct Resolved {
     fallback: usize,
     /// Each tree node's place in `kinds`, `usize::MAX` for classes.
     of_node: Vec<usize>,
+    tree: Taxonomy,
 }
 
 impl Resolved {
     fn kind(&self, node: NodeId) -> &Kind {
         &self.kinds[self.of_node[node as usize]]
+    }
+
+    /// The kind (a leaf of the troop tree) called `name`.
+    fn named(&self, name: &str) -> Result<NodeId, String> {
+        match self.tree.find(name) {
+            Some(n) if self.of_node[n as usize] != usize::MAX => Ok(n),
+            Some(_) => Err(format!("{name} is a class of troops, not a kind: pick one of its kinds")),
+            None => Err(format!("there is no troop kind called {name}")),
+        }
     }
 }
 
@@ -363,8 +374,14 @@ impl TroopParams {
         if ![self.siege_base_days, self.capital_siege, self.siege_max_days].iter().all(|&x| positive(x)) {
             return Err("troops: siege days and their factors are more than zero".into());
         }
-        Ok(Resolved { kinds, fallback, of_node })
+        Ok(Resolved { kinds, fallback, of_node, tree })
     }
+}
+
+/// The troop kinds of `params`' troop tree (its leaves, in tree order): each one's node, as
+/// `army.kind` holds it, and its name; whether it is a ship. Empty for a tree that doesn't resolve.
+pub fn kinds(params: &TroopParams) -> Vec<(NodeId, String, bool)> {
+    params.resolve().map_or(Vec::new(), |r| r.kinds.iter().map(|k| (k.node, r.tree.name(k.node).to_string(), k.ship)).collect())
 }
 
 /// A group of companies the general sends against one target.
@@ -421,6 +438,9 @@ struct State {
     dirty: BTreeSet<u32>,
     /// Look over every company today: land changed hands or a war began or ended.
     sweep: bool,
+    /// Companies marching under the player's orders ([`Event::March`]): the general leaves them
+    /// alone until they arrive.
+    ordered: BTreeSet<u32>,
 }
 
 /// Where companies stand, worked out from the army fields (not saved: rebuilt after a load).
@@ -626,9 +646,9 @@ static V1: Manifest = Manifest {
     moves: &[],
     // Soldiers serve realms and are taken from the people.
     requires: &["realm.capital", "pop.size"],
-    emits: &[EventKind::Arrived, EventKind::Occupied, EventKind::Battle],
-    handles: &[EventKind::Granted, EventKind::Peace, EventKind::WarDeclared, EventKind::Rebellion, EventKind::Occupied],
-    state_schema: "armies-1",
+    emits: &[EventKind::Arrived, EventKind::Occupied, EventKind::Battle, EventKind::Refused],
+    handles: &[EventKind::Granted, EventKind::Peace, EventKind::WarDeclared, EventKind::Rebellion, EventKind::Occupied, EventKind::March],
+    state_schema: "armies-2",
     goods: &[],
 };
 
@@ -736,9 +756,99 @@ impl Module for Troops {
                 self.st.candidates.insert(province);
                 self.st.sweep = true;
             }
+            Event::March { realm, from, to } => self.order(w, cx, realm, from, to),
             _ => {}
         }
     }
+
+    fn check_edit(&self, w: &World, edit: &Edit) -> Option<Result<(), String>> {
+        let res = || self.resolved.clone().map_or_else(|| self.params.resolve().map(Arc::new), Ok);
+        match edit {
+            Edit::PlaceArmy { province, realm, kind, .. } => Some(res().and_then(|res| placeable(w, &res, *province, *realm, kind).map(|_| ()))),
+            Edit::SetArmy { kind, .. } => Some(res().and_then(|res| res.named(kind).map(|_| ()))),
+            _ => None,
+        }
+    }
+
+    /// Soldiers placed, or a company's size or kind set. At home, placed soldiers join the realm's
+    /// idle field company of their kind there, so a province keeps one of each.
+    fn carry_out(&mut self, w: &mut World, edit: &Edit, _day: u64, _calendar: &crate::calendar::Calendar) -> Flows {
+        let res = self.resolved();
+        self.ix(w);
+        let mut flows = Flows::default();
+        match *edit {
+            Edit::PlaceArmy { province: p, realm, ref kind, size } => {
+                let node = placeable(w, &res, p, realm, kind).expect("checked");
+                let a = if w.owner[p as usize] == realm {
+                    let mut mine: Vec<u32> = self.ix(w).field_of.get(&realm).map_or(Vec::new(), |v| v.iter().copied().filter(|&b| w.armies.home[b as usize] == p).collect());
+                    self.company_at_home(w, &mut mine, realm, p, node, FIELD)
+                } else {
+                    let a = self.new_company(w, realm, w.realms.capital[realm as usize], node, FIELD);
+                    w.armies.province[a as usize] = p;
+                    a
+                };
+                w.armies.size[a as usize] += size;
+                flows.add(Quantity::People, Cause::Edit, size as i64);
+                self.settle(w, a);
+                if at_war_with_anyone(w, realm) {
+                    self.st.dirty.insert(realm);
+                }
+            }
+            Edit::SetArmy { army: a, size, ref kind } => {
+                let au = a as usize;
+                flows.add(Quantity::People, Cause::Edit, size as i64 - w.armies.size[au] as i64);
+                w.armies.size[au] = size;
+                w.armies.kind[au] = res.named(kind).expect("checked");
+                self.settle(w, a);
+                let realm = w.armies.realm[au];
+                if w.armies.role[au] == FIELD && at_war_with_anyone(w, realm) {
+                    self.st.dirty.insert(realm);
+                }
+            }
+            _ => {}
+        }
+        flows
+    }
+
+    /// After an edit that changed the map or who holds land: file every company again where its
+    /// fields put it (an edit may have moved it off land that sank), drop the routes of those no
+    /// longer on the move, look over every company today and have every realm at war plan again.
+    fn edited(&mut self, w: &mut World, edit: &Edit) {
+        if w.realms.count() == 0 || !(edit.changes_map() || matches!(edit, Edit::SetOwner { .. } | Edit::NewRealm { .. })) {
+            return;
+        }
+        self.ix = None;
+        self.ix(w);
+        for a in 0..w.armies.count() as u32 {
+            if !w.armies.moving(a as usize) {
+                self.st.paths.remove(&a);
+                self.st.pace.remove(&a);
+                self.st.ordered.remove(&a);
+            }
+            self.settle(w, a);
+        }
+        self.st.sweep = true;
+        let enemies = diplomacy::enemies(w);
+        self.st.dirty.extend((0..w.realms.count() as u32).filter(|&r| !enemies[r as usize].is_empty()));
+    }
+}
+
+/// The troop kind called `kind`, if realm `realm` may place soldiers of it in province `p`: land it
+/// holds or a realm's it is at war with; ships only on a coast.
+fn placeable(w: &World, res: &Resolved, p: u32, realm: u32, kind: &str) -> Result<NodeId, String> {
+    let node = res.named(kind)?;
+    let pu = p as usize;
+    if w.provinces.cells.get(pu).is_none_or(|&c| c == 0) {
+        return Err(format!("province {p} has no land"));
+    }
+    let owner = w.owner[pu];
+    if owner != realm && !diplomacy::at_war(w, realm, owner) {
+        return Err(format!("realm {realm} may place soldiers only on its own land or an enemy's at war with it"));
+    }
+    if res.kind(node).ship && w.provinces.coast_km[pu] <= 0.0 {
+        return Err(format!("{kind} need a coast"));
+    }
+    Ok(node)
 }
 
 impl Troops {
@@ -768,6 +878,7 @@ impl Troops {
             self.st.paths.remove(&a);
             self.st.pace.remove(&a);
             self.st.rest.remove(&a);
+            self.st.ordered.remove(&a);
         }
         let arm = &w.armies;
         let (size, moving, at, realm) = (arm.size[au], arm.moving(au), arm.province[au], arm.realm[au]);
@@ -862,6 +973,7 @@ impl Troops {
 
     /// Company `a` stops where it stands.
     fn halt(&mut self, w: &mut World, a: u32) {
+        self.st.ordered.remove(&a);
         let au = a as usize;
         let arm = &mut w.armies;
         arm.next[au] = NONE;
@@ -1182,6 +1294,46 @@ impl Troops {
             self.go_home(w, cx, a, size, Cause::Returned);
         }
         self.st.groups.retain(|_, g| g.realm != r);
+    }
+
+    /// The player's order: realm `realm`'s field companies standing in `from` march to `to`, each
+    /// by the ways its realm may use and at its own pace, out of their groups, under orders until
+    /// they arrive. Refused for companies fighting a battle, and where no way leads there.
+    fn order(&mut self, w: &mut World, cx: &mut Ctx, realm: u32, from: u32, to: u32) {
+        let res = self.resolved();
+        let mut refuse = |why: String| cx.emit(Event::Refused { why });
+        if !w.realms.alive(realm) {
+            return refuse(format!("realm {realm} is no more"));
+        }
+        if w.provinces.cells.get(to as usize).is_none_or(|&c| c == 0) || from == to {
+            return refuse(format!("province {to} is not somewhere else with land to march to"));
+        }
+        if self.st.battles.contains_key(&from) {
+            return refuse(format!("the companies in province {from} are fighting a battle"));
+        }
+        let here: Vec<u32> = self.ix(w).standing.get(&from).map_or(Vec::new(), |s| s.iter().copied().filter(|&a| w.armies.realm[a as usize] == realm && w.armies.role[a as usize] == FIELD).collect());
+        if here.is_empty() {
+            return refuse(format!("realm {realm} has no field companies standing in province {from}"));
+        }
+        let enemies = diplomacy::enemies(w);
+        let foes = enemies.get(realm as usize).cloned().unwrap_or_default();
+        let mut sent = 0;
+        for a in here {
+            let ship = res.kind(w.armies.kind[a as usize]).ship;
+            let allowed = |q: u32| allowed_for(w, realm, &foes, q);
+            let Some(path) = route_to(w, from, &allowed, ship, &|q| q == to) else { continue };
+            self.leave_group(w, a);
+            if self.send(w, &res, a, path.into_iter().map(|q| (q, ship)).collect(), None) {
+                self.st.ordered.insert(a);
+                sent += 1;
+                if cx.traced(from) {
+                    cx.note(format!("company {a} ({} soldiers) marches to province {to}, by the player's order", w.armies.size[a as usize]));
+                }
+            }
+        }
+        if sent == 0 {
+            cx.emit(Event::Refused { why: format!("no way realm {realm} may use leads from province {from} to {to}") });
+        }
     }
 
     /// A day on the move for every moving company.
@@ -1626,7 +1778,10 @@ impl Troops {
         let pr = Knobs { outmatch: p.outmatch, home_edge: p.home_edge, siege_min_share: p.siege_min_share, gather_share: p.gather_share };
         let n = w.provinces.count;
         let day = cx.day;
-        let fields: Vec<u32> = self.ix(w).field_of.get(&r).cloned().unwrap_or_default();
+        // Companies under the player's orders are left alone until they arrive.
+        let ordered = std::mem::take(&mut self.st.ordered);
+        let fields: Vec<u32> = self.ix(w).field_of.get(&r).map_or(Vec::new(), |v| v.iter().copied().filter(|a| !ordered.contains(a)).collect());
+        self.st.ordered = ordered;
         let ok = |w: &World, q: u32| allowed_for(w, r, foes, q);
 
         // Companies standing on a neutral's land (a former enemy's) go back to their own.

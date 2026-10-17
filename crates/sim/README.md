@@ -187,12 +187,14 @@ Loads refuse other format versions,
   `examples/market_stats.rs` prints a run year by year, with what was traded and where the coins
   are (`--no-trade` turns trade off, `--money 1,3` sets the response and range).
 - **Pokes** (`Sim::poke`): a player's action is an ordinary event, stored in the command log with its
-  day. It is sent that day and arrives the next, so replays and saves repeat it. The only poke so
-  far are a drought (a centre, a radius, how much rain goes missing, and for how long), and, with
-  wars on, declaring war and forcing a peace (see Wars below).
+  day. It is sent that day and arrives the next, so replays and saves repeat it. The pokes so
+  far are a drought (a centre, a radius, how much rain goes missing, and for how long); with
+  wars on, declaring war and forcing a peace (see Wars below); and the editor's: killing a ruler,
+  provinces breaking away and an army's march (see "The editor of step 7" below).
 - **Edits** (`edit.rs`, `Sim::edit`): an edit sets values directly instead of letting the world
   react (so far: a pop's size and what it is, a new pop, a province's store of any good the world
-  keeps on its own, and reshaping provinces: moving land between them, splitting one, merging two).
+  keeps on its own, reshaping provinces: moving land between them, splitting one, merging two;
+  and realms, rulers and armies, see "The editor of step 7" below).
   An edit that sets something no active module keeps (people with Population off, stored goods
   with Economics off) is refused, as is setting a class kept as several goods ("food is kept as
   grain and fish; set each of those"). `SetFoodStock`, the older food-only edit, still loads from
@@ -702,6 +704,58 @@ Loads refuse other format versions,
     realm: uprising after 1.4 years on seed 21, 2.0 on 3, a war for food after 1.0 on 7; nothing
     without the drought). Speed (large world, one worker thread, the same month's first days run
     twice from the same world): no measurable cost (69 ms against 70, 78 against 80).
+- **The editor of step 7** (`edit.rs`, `realms.rs`, `characters.rs`, `warfare.rs`; tests in
+  `editor_tests.rs`). Save format 24.
+  - **Edits** (each refused where no module keeps what it sets):
+    - `SetOwner { provinces, realm }` gives provinces to a living realm or to nobody. An uprising
+      ends where the owner changed, and an occupation ends where the occupier is the new owner or
+      isn't at war with it (a peace ends only occupations between the two at war, so one left
+      would never end). Then the realms are put right as after a map edit: a lost capital moves to
+      the realm's most populous province, and a realm left with no land is dissolved. Merging a
+      realm into another is giving it all its land; dissolving one, giving it all to nobody. Its
+      wars then count as over and end at the next month's start, as wars with dissolved realms
+      already did (tested: no realm is at war with itself).
+    - `NewRealm { provinces }`: a new realm at peace, its capital the most populous of them; it gets
+      a founding ruler at the next month's start.
+    - `SetRealmStock { realm, good, amount }`: a realm's store (its treasury is its coins), only
+      under markets, which keeps it; booked as made or removed by the edit.
+    - `SetOpinion { a, b, a_of_b, b_of_a }`: what two realms think of each other (Diplomacy
+      "treaties" only); a pair with no relation gets one, numbered after the last.
+    - `SetTraits { character, martial, greed, ability }`.
+    - `NewRuler { realm, age, ... }`: a new character takes the throne now, "put on the throne by the
+      player" (`Succession::Placed`). The ruler before is set aside and lives on; the heir stays. No
+      succession event, so no unrest.
+    - `PlaceArmy { province, realm, kind, size }`: soldiers made from nothing for a field company,
+      on the realm's own land or an enemy's at war with it, ships only on a coast. At home they
+      join the realm's idle company of that kind there, so a province keeps one of each; elsewhere
+      a new company, homed at the realm's capital. The world's rules then hold: in peace, field
+      companies standing idle at home go home at the next month's start.
+    - `SetArmy { army, size, kind }`: a company's soldiers (0 empties it) and kind.
+  - **Edits a module carries out** (`Module::check_edit`, `Module::carry_out`): an edit that needs
+    what only the module keeping its fields knows is that module's to check and make. Warfare
+    makes the army edits (the troop tree is in its settings, not in the world, and only it can file
+    a company in its groups and lists); Characters makes `NewRuler` (it is given the day). Other
+    edits are made by `edit.rs` as before.
+  - **Modules hear about edits** (`Module::edited`): after any edit but a settings change, every
+    module is told. Warfare, after an edit that changed the map or who holds land, files every
+    company again, drops the routes of those no longer moving, looks every company over that day
+    (those whose realm no longer holds their home go home) and has every realm at war plan again.
+    Other edits leave it as it was, so worlds with other edits run as before.
+  - **After map edits**: a company standing in, or homed in, a province left with no land moves to
+    the province it merged into, or else the nearest province with land, as the people of sunk
+    land do; a company on its way to such a province stops where it is. Before, soldiers sent home
+    to a province with no land would have joined a pop there.
+  - **Pokes**: `KillRuler { character }` (Characters, which now handles events): the ruler or heir
+    dies that day; a ruler's heir, or a claimant, takes the throne at once by the usual rules,
+    with a succession event, so a child heir or a claimant stirs unrest. `Breakaway { provinces }`
+    (Realms): provinces of one realm, not its capital, any number, break away as a new realm at
+    war with it, as rebels do (the `Rebellion` event). `March { realm, from, to }` (Warfare): the
+    realm's field companies standing in `from` march to `to` by the ways it may use, out of their
+    groups; the general leaves them alone until they stop (arrived, or stopped by enemies in the
+    way), then takes them over. A poke that no longer fits is answered by `Refused { why }` (a
+    realm's capital can't break away; companies fighting a battle can't be ordered away; no way
+    leads there).
+  - Old scenario files reproduce value for value; the tester's table is unchanged.
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

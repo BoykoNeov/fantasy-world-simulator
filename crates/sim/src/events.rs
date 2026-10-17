@@ -65,6 +65,18 @@ pub enum Event {
     /// the goods each way were worth, in coins (the price and the carrying; tolls not included).
     /// Sent once a month for each pair of realms that traded; not kept in the event log.
     Trade { a: u32, b: u32, a_to_b: u64, b_to_a: u64 },
+    /// The player's poke: character `character`, a ruler or an heir, dies. A ruler's heir, or a
+    /// claimant, takes the throne at once, as when a ruler dies of age.
+    KillRuler { character: u32 },
+    /// The player's poke: `provinces`, all of one realm and not its capital, break away as a new
+    /// realm at war with it, as rebels do (the realm then sends [`Event::Rebellion`]).
+    Breakaway { provinces: Vec<u32> },
+    /// The player's poke: realm `realm`'s field companies standing in `from` march to `to`. Under
+    /// orders, the general leaves them alone until they arrive.
+    March { realm: u32, from: u32, to: u32 },
+    /// A poke of the player's no longer fits the world, and why (the wars' own pokes are refused
+    /// with [`Event::WarRefused`]).
+    Refused { why: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -87,6 +99,10 @@ pub enum EventKind {
     Rebellion,
     Battle,
     Trade,
+    KillRuler,
+    Breakaway,
+    March,
+    Refused,
 }
 
 impl EventKind {
@@ -95,16 +111,16 @@ impl EventKind {
     ///
     /// | class | value | kinds |
     /// | --- | --- | --- |
-    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle |
-    /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion |
-    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade |
+    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle, KillRuler |
+    /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion, Breakaway |
+    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade, March, Refused |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
             // A province taken the day before a peace is handed over (or given back) by it.
-            EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied | EventKind::Battle => 0,
-            EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion => 1,
-            EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed | EventKind::Trade => 2,
+            EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied | EventKind::Battle | EventKind::KillRuler => 0,
+            EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion | EventKind::Breakaway => 1,
+            EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed | EventKind::Trade | EventKind::March | EventKind::Refused => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -131,6 +147,10 @@ impl Event {
             Event::Rebellion { .. } => EventKind::Rebellion,
             Event::Battle { .. } => EventKind::Battle,
             Event::Trade { .. } => EventKind::Trade,
+            Event::KillRuler { .. } => EventKind::KillRuler,
+            Event::Breakaway { .. } => EventKind::Breakaway,
+            Event::March { .. } => EventKind::March,
+            Event::Refused { .. } => EventKind::Refused,
         }
     }
 
@@ -151,7 +171,10 @@ impl Event {
             }
             Event::WarDeclared { war, .. } | Event::Peace { war, .. } => *war as u64,
             Event::Occupied { province, .. } | Event::Uprising { province, .. } | Event::Calmed { province, .. } | Event::Battle { province, .. } => *province as u64,
-            Event::Rebellion { realm, .. } => *realm as u64,
+            Event::Rebellion { realm, .. } | Event::March { realm, .. } => *realm as u64,
+            Event::KillRuler { character } => *character as u64,
+            Event::Breakaway { provinces } => provinces.first().copied().unwrap_or(0) as u64,
+            Event::Refused { .. } => 0,
         }
     }
 
@@ -163,7 +186,9 @@ impl Event {
             | Event::Occupied { province, .. }
             | Event::Battle { province, .. }
             | Event::Uprising { province, .. }
-            | Event::Calmed { province, .. } => Some(*province),
+            | Event::Calmed { province, .. }
+            | Event::March { from: province, .. } => Some(*province),
+            Event::Breakaway { provinces } => provinces.first().copied(),
             Event::Succession { capital, .. } | Event::Rebellion { capital, .. } => Some(*capital),
             _ => None,
         }

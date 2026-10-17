@@ -69,7 +69,10 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// settings while the world runs.
 /// Format 23 (step 7): trade and realms: tolls and war stopping trade in markets' trade parameters,
 /// trade warming opinions in the treaties', and the trade event between realms.
-pub const FORMAT_VERSION: u32 = 23;
+/// Format 24 (step 7): the editor: edits of realms, rulers and armies, the pokes to kill a ruler,
+/// break away and march, the refusal event, a ruler put on the throne by the player, and the armies'
+/// orders in Warfare's state.
+pub const FORMAT_VERSION: u32 = 24;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

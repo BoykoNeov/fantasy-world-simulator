@@ -707,6 +707,12 @@ impl Sim {
             }
         }
         edit.check(&self.world)?;
+        // An edit that needs what only the module keeping its fields knows is that module's to check
+        // and carry out.
+        let carrier = edit.sets().first().and_then(|f| self.plan.owner[known(f).0 as usize]).filter(|&i| self.modules[i].check_edit(&self.world, edit).is_some());
+        if let Some(i) = carrier {
+            self.modules[i].check_edit(&self.world, edit).expect("claimed above")?;
+        }
         let quantities = self.world.quantities();
         let before: Vec<u64> = quantities.iter().map(|&q| quantity_total(&self.world, q)).collect();
         let running: Vec<FieldId> = self.running_fields().collect();
@@ -733,8 +739,15 @@ impl Sim {
             self.map_at += 1;
             self.map_at - 1
         });
-        let flows = edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i]));
+        let flows = match carrier {
+            Some(i) => self.modules[i].carry_out(&mut self.world, edit, self.day, &self.calendar),
+            None => edit.change_running(&mut self.world, map.map(|i| &*self.map_changes[i])),
+        };
         self.world.fit_realm_rows();
+        for k in 0..self.plan.runtime.len() {
+            let i = self.plan.runtime[k];
+            self.modules[i].edited(&mut self.world, edit);
+        }
 
         for (k, &q) in quantities.iter().enumerate() {
             let expected = before[k] as i128 + flows.net(q) as i128;

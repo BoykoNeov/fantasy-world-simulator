@@ -31,7 +31,8 @@
 //! GPU choice: set `WGPU_POWER_PREF=low` (integrated) or `high` (discrete) before running.
 
 use app::bench;
-use app::editor::Editor;
+use app::editor::{Action, Clicked, Editor};
+use app::realm_tools::{Kept, RealmTools};
 use app::gpu::{self, LayerSettings, MapData, MapGpu, MapUniforms};
 use app::inspector::{self, group, LogEntry, Names, RealmNames, Source};
 use app::layers::{self, ProvinceView};
@@ -102,7 +103,7 @@ struct Options {
     remake: Option<String>,
     /// Settings changed in the world made (`--set KEY=VALUE`).
     set: Vec<(String, f64)>,
-    /// Section headers to open (scripted runs): "settings", "new-world" and "new-world-settings".
+    /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings" and "change-realm" (the editor's controls on the selected province's realm page).
     open_sections: Vec<String>,
     bench: bool,
     out_dir: String,
@@ -355,6 +356,8 @@ struct WorldInfo {
     price_good: usize,
     /// Whether the world trades: markets with trade on.
     trades: bool,
+    /// The troop kinds, where armies are kept: node, name, whether ships.
+    troop_kinds: Vec<(u16, String, bool)>,
 }
 
 impl WorldInfo {
@@ -384,7 +387,8 @@ impl WorldInfo {
             Some(name) => goods.column(name).filter(|c| !coin_columns.contains(c)).unwrap_or_else(|| panic!("--good {name}: this world doesn't price it")),
             None => (0..goods.stride()).find(|c| !coin_columns.contains(c)).unwrap_or(0),
         };
-        WorldInfo { owners, modules, coin_columns, price_good, trades: mc.markets.as_ref().is_some_and(|m| m.trade.is_some()) }
+        let troop_kinds = mc.warfare.as_ref().map(sim::warfare::kinds).unwrap_or_default();
+        WorldInfo { owners, modules, coin_columns, price_good, trades: mc.markets.as_ref().is_some_and(|m| m.trade.is_some()), troop_kinds }
     }
 }
 
@@ -519,6 +523,10 @@ struct MapApp {
     market_for: Option<(usize, usize)>,
     /// Whether the world trades (markets with trade on): the trade layers are offered.
     trades: bool,
+    /// The troop kinds, where armies are kept: node, name, whether ships.
+    troop_kinds: Vec<(u16, String, bool)>,
+    /// What is typed into the editor's controls on the realm and province pages.
+    realm_tools: RealmTools,
     /// The combination tester's table, shipped with the simulation.
     table: Result<Table, String>,
     /// The New world section: what is picked, and a world being made.
@@ -630,7 +638,7 @@ impl MapApp {
         let bench_target = sim.world.provinces.center.get(top).map_or((0.0, 0.0), |&d| sim::grid::dir_to_lonlat(d));
 
         let table = Table::shipped();
-        let WorldInfo { owners, modules, coin_columns, price_good, trades } = WorldInfo::of(sim, &table, opts.good.as_deref());
+        let WorldInfo { owners, modules, coin_columns, price_good, trades, troop_kinds } = WorldInfo::of(sim, &table, opts.good.as_deref());
         let new_world = NewWorld::like(&opts, &Config { modules: (*sim.settings).clone(), ..sim.config.clone() });
         let config = sim.config.clone();
         let frame = Frame::now(sim, 0);
@@ -672,6 +680,8 @@ impl MapApp {
             stock_good: 0,
             stock_edit: None,
             coin_columns,
+            troop_kinds,
+            realm_tools: RealmTools::default(),
             price_good,
             market: layers::MarketView::default(),
             market_for: None,
@@ -729,7 +739,8 @@ impl MapApp {
     /// `gen_s` seconds. The old world's simulation stops, and nothing of it is kept.
     fn adopt(&mut self, timelines: Timelines, data: MapData, gen_s: f64) {
         let sim = timelines.sim();
-        let WorldInfo { owners, modules, coin_columns, price_good, trades } = WorldInfo::of(sim, &self.table, None);
+        let WorldInfo { owners, modules, coin_columns, price_good, trades, troop_kinds } = WorldInfo::of(sim, &self.table, None);
+        (self.troop_kinds, self.realm_tools) = (troop_kinds, RealmTools::default());
         let frame = Frame::now(sim, 0);
         (self.owners, self.modules, self.coin_columns, self.price_good, self.trades) = (owners, modules, coin_columns, price_good, trades);
         self.geo = sim.world.clone();
@@ -972,6 +983,26 @@ impl MapApp {
         self.send_edit(Ok(edit));
     }
 
+    /// Make the change the player asked for: an edit, or a poke.
+    fn act(&mut self, a: Action) {
+        match a {
+            Action::Edit(e) => self.send_edit(Ok(e)),
+            Action::Poke(e) => self.poke(e),
+        }
+    }
+
+    /// What the world keeps of realms, rulers and armies, so the editor offers only what it can take.
+    fn kept(&self) -> Kept {
+        let kept = |name: &str| self.owners[sim::fields::known(name).0 as usize].1.is_some();
+        Kept {
+            treasury: self.coin_columns.first().copied().filter(|_| kept("realm.stock")),
+            opinions: kept("relation.a_of_b"),
+            wars: kept("war.attacker"),
+            rulers: kept("realm.ruler"),
+            armies: kept("army.size"),
+        }
+    }
+
     /// Send an edit, or say why there is none.
     fn send_edit(&mut self, edit: Result<Edit, String>) {
         match edit {
@@ -1163,7 +1194,7 @@ impl MapApp {
             let why_not = "only on the latest day you have watched; earlier, a change starts a new timeline";
             let undo = ui
                 .add_enabled(self.status.can_undo && edge, egui::Button::new("⟲ undo"))
-                .on_hover_text("take back your last change: an edit or a drought (Ctrl+Z)")
+                .on_hover_text("take back your last change: an edit, or a poke such as a drought or a war declared (Ctrl+Z)")
                 .on_disabled_hover_text(why_not);
             let redo = ui.add_enabled(self.status.can_redo && edge, egui::Button::new("⟳ redo")).on_hover_text("give it back (Ctrl+Y)").on_disabled_hover_text(why_not);
             if undo.clicked() {
@@ -1173,8 +1204,10 @@ impl MapApp {
                 self.change(Change::Redo);
             }
         });
-        if let Some(edit) = self.editor.panel(ui, self.selected) {
-            self.send_edit(Ok(edit));
+        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let realms = self.realms_on().then_some((&self.geo, &names));
+        if let Some(a) = self.editor.panel(ui, self.selected, realms) {
+            self.act(a);
         }
         ui.separator();
 
@@ -1672,7 +1705,7 @@ impl MapApp {
                         ui.end_row();
                     }
                     // In the goods table below; realms and rulers are on the realm's page above;
-                    // armies get theirs later in step 7.
+                    // armies have a section of their own below.
                     Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => {}
                 }
             }
@@ -1759,6 +1792,17 @@ impl MapApp {
             self.pop_edit = None;
             self.stock_edit = None;
             self.send_edit(Ok(e));
+        }
+        if self.kept().armies {
+            ui.separator();
+            let names = Names { world: &self.geo, realms: &self.realm_names.names };
+            let (action, march) = self.realm_tools.armies(ui, &self.geo, &names, p, &self.troop_kinds);
+            if let Some(a) = action {
+                self.act(a);
+            }
+            if march.is_some() {
+                self.editor.march = march;
+            }
         }
 
         // Neighbours and the days it takes to reach them, seat to seat; click one to go there.
@@ -1957,6 +2001,9 @@ impl MapApp {
         for f in &page.facts {
             ui.label(f);
         }
+        let kept = self.kept();
+        let open = self.opts.open_sections.iter().any(|s| s == "change-realm");
+        let change = self.realm_tools.realm(ui, w, &names, r, &kept, open);
         let person = |ui: &mut egui::Ui, title: &str, who: &Option<inspector::Person>| match who {
             Some(x) => {
                 ui.label(egui::RichText::new(format!("{title}: {}", x.name)).strong());
@@ -2009,6 +2056,9 @@ impl MapApp {
         });
         if let Some(c) = go {
             (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
+        }
+        if let Some(a) = change {
+            self.act(a);
         }
     }
 
@@ -2173,7 +2223,9 @@ impl eframe::App for MapApp {
                 } else if response.clicked() {
                     let clicked = self.hover.map(|(_, p)| p).filter(|&p| p != NONE);
                     match self.editor.click(clicked, self.selected) {
-                        Some(edit) => self.send_edit(edit),
+                        Some(Clicked::Edit(edit)) => self.send_edit(edit),
+                        Some(Clicked::Poke(e)) => self.poke(e),
+                        Some(Clicked::Picked) => {}
                         None => {
                             self.selected = clicked;
                             (self.pop_edit, self.stock_edit) = (None, None);
@@ -2260,6 +2312,16 @@ impl eframe::App for MapApp {
                 let centre = to_screen(lon, lat);
                 ui.painter().circle_stroke(centre, centre.distance(edge), ink);
                 ui.painter().circle_stroke(centre, centre.distance(edge) * 0.5, egui::Stroke::new(1.0, ink.color.gamma_multiply(0.5)));
+            }
+            // Provinces the realms tool picked, ringed at their seats.
+            if self.editor.tool == app::editor::Tool::Realms {
+                for &q in &self.editor.picked {
+                    if let Some(&d) = self.geo.provinces.center.get(q as usize) {
+                        let (lon, lat) = sim::grid::dir_to_lonlat(d);
+                        let c = to_screen(lon, lat);
+                        ui.painter().circle_stroke(c, 7.0, egui::Stroke::new(2.5, egui::Color32::from_rgb(200, 40, 30)));
+                    }
+                }
             }
             if self.editor.stroke.len() > 1 {
                 let points: Vec<egui::Pos2> = self.editor.stroke.iter().map(|q| to_screen(q[0].to_radians(), q[1].to_radians())).collect();

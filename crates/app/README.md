@@ -58,7 +58,8 @@ What exists:
   it takes to get there by land and by sea, and how long their shared border is. Click one to go
   to it.
 - **Event log**: what happened to the province each day (famines, food shortages, droughts), newest
-  first, filterable by source.
+  first, filterable by source. The player's pokes (droughts, wars, peace, killing a ruler, breaking
+  away, marching) show under "your pokes".
 - **Drought tool**: start a drought centred on the selected province (how much rain is missing, radius,
   years). It takes effect the next day; the days computed ahead are thrown away, and the simulation
   goes back to the day shown and computes them again.
@@ -129,6 +130,22 @@ What exists:
     combination tester's choices until step 7's checks, so a world running them, or a new world
     made with them, says "not in the combination tester's table yet" rather than the table's
     verdict on the rest.
+- **Editing realms, rulers and armies** (step 7's editor; `editor.rs`, `realm_tools.rs`; only
+  what the world keeps is offered):
+  - The "realms" tool in the Edit section: click provinces to pick them (again to put one back;
+    they are ringed on the map), then give them to a realm picked from a list, to the selected
+    province's realm or to nobody, make them a new realm at peace, or have them break away at war
+    with their realm.
+  - "Change …" on the realm page: set the treasury (under markets); set what it and another realm
+    think of each other (Diplomacy "treaties"); declare war on a realm, and make peace with each
+    enemy, won by either or by nobody; merge it into another realm, or dissolve it. Its ruler and
+    heir: set their traits, or kill them. Crown a new ruler of a chosen age and traits.
+  - "Armies here" on the province page: the companies standing in it or coming in (kind, soldiers,
+    realm, guards or field, home, where they are going); change one's soldiers or kind; place
+    soldiers of a realm and kind (in peace, soldiers standing at home go home at the next month's
+    start); and "send X's field companies here to…", then a click on the map where they are to go.
+  - Every change goes through the command log as other edits and pokes do: undo, redo, going back,
+    timelines and scenario files. A poke the world turns down says why in the event log.
 - **Modules** (step 6): the module versions running, and what the combination tester found for
   that mix (`crates/sim/data/compatibility.toml`): no problems found, known quirks, or unstable,
   with each finding listed. A mix the table doesn't hold gets the worst verdict of its pairs. The
@@ -190,7 +207,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   checks that the window copes with provinces going away).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
-  runs, as a player would. `--open-section settings|new-world|new-world-settings`: open that
+  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm`: open that
   section (for scripted screenshots).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.

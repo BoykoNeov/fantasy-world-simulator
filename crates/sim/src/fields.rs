@@ -330,7 +330,7 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("character.born", Tier::Character, "day born, below 0 before the world's first day", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("character.died", Tier::Character, "day died, none while alive", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("character.crowned", Tier::Character, "day they became ruler, none if never", -UNBOUNDED, UNBOUNDED) },
-    FieldDef { default: Default::Empty, ..def("character.succession", Tier::Character, "how they came to the throne (see `Succession`)", 0.0, 4.0) },
+    FieldDef { default: Default::Empty, ..def("character.succession", Tier::Character, "how they came to the throne (see `Succession`)", 0.0, 5.0) },
     FieldDef { default: Default::Empty, ..def("character.martial", Tier::Character, "0 cautious to 100 warlike", 0.0, 100.0) },
     FieldDef { default: Default::Empty, ..def("character.greed", Tier::Character, "0 open-handed to 100 greedy", 0.0, 100.0) },
     FieldDef { default: Default::Empty, ..def("character.ability", Tier::Character, "0 inept to 100 able", 0.0, 100.0) },

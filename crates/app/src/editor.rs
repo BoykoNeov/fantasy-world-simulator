@@ -2,13 +2,34 @@
 //! stroke makes. The window draws the tools' panel and the brush, and sends the edits.
 //!
 //! Brush tools draw with the left mouse button; the right button still drags the map. A click is a
-//! stroke of one point.
+//! stroke of one point. The realms tool picks provinces with clicks, and an army's order waits for
+//! a click on where it is to go.
 
+use crate::inspector::Names;
 use eframe::egui;
 use sim::biome::{Biome, ALL};
 use sim::edit::{brush_cells, Brush, Edit, Override};
+use sim::events::Event;
 use sim::grid::NONE;
 use sim::world::{World, RIVER_MIN_FLOW};
+
+/// A change the player asked for: an edit, which sets values at once, or a poke, which the world
+/// answers by its own rules the next day.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    Edit(Edit),
+    Poke(Event),
+}
+
+/// What a click on the map did.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Clicked {
+    /// An edit, or why there is none.
+    Edit(Result<Edit, String>),
+    Poke(Event),
+    /// The realms tool picked a province, or put one back.
+    Picked,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
@@ -18,6 +39,9 @@ pub enum Tool {
     Climate,
     River,
     Provinces,
+    /// Click provinces to pick them, then give them to a realm, make them a realm, or have them
+    /// break away.
+    Realms,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +88,12 @@ pub struct Editor {
     pub sea_rise: f32,
     /// The stroke being drawn: longitude and latitude, degrees.
     pub stroke: Vec<[f64; 2]>,
+    /// Provinces the realms tool has picked, in the order picked.
+    pub picked: Vec<u32>,
+    /// The realm picked provinces are given to by "give to", [`NONE`] for nobody.
+    pub give_to: u32,
+    /// An order waiting for a click on where to go: realm `.0`'s field companies standing in `.1`.
+    pub march: Option<(u32, u32)>,
 }
 
 impl Default for Editor {
@@ -83,6 +113,9 @@ impl Default for Editor {
             provinces: ProvinceKind::MoveInto,
             sea_rise: 20.0,
             stroke: Vec::new(),
+            picked: Vec::new(),
+            give_to: NONE,
+            march: None,
         }
     }
 }
@@ -90,7 +123,7 @@ impl Default for Editor {
 impl Editor {
     /// Whether dragging with the left button draws (rather than moving the map).
     pub fn draws(&self) -> bool {
-        self.tool != Tool::Inspect && !(self.tool == Tool::Provinces && self.provinces == ProvinceKind::Merge)
+        self.march.is_none() && !matches!(self.tool, Tool::Inspect | Tool::Realms) && !(self.tool == Tool::Provinces && self.provinces == ProvinceKind::Merge)
     }
 
     /// The brush's radius to show around the pointer, if the tool has one.
@@ -130,7 +163,7 @@ impl Editor {
         }
         let radius_km = self.radius_km;
         Some(match self.tool {
-            Tool::Inspect => return None,
+            Tool::Inspect | Tool::Realms => return None,
             Tool::Height => Ok(Edit::Paint {
                 path,
                 radius_km,
@@ -169,29 +202,56 @@ impl Editor {
         })
     }
 
-    /// The edit a click on province `clicked` makes, for tools that act on clicks.
-    pub fn click(&self, clicked: Option<u32>, selected: Option<u32>) -> Option<Result<Edit, String>> {
+    /// What a click on province `clicked` does, for tools that act on clicks: an army's order
+    /// waiting for where to go takes the click first. `None`: the click selects the province.
+    pub fn click(&mut self, clicked: Option<u32>, selected: Option<u32>) -> Option<Clicked> {
+        if let Some((realm, from)) = self.march {
+            let to = clicked?;
+            self.march = None;
+            return Some(Clicked::Poke(Event::March { realm, from, to }));
+        }
+        if self.tool == Tool::Realms {
+            let p = clicked?;
+            match self.picked.iter().position(|&q| q == p) {
+                Some(k) => {
+                    self.picked.remove(k);
+                }
+                None => self.picked.push(p),
+            }
+            return Some(Clicked::Picked);
+        }
         if self.tool != Tool::Provinces || self.provinces != ProvinceKind::Merge {
             return None;
         }
-        Some(match (clicked, selected) {
+        Some(Clicked::Edit(match (clicked, selected) {
             (_, None) => Err("select the province to merge into first (inspect tool)".into()),
             (None, _) => Err("click a province".into()),
             (Some(from), Some(into)) => Ok(Edit::Merge { from, into }),
-        })
+        }))
     }
 
-    /// The tools' panel.
-    pub fn panel(&mut self, ui: &mut egui::Ui, selected: Option<u32>) -> Option<Edit> {
+    /// The tools' panel. `realms`: whether some module keeps realms (the realms tool is offered),
+    /// with the world and its names.
+    pub fn panel(&mut self, ui: &mut egui::Ui, selected: Option<u32>, realms: Option<(&World, &Names)>) -> Option<Action> {
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
-            for (tool, name) in [(Tool::Inspect, "inspect"), (Tool::Height, "height"), (Tool::Climate, "climate"), (Tool::River, "rivers"), (Tool::Provinces, "provinces")] {
+            let tools = [(Tool::Inspect, "inspect"), (Tool::Height, "height"), (Tool::Climate, "climate"), (Tool::River, "rivers"), (Tool::Provinces, "provinces"), (Tool::Realms, "realms")];
+            for (tool, name) in tools.into_iter().filter(|&(t, _)| t != Tool::Realms || realms.is_some()) {
                 if ui.selectable_label(self.tool == tool, name).clicked() {
                     self.tool = tool;
                     self.stroke.clear();
                 }
             }
         });
+        if let Some((realm, from)) = self.march {
+            ui.horizontal_wrapped(|ui| {
+                let who = realms.map_or(format!("realm {realm}"), |(_, n)| n.realm(realm));
+                ui.label(egui::RichText::new(format!("Click where {who}'s field companies in province {from} are to march.")).strong());
+                if ui.small_button("cancel").clicked() {
+                    self.march = None;
+                }
+            });
+        }
         let radius = |ui: &mut egui::Ui, r: &mut f64| {
             ui.add(egui::Slider::new(r, 30.0..=2000.0).logarithmic(true).text("brush radius, km").integer());
         };
@@ -221,7 +281,7 @@ impl Editor {
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut self.sea_rise).range(-500.0..=500.0).suffix(" m"));
                     if ui.button("raise the sea everywhere").on_hover_text("negative lowers it").clicked() {
-                        action = Some(Edit::SeaLevel { rise_m: self.sea_rise });
+                        action = Some(Action::Edit(Edit::SeaLevel { rise_m: self.sea_rise }));
                     }
                 });
             }
@@ -268,7 +328,86 @@ impl Editor {
                     None => ui.small("Select a province with the inspect tool first."),
                 };
             }
+            Tool::Realms => {
+                if let Some((w, names)) = realms {
+                    action = self.realms_panel(ui, w, names, selected);
+                }
+            }
         }
         action
+    }
+
+    /// The realms tool: the provinces picked, and what to do with them.
+    fn realms_panel(&mut self, ui: &mut egui::Ui, w: &World, names: &Names, selected: Option<u32>) -> Option<Action> {
+        // Provinces gone from the world shown (going back before a split) are let go.
+        self.picked.retain(|&p| (p as usize) < w.provinces.count && w.provinces.cells[p as usize] > 0);
+        if self.give_to != NONE && !w.realms.alive(self.give_to) {
+            self.give_to = NONE;
+        }
+        ui.small("Click provinces to pick them (again to put one back); they are ringed on the map.");
+        if self.picked.is_empty() {
+            return None;
+        }
+        let shown: Vec<String> = self.picked.iter().take(12).map(|p| p.to_string()).collect();
+        let more = if self.picked.len() > 12 { format!(" and {} more", self.picked.len() - 12) } else { String::new() };
+        ui.label(format!("Picked: provinces {}{more}", shown.join(", ")));
+        let picked = self.picked.clone();
+        let mut action = None;
+        ui.horizontal_wrapped(|ui| {
+            egui::ComboBox::from_id_salt("give to realm").selected_text(names.realm(self.give_to)).show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.give_to, NONE, "nobody");
+                for r in (0..w.realms.count() as u32).filter(|&r| w.realms.alive(r)) {
+                    ui.selectable_value(&mut self.give_to, r, names.realm(r));
+                }
+            });
+            if ui.button("give them to it").on_hover_text("an edit: the land changes hands at once; an occupation ends unless the occupier is at war with the new owner").clicked() {
+                action = Some(Action::Edit(Edit::SetOwner { provinces: picked.clone(), realm: self.give_to }));
+            }
+        });
+        if let Some(r) = selected.and_then(|s| w.owner.get(s as usize).copied()).filter(|&r| r != NONE)
+            && ui.button(format!("give them to {}, the selected province's realm", names.realm(r))).clicked()
+        {
+            action = Some(Action::Edit(Edit::SetOwner { provinces: picked.clone(), realm: r }));
+        }
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("make them a new realm").on_hover_text("an edit: a new realm at peace with everyone; it gets a ruler at the next month's start").clicked() {
+                action = Some(Action::Edit(Edit::NewRealm { provinces: picked.clone() }));
+            }
+            if ui.button("have them break away").on_hover_text("a poke: tomorrow they break away as a new realm at war with the realm they leave, as rebels do (all of one realm, not its capital)").clicked() {
+                action = Some(Action::Poke(Event::Breakaway { provinces: picked.clone() }));
+            }
+            if ui.small_button("let go of them").clicked() {
+                self.picked.clear();
+            }
+        });
+        if action.is_some() {
+            self.picked.clear();
+        }
+        action
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_realms_tool_picks_and_an_order_takes_the_next_click() {
+        let mut e = Editor { tool: Tool::Realms, ..Editor::default() };
+        assert!(!e.draws(), "the realms tool clicks, it doesn't draw");
+        assert_eq!(e.click(Some(4), None), Some(Clicked::Picked));
+        assert_eq!(e.click(Some(9), None), Some(Clicked::Picked));
+        assert_eq!(e.click(Some(4), None), Some(Clicked::Picked));
+        assert_eq!(e.picked, vec![9], "a second click puts a province back");
+        assert_eq!(e.click(None, None), None, "a click at sea does nothing");
+
+        // An order waiting for where to go takes the next click on a province, whatever the tool.
+        e.march = Some((2, 9));
+        assert!(!e.draws());
+        assert_eq!(e.click(None, None), None);
+        assert_eq!(e.click(Some(11), None), Some(Clicked::Poke(Event::March { realm: 2, from: 9, to: 11 })));
+        assert_eq!((e.march, &e.picked[..]), (None, &[9][..]));
+        e.tool = Tool::Inspect;
+        assert_eq!(e.click(Some(3), None), None, "the inspect tool selects");
     }
 }

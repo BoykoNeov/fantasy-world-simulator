@@ -16,6 +16,8 @@ pub mod diplomacy;
 mod border_trade_tests;
 pub mod economy;
 pub mod edit;
+#[cfg(test)]
+mod editor_tests;
 pub mod events;
 pub mod export;
 pub mod fields;
