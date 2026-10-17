@@ -130,6 +130,7 @@ static MUSTER: Manifest = Manifest {
         "army.next",
         "army.days_left",
         "army.siege_days",
+        "army.supply",
     ],
     requests: &["pop.size"],
     asks: &[],

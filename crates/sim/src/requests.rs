@@ -79,6 +79,26 @@ pub enum Cause {
     Bounty,
     /// Soldiers killed in battle, or lost at sea when their fleet broke.
     Killed,
+    // The first wave of modules built side by side (Oct 17), a block each.
+    // Logistics and support.
+    /// Coins a realm pays its soldiers from its treasury into their home provinces (a move).
+    Wages,
+    /// Coins a realm carries off from a province it took by siege into its treasury (a move).
+    Plunder,
+    /// Food soldiers take from the province they stand in, beyond their own supply.
+    Foraging,
+    /// Soldiers dead of camp disease and winter on campaign.
+    Attrition,
+    // Research.
+    /// Coins a realm pays its scholars from its treasury into its provinces (a move).
+    Scholars,
+    // Culture (shifts: nobody is made or lost, so no flow).
+    /// People who took up another culture.
+    Assimilated,
+    /// People whose culture split off as a new one.
+    SplitOff,
+    /// People given their culture when the world was made.
+    Placed,
 }
 
 /// Where a request's grant goes when it is moved rather than used up: one value of a field the
@@ -89,6 +109,17 @@ pub struct Dest {
     pub field: FieldId,
     pub entity: u32,
 }
+
+/// What a shift request asks: people whose value of a pop key is `from` take the value `to`,
+/// keeping everything else about them (see [`serve_shifts`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Shift {
+    pub from: u16,
+    pub to: u16,
+}
+
+/// The pop keys people can shift between.
+pub const SHIFT_FIELDS: &[&str] = &["pop.culture", "pop.religion", "pop.species"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
@@ -110,6 +141,9 @@ pub struct Request {
     pub tag: u64,
     /// Move the grant here instead of using it up (see [`Dest`]).
     pub to: Option<Dest>,
+    /// For a request on a pop key (`pop.culture`…): `take` people of the province `entity` move
+    /// from one value of it to another (see [`Shift`]).
+    pub shift: Option<Shift>,
 }
 
 impl Request {
@@ -120,9 +154,11 @@ impl Request {
         matches!(self.field.def().tier, Tier::Province | Tier::ProvinceGood | Tier::Pop).then_some(self.entity)
     }
 
-    /// The fixed order an owner applies its queue in: field, entity, good, priority, requester, tag.
-    pub fn order_key(&self, requester_rank: usize) -> (FieldId, u32, Option<NodeId>, Priority, usize, u64) {
-        (self.field, self.entity, self.good, self.priority, requester_rank, self.tag)
+    /// The fixed order an owner applies its queue in: field, entity, good, the value a shift is
+    /// from, priority, requester, tag.
+    #[allow(clippy::type_complexity)]
+    pub fn order_key(&self, requester_rank: usize) -> (FieldId, u32, Option<NodeId>, Option<u16>, Priority, usize, u64) {
+        (self.field, self.entity, self.good, self.shift.map(|s| s.from), self.priority, requester_rank, self.tag)
     }
 }
 
@@ -193,6 +229,87 @@ pub fn serve_people(sizes: &mut [u64], province: &[u32], requests: &[Request], c
             }
             cx.grant(r, g);
         }
+    }
+}
+
+/// For the owner of the pops: serve today's shift requests (see [`Shift`]), each naming a province
+/// and one of the pop keys in [`SHIFT_FIELDS`]. The requests from one value of one key in one
+/// province share that province's pops with that value as one pool, rationed by [`ration`]; each
+/// grant is taken from those pops in proportion to their size, by [`split_proportional`]. A shift
+/// to the value it is from is granted nothing. People taken from a pop join the province's pop
+/// that has the same keys but the new value (the lowest numbered, empty ones too); if there is
+/// none, the whole pop takes the new value when all of it moves, or else a new pop is added.
+/// Empty pops stay, to be used again: grants and saved edits name pops by number. Requests come in
+/// the owner's fixed order, so each pool's run together.
+pub fn serve_shifts(pops: &mut crate::pops::Pops, requests: &[Request], cx: &mut Ctx) {
+    let mut pops_of: std::collections::BTreeMap<u32, Vec<usize>> = requests.iter().map(|r| (r.entity, Vec::new())).collect();
+    for (k, p) in pops.province.iter().enumerate() {
+        if let Some(v) = pops_of.get_mut(p) {
+            v.push(k);
+        }
+    }
+    let pool = |pops: &crate::pops::Pops, of: &[usize], field: &str, from: u16| -> Vec<usize> { of.iter().copied().filter(|&k| key(pops, field, k) == from && pops.size[k] > 0).collect() };
+    for run in requests.chunk_by(|a, b| (a.field, a.entity, a.shift.map(|s| s.from)) == (b.field, b.entity, b.shift.map(|s| s.from))) {
+        let field = run[0].field.def().name;
+        assert!(SHIFT_FIELDS.contains(&field), "{field} is not a pop key people can shift between");
+        let from = run[0].shift.expect("requests on pop keys shift people").from;
+        let of = pops_of.get_mut(&run[0].entity).expect("listed above");
+        let wants: Vec<_> = run.iter().map(|r| (r.priority, if r.shift.is_some_and(|s| s.to == from) { 0 } else { r.take }, r.tag)).collect();
+        let grants = ration(pool(pops, of, field, from).iter().map(|&k| pops.size[k]).sum(), &wants);
+        for (r, g) in run.iter().zip(grants) {
+            // Looked up again: a pop the request before moved whole has left the pool.
+            let source = pool(pops, of, field, from);
+            let held: Vec<u64> = source.iter().map(|&k| pops.size[k]).collect();
+            let ids: Vec<u64> = source.iter().map(|&k| k as u64).collect();
+            let to = r.shift.expect("checked above").to;
+            for (&k, part) in source.iter().zip(split_proportional(g, &held, &ids)) {
+                if part > 0 {
+                    shift_part(pops, of, field, k, part, to);
+                }
+            }
+            cx.grant(r, g);
+        }
+    }
+}
+
+/// Pop `k`'s value of the pop key `field`.
+fn key(pops: &crate::pops::Pops, field: &str, k: usize) -> u16 {
+    match field {
+        "pop.culture" => pops.culture[k],
+        "pop.religion" => pops.religion[k],
+        "pop.species" => pops.species[k],
+        other => unreachable!("{other} is not a pop key people can shift between"),
+    }
+}
+
+/// Move `n` of pop `k`'s people to the value `to` of `field`; `of` is its province's pops.
+fn shift_part(pops: &mut crate::pops::Pops, of: &mut Vec<usize>, field: &str, k: usize, n: u64, to: u16) {
+    let same = |pops: &crate::pops::Pops, j: usize| {
+        key(pops, field, j) == to
+            && ["pop.culture", "pop.religion", "pop.species"].iter().filter(|&&f| f != field).all(|&f| key(pops, f, j) == key(pops, f, k))
+            && pops.class[j] == pops.class[k]
+    };
+    if let Some(j) = of.iter().copied().filter(|&j| j != k && same(pops, j)).min() {
+        pops.size[k] -= n;
+        pops.size[j] += n;
+    } else if n == pops.size[k] {
+        set_key(pops, field, k, to);
+    } else {
+        pops.size[k] -= n;
+        let j = pops.size.len();
+        pops.push(pops.province[k], n);
+        (pops.species[j], pops.culture[j], pops.religion[j], pops.class[j]) = (pops.species[k], pops.culture[k], pops.religion[k], pops.class[k]);
+        set_key(pops, field, j, to);
+        of.push(j);
+    }
+}
+
+fn set_key(pops: &mut crate::pops::Pops, field: &str, k: usize, to: u16) {
+    match field {
+        "pop.culture" => pops.culture[k] = to,
+        "pop.religion" => pops.religion[k] = to,
+        "pop.species" => pops.species[k] = to,
+        other => unreachable!("{other} is not a pop key people can shift between"),
     }
 }
 
@@ -286,5 +403,97 @@ mod tests {
         assert_eq!(ration(5, &[(Essential, 10, 8), (Essential, 10, 3)]), vec![2, 3]);
         // Nothing available.
         assert_eq!(ration(0, &[(Critical, 10, 0)]), vec![0]);
+    }
+
+    /// Shift requests, served by [`serve_shifts`]: a culture shift `from` → `to` of `take` people
+    /// in `province`, on `field`.
+    fn shift(field: &str, province: u32, from: u16, to: u16, take: u64, priority: Priority, tag: u64) -> Request {
+        Request {
+            day: 0,
+            requester: Slot::Culture,
+            field: crate::fields::known(field),
+            entity: province,
+            good: None,
+            take,
+            priority,
+            cause: Cause::Assimilated,
+            tag,
+            to: None,
+            shift: Some(Shift { from, to }),
+        }
+    }
+
+    /// Serve `requests` (sorted as the engine sorts them) and return the grants.
+    fn serve(pops: &mut crate::pops::Pops, mut requests: Vec<Request>) -> Vec<u64> {
+        requests.sort_by_key(|r| r.order_key(0));
+        let (calendar, goods) = (crate::calendar::Calendar::standard(), crate::fields::Goods::default());
+        let mut out = crate::module::Outbox::default();
+        let mut cx = Ctx { day: 0, seed: 1, calendar: &calendar, goods: &goods, slot: Slot::Population, out: &mut out, trace: None };
+        serve_shifts(pops, &requests, &mut cx);
+        assert!(out.flows.is_empty(), "nobody is made or lost");
+        out.applied.iter().map(|a| a.1).collect()
+    }
+
+    /// People per (province, species, culture, religion, class), the totals a shift on one key must
+    /// keep for the others.
+    fn totals(pops: &crate::pops::Pops, without: &str) -> std::collections::BTreeMap<(u32, u16, u16, u16, u8), u64> {
+        let mut t = std::collections::BTreeMap::new();
+        for k in 0..pops.size.len() {
+            let c = if without == "pop.culture" { 0 } else { pops.culture[k] };
+            let r = if without == "pop.religion" { 0 } else { pops.religion[k] };
+            *t.entry((pops.province[k], pops.species[k], c, r, pops.class[k])).or_insert(0) += pops.size[k];
+        }
+        t
+    }
+
+    #[test]
+    fn shifts_move_people_between_values_of_one_key_exactly() {
+        let mut pops = crate::pops::Pops::default();
+        // Province 3: 600 of culture 0 in two pops (religions 0 and 1), 50 of culture 2.
+        pops.push(3, 400);
+        pops.push(3, 200);
+        pops.religion[1] = 1;
+        pops.push(3, 50);
+        pops.culture[2] = 2;
+        // Province 5: 100 of culture 0.
+        pops.push(5, 100);
+        let (before, people) = (totals(&pops, "pop.culture"), pops.size.iter().sum::<u64>());
+
+        // 300 of culture 0 in province 3 take culture 2: taken from both pops by size (200 and
+        // 100); religion 0's join the existing pop of culture 2, religion 1's make a new pop.
+        let g = serve(&mut pops, vec![shift("pop.culture", 3, 0, 2, 300, Normal, 0)]);
+        assert_eq!(g, vec![300]);
+        assert_eq!(pops.size, vec![200, 100, 250, 100, 100]);
+        assert_eq!((pops.culture[4], pops.religion[4], pops.province[4]), (2, 1, 3));
+        assert_eq!((totals(&pops, "pop.culture"), pops.size.iter().sum::<u64>()), (before.clone(), people));
+
+        // All of province 5 takes culture 7: no pop has it, so the pop takes it in place.
+        assert_eq!(serve(&mut pops, vec![shift("pop.culture", 5, 0, 7, 100, Normal, 0)]), vec![100]);
+        assert_eq!((pops.size.len(), pops.culture[3], pops.size[3]), (5, 7, 100));
+
+        // Asking for more than there is: the essential request first, the normal ones share the
+        // rest by what they asked. A shift to the value it is from gets nothing.
+        let mut pops2 = crate::pops::Pops::default();
+        pops2.push(1, 100);
+        let g = serve(
+            &mut pops2,
+            vec![shift("pop.culture", 1, 0, 4, 60, Essential, 0), shift("pop.culture", 1, 0, 5, 60, Normal, 1), shift("pop.culture", 1, 0, 6, 20, Normal, 2), shift("pop.culture", 1, 0, 0, 9, Normal, 3)],
+        );
+        assert_eq!(g, vec![60, 30, 10, 0]);
+        assert_eq!(pops2.size.iter().sum::<u64>(), 100);
+        // The last 10 of culture 0 took culture 6 in place, so no pop was left empty.
+        assert_eq!((pops2.culture[0], pops2.size[0], pops2.size.len()), (6, 10, 3));
+        // An empty pop is used again: people taking its values join it.
+        let mut pops3 = crate::pops::Pops::default();
+        pops3.push(1, 100);
+        pops3.push(1, 0);
+        pops3.culture[1] = 3;
+        let g = serve(&mut pops3, vec![shift("pop.culture", 1, 0, 3, 40, Normal, 0)]);
+        assert_eq!((g, pops3.size.clone()), (vec![40], vec![60, 40]));
+
+        // The same on religion keeps every culture's people.
+        let before = totals(&pops, "pop.religion");
+        serve(&mut pops, vec![shift("pop.religion", 3, 1, 0, 150, Normal, 0)]);
+        assert_eq!(totals(&pops, "pop.religion"), before);
     }
 }

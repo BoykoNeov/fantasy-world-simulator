@@ -12,7 +12,7 @@
 use crate::calendar::Calendar;
 use crate::events::{Event, EventKind};
 use crate::fields::{self, FieldId, Goods, Quantity, Tier};
-use crate::requests::{Cause, Dest, Priority, Request};
+use crate::requests::{Cause, Dest, Priority, Request, Shift};
 use crate::taxonomy::NodeId;
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ pub enum Slot {
     Diplomacy,
     /// Armies and fleets: raising, moving, fighting (step 7).
     Warfare,
+    /// Realms' knowledge: techs studied and learned (step 9).
+    Research,
+    /// Peoples: cultures spreading and people taking them up (step 9).
+    Culture,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +184,7 @@ impl Ctx<'_> {
     /// the grant arrives tomorrow. `tag` comes back with the grant (e.g. which pop asked).
     pub fn request(&mut self, field: FieldId, entity: u32, take: u64, priority: Priority, cause: Cause, tag: u64) {
         debug_assert!(!field.def().tier.per_good(), "per-good fields are asked with ask_good");
-        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, good: None, take, priority, cause, tag, to: None });
+        self.out.requests.push(Request { day: self.day, requester: self.slot, field, entity, good: None, take, priority, cause, tag, to: None, shift: None });
     }
 
     /// Ask the owner of the per-good `field` for `take` of the goods under `good` in `province`
@@ -188,7 +192,7 @@ impl Ctx<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn ask_good(&mut self, field: FieldId, province: u32, good: NodeId, take: u64, priority: Priority, cause: Cause, tag: u64) {
         debug_assert!(field.def().tier.per_good());
-        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: Some(good), take, priority, cause, tag, to: None };
+        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: Some(good), take, priority, cause, tag, to: None, shift: None };
         self.out.requests.push(r);
     }
 
@@ -199,7 +203,17 @@ impl Ctx<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn ask_move(&mut self, field: FieldId, entity: u32, good: Option<NodeId>, take: u64, to: Dest, priority: Priority, cause: Cause, tag: u64) {
         debug_assert_eq!(field.def().tier.per_good(), good.is_some(), "per-good fields name a good, others don't");
-        let r = Request { day: self.day, requester: self.slot, field, entity, good, take, priority, cause, tag, to: Some(to) };
+        let r = Request { day: self.day, requester: self.slot, field, entity, good, take, priority, cause, tag, to: Some(to), shift: None };
+        self.out.requests.push(r);
+    }
+
+    /// Ask the owner of the pops to move `take` people of `province` whose value of the pop key
+    /// `field` (`pop.culture`, `pop.religion` or `pop.species`) is `from` to the value `to`, all
+    /// else about them the same (see [`Shift`]). Nobody is made or lost, so no flow is booked.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ask_shift(&mut self, field: FieldId, province: u32, from: u16, to: u16, take: u64, priority: Priority, cause: Cause, tag: u64) {
+        debug_assert!(crate::requests::SHIFT_FIELDS.contains(&field.def().name), "{} is not a pop key people can shift between", field.def().name);
+        let r = Request { day: self.day, requester: self.slot, field, entity: province, good: None, take, priority, cause, tag, to: None, shift: Some(Shift { from, to }) };
         self.out.requests.push(r);
     }
 

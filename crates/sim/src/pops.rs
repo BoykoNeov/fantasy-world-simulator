@@ -13,7 +13,7 @@
 use crate::events::{Event, EventKind};
 use crate::fields::{known, Quantity};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
-use crate::requests::{serve_people, Cause, Priority, Request};
+use crate::requests::{serve_people, serve_shifts, Cause, Priority, Request};
 use crate::rng::{purpose, round_stochastic, Module as Rng};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -118,9 +118,17 @@ impl Module for Population {
         }
     }
 
-    /// People asked for by province (soldiers): taken from its pops alike.
+    /// People asked for by province (soldiers): taken from its pops alike. Then people who take up
+    /// another culture or religion (shifts), from those left.
     fn apply_requests(&mut self, w: &mut World, requests: &[Request], cx: &mut Ctx) {
-        serve_people(&mut w.pops.size, &w.pops.province, requests, cx);
+        let size = known("pop.size");
+        let (taken, shifts): (Vec<Request>, Vec<Request>) = requests.iter().partition(|r| r.field == size);
+        if !taken.is_empty() {
+            serve_people(&mut w.pops.size, &w.pops.province, &taken, cx);
+        }
+        if !shifts.is_empty() {
+            serve_shifts(&mut w.pops, &shifts, cx);
+        }
     }
 
     /// A month's eating was granted (in full or not): settle the month's births and deaths. Or

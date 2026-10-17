@@ -6,6 +6,7 @@ use crate::calendar::{Calendar, CalendarDef};
 use crate::characters::{RulerParams, Rulers};
 use crate::diplomacy::{TreatyParams, WarParams, WarState};
 use crate::climate::{ClimateParams, LatitudeClimate, NullClimate};
+use crate::culture::{Assimilation, CultureParams};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::{RiverParams, Rivers};
 use crate::markets::{MarketParams, Markets};
@@ -13,6 +14,7 @@ use crate::module::{Module, Slot};
 use crate::pops::{PopParams, Population};
 use crate::provinces::{ProvinceGrowth, ProvinceParams};
 use crate::realms::{Founding, RealmParams};
+use crate::research::{Research, ResearchParams};
 use crate::taxonomy::TreeDef;
 use crate::terrain::{NoiseTerrain, NullTerrain, TerrainParams};
 use crate::warfare::{TroopParams, Troops};
@@ -93,6 +95,14 @@ pub struct ModuleConfig {
     /// 7). Needs realms. On by default, off in files that don't name it, as realms are.
     #[serde(default)]
     pub warfare: Option<TroopParams>,
+    /// Research v1, "tree": realms study and learn techs (step 9). Needs realms. Off by default
+    /// while it is built, and in files that don't name it.
+    #[serde(default)]
+    pub research: Option<ResearchParams>,
+    /// Culture v1, "assimilation": peoples spread and people take up the culture that pulls hardest
+    /// (step 9). Needs Population. Off by default while it is built, and in files that don't name it.
+    #[serde(default)]
+    pub culture: Option<CultureParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
     /// where an edit makes the map anew). Scenario files written before they were settings get the
     /// numbers the modules had then, so they make the same world.
@@ -123,6 +133,8 @@ impl Default for ModuleConfig {
             characters: Some(RulerParams::default()),
             diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
             warfare: Some(TroopParams::default()),
+            research: None,
+            culture: None,
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -185,6 +197,13 @@ impl ModuleConfig {
         if let Some(params) = &self.warfare {
             // Soldiers use up goods and are paid for only where the world keeps them.
             out.push(Box::new(Troops::new(params.clone(), self.markets.is_some())));
+        }
+        if let Some(params) = &self.research {
+            // Scholars are paid only where the world keeps coins.
+            out.push(Box::new(Research::new(params.clone(), self.markets.is_some())));
+        }
+        if let Some(params) = &self.culture {
+            out.push(Box::new(Assimilation { params: params.clone() }));
         }
         out
     }

@@ -35,6 +35,13 @@ pub enum Tier {
     /// One entry per pair of realms that know each other (step 7, Diplomacy "treaties"): what each
     /// thinks of the other. Numbers are never reused.
     Relation,
+    /// One entry per realm per tech of the research tree (Research "tree"), laid out like
+    /// [`Tier::RealmGood`]: realm `r`'s value of tech `t` is entity `r * techs + t`, where `techs`
+    /// is the length of [`World::techs`].
+    RealmTech,
+    /// One entry per culture (Culture "assimilation"). Numbers are never reused: a culture with
+    /// nobody left keeps its entry.
+    Culture,
 }
 
 impl Tier {
@@ -369,6 +376,21 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("relation.b", Tier::Relation, "realm id, the higher of the two", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("relation.a_of_b", Tier::Relation, "what realm a thinks of realm b, -100 to 100", -100.0, 100.0) },
     FieldDef { default: Default::Empty, ..def("relation.b_of_a", Tier::Relation, "what realm b thinks of realm a, -100 to 100", -100.0, 100.0) },
+    // The first wave of modules built side by side (Oct 17): each module's fields in a block of its
+    // own, in this order.
+    // Logistics and support (Warfare "campaigns").
+    FieldDef { default: Default::NoOne, ..def("province.besieger", Tier::Province, "realm id besieging it, none where nobody does", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("army.supply", Tier::Army, "0 in its own land, 1 fed along a supply line, 2 foraging", 0.0, 2.0) },
+    // Research "tree".
+    FieldDef { default: Default::Zero, ..def("realm.knowledge", Tier::Realm, "thousandths of a year of study banked toward the tech being studied", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::NoOne, ..def("realm.studying", Tier::Realm, "tech being studied (its column), none when nothing is", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::NoOne, ..def("realm.tech", Tier::RealmTech, "day the realm learned the tech, none if it doesn't know it", -UNBOUNDED, UNBOUNDED) },
+    // Culture "assimilation".
+    FieldDef { default: Default::Empty, ..def("culture.parent", Tier::Culture, "culture id it split from, none for a starting culture", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("culture.born", Tier::Culture, "day it began (0 for a starting culture)", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("culture.hearth", Tier::Culture, "province id where it began", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("culture.died", Tier::Culture, "day its last person was gone, none while it lives", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::NoOne, ..def("realm.culture", Tier::Realm, "culture id of the realm: its capital's main culture, none if none", -UNBOUNDED, UNBOUNDED) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {
@@ -564,6 +586,7 @@ mod tests {
             cause: crate::requests::Cause::Eating,
             tag: 0,
             to: None,
+            shift: None,
         };
         assert_eq!(goods.quantity_asked(&ask("province.stock", Some("raw"))), Some(Quantity::Goods(1)));
         assert_eq!(goods.quantity_asked(&ask("province.stock", Some("fish"))), Some(Quantity::Goods(0)));

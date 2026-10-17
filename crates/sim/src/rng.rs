@@ -25,6 +25,10 @@ pub enum Module {
     Warfare = 9,
     /// Diplomacy: realms choosing war.
     Diplomacy = 10,
+    /// Research: which tech a realm studies next.
+    Research = 11,
+    /// Culture: where cultures start, people taking them up, splits, names.
+    Culture = 12,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

@@ -1748,7 +1748,7 @@ impl MapApp {
                     }
                     // In the goods table below; realms and rulers are on the realm's page above;
                     // armies have a section of their own below.
-                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => {}
+                    Tier::ProvinceGood | Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => {}
                 }
             }
         });

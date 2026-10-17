@@ -120,6 +120,9 @@ pub struct Armies {
     pub days_left: Vec<f32>,
     /// Days it has besieged the province it stands in (field `army.siege_days`).
     pub siege_days: Vec<u32>,
+    /// How it is fed: 0 in its own land, 1 along a supply line, 2 foraging (field `army.supply`,
+    /// logistics).
+    pub supply: Vec<u8>,
 }
 
 impl Armies {
@@ -141,6 +144,7 @@ impl Armies {
         self.next.push(NONE);
         self.days_left.push(0.0);
         self.siege_days.push(0);
+        self.supply.push(0);
         a
     }
 
@@ -253,6 +257,16 @@ pub struct TroopParams {
     pub tree: TreeDef,
     /// Each kind, by its name in the tree.
     pub kinds: BTreeMap<String, KindParams>,
+    // Logistics and support: parts that can be switched on or off (Warfare "campaigns" has all
+    // four). Off in files that don't name them, which then make the worlds they made.
+    #[serde(default)]
+    pub supply: Option<crate::logistics::SupplyParams>,
+    #[serde(default)]
+    pub seasons: Option<crate::logistics::SeasonParams>,
+    #[serde(default)]
+    pub pay: Option<crate::logistics::PayParams>,
+    #[serde(default)]
+    pub sieges: Option<crate::logistics::SiegeParams>,
 }
 
 impl Default for TroopParams {
@@ -683,6 +697,7 @@ static V1: Manifest = Manifest {
         "army.next",
         "army.days_left",
         "army.siege_days",
+        "army.supply",
     ],
     requests: &["pop.size", "province.stock"],
     asks: &["food"],

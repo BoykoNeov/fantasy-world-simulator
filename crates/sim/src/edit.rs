@@ -120,6 +120,16 @@ pub enum Edit {
     /// Set company `army`'s soldiers (0 empties it: they are gone) and its troop kind. Carried out by
     /// the armies module.
     SetArmy { army: u32, size: u64, kind: String },
+    // The first wave of modules built side by side (Oct 17), a block each.
+    /// A living realm learns (`known`) or forgets tech `tech`, named as the research tree names it.
+    /// Carried out by the research module (it keeps the tree).
+    SetTech { realm: u32, tech: String, known: bool },
+    /// Every person in the provinces takes culture `culture`, one that exists. Carried out by the
+    /// culture module.
+    SetCulture { provinces: Vec<u32>, culture: u32 },
+    /// A new culture is born in the provinces, and everyone there takes it. Carried out by the
+    /// culture module.
+    NewCulture { provinces: Vec<u32> },
 }
 
 /// One setting changed, by its key in the configuration (see [`crate::settings`]).
@@ -298,6 +308,10 @@ impl Edit {
                 }
                 count("army.size", size)
             }
+            // Checked by the modules that carry them out ([`crate::module::Module::check_edit`]);
+            // with those off, there is nothing to set.
+            Edit::SetTech { .. } => Err("no module keeps realms' knowledge".into()),
+            Edit::SetCulture { .. } | Edit::NewCulture { .. } => Err("no module keeps cultures".into()),
         }
     }
 
@@ -325,7 +339,10 @@ impl Edit {
             | Edit::SetTraits { .. }
             | Edit::NewRuler { .. }
             | Edit::PlaceArmy { .. }
-            | Edit::SetArmy { .. } => return,
+            | Edit::SetArmy { .. }
+            | Edit::SetTech { .. }
+            | Edit::SetCulture { .. }
+            | Edit::NewCulture { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -437,6 +454,7 @@ impl Edit {
             }
             // Carried out by the modules that keep them ([`crate::module::Module::carry_out`]).
             Edit::NewRuler { .. } | Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => {}
+            Edit::SetTech { .. } | Edit::SetCulture { .. } | Edit::NewCulture { .. } => {}
         }
         flows
     }
@@ -469,6 +487,8 @@ impl Edit {
             Edit::SetRealmStock { realm, .. } | Edit::NewRuler { realm, .. } => w.realms.capital.get(realm as usize).copied().filter(|&c| c != NONE).into_iter().collect(),
             Edit::PlaceArmy { province, .. } => vec![province],
             Edit::SetArmy { army, .. } => w.armies.province.get(army as usize).copied().into_iter().collect(),
+            Edit::SetTech { realm, .. } => w.realms.capital.get(realm as usize).copied().filter(|&c| c != NONE).into_iter().collect(),
+            Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => provinces.clone(),
             Edit::River { ref path, .. } => {
                 let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -529,6 +549,10 @@ impl Edit {
             Edit::NewRuler { realm, age, .. } => format!("a new ruler, aged {age:.0}, put on realm {realm}'s throne"),
             Edit::PlaceArmy { province, realm, kind, size } => format!("{size} soldiers ({kind}) of realm {realm} placed in province {province}"),
             Edit::SetArmy { army, size, kind } => format!("company {army} set to {size} soldiers ({kind})"),
+            Edit::SetTech { realm, tech, known: true } => format!("realm {realm} learns {tech}"),
+            Edit::SetTech { realm, tech, known: false } => format!("realm {realm} forgets {tech}"),
+            Edit::SetCulture { provinces, culture } => format!("everyone in {} provinces takes culture {culture}", provinces.len()),
+            Edit::NewCulture { provinces } => format!("a new culture born in {} provinces", provinces.len()),
         }
     }
 
@@ -545,6 +569,8 @@ impl Edit {
             Edit::SetTraits { .. } => &["character.martial"],
             Edit::NewRuler { .. } => &["realm.ruler"],
             Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => &["army.size"],
+            Edit::SetTech { .. } => &["realm.tech"],
+            Edit::SetCulture { .. } | Edit::NewCulture { .. } => &["culture.hearth"],
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } | Edit::Settings { .. } => &[],
         }
     }
@@ -1081,7 +1107,14 @@ impl MapChange {
                 crate::fields::Tier::Province => out.extend(at.iter().copied()),
                 crate::fields::Tier::ProvinceGood => out.extend(at.iter().map(|&e| w.goods.split(e as usize).0 as u32)),
                 crate::fields::Tier::Army => out.extend(at.iter().filter_map(|&a| w.armies.province.get(a as usize).copied())),
-                crate::fields::Tier::Pop | crate::fields::Tier::Realm | crate::fields::Tier::RealmGood | crate::fields::Tier::Character | crate::fields::Tier::War | crate::fields::Tier::Relation => {}
+                crate::fields::Tier::Pop
+                | crate::fields::Tier::Realm
+                | crate::fields::Tier::RealmGood
+                | crate::fields::Tier::Character
+                | crate::fields::Tier::War
+                | crate::fields::Tier::Relation
+                | crate::fields::Tier::RealmTech
+                | crate::fields::Tier::Culture => {}
             }
             if id.def().name == "cell.province"
                 && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)

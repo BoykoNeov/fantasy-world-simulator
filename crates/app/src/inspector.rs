@@ -300,7 +300,7 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
                 // Realms', armies' and characters' values are not a province's.
-                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => Vec::new(),
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -348,7 +348,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => None,
     }
 }
 
@@ -416,6 +416,8 @@ pub fn slot_name(s: Slot) -> &'static str {
         Slot::Characters => "Characters",
         Slot::Diplomacy => "Diplomacy",
         Slot::Warfare => "Warfare",
+        Slot::Research => "Research",
+        Slot::Culture => "Culture",
     }
 }
 
@@ -443,6 +445,14 @@ fn cause(c: Cause) -> &'static str {
         Cause::Equipped => "equipping soldiers",
         Cause::Bounty => "a bounty for soldiers raised",
         Cause::Killed => "soldiers killed in battle or lost at sea",
+        Cause::Wages => "soldiers' wages",
+        Cause::Plunder => "plunder",
+        Cause::Foraging => "soldiers foraging",
+        Cause::Attrition => "soldiers lost on campaign",
+        Cause::Scholars => "scholars' wages",
+        Cause::Assimilated => "people taking up another culture",
+        Cause::SplitOff => "a culture splitting off",
+        Cause::Placed => "the cultures people started with",
     }
 }
 
@@ -512,6 +522,10 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Breakaway { provinces } => format!("{} province{} to break away", provinces.len(), if provinces.len() == 1 { " is" } else { "s are" }),
         Event::March { realm: r, to, .. } => format!("{}'s field companies here are to march to province {to}", realm(r)),
         Event::Refused { why } => format!("your poke was turned down: {why}"),
+        Event::Discovery { realm: r, tech, .. } => format!("{} learned tech {tech}", realm(r)),
+        Event::CultureBorn { culture, provinces, .. } => format!("culture {culture} was born in {provinces} provinces"),
+        Event::CultureGone { culture } => format!("the last of culture {culture} is gone"),
+        Event::Assimilated { from, to, .. } => format!("the province's main culture changed from {from} to {to}"),
     }
 }
 

@@ -11,6 +11,8 @@
 //! This is for the window and for edits; nothing here runs during a day.
 
 use crate::config::{Config, ModuleConfig};
+use crate::culture::CultureParams;
+use crate::research::ResearchParams;
 use crate::diplomacy::{TreatyParams, WarParams};
 use crate::economy::FoodParams;
 use crate::markets::MarketParams;
@@ -340,6 +342,50 @@ pub static GROUPS: &[Group] = &[
             live("modules.warfare.kinds.*.carry", "carries", "For ships: the soldiers each crewman takes across the sea.", 0.0, 1000.0, "soldiers"),
         ],
     },
+    // The first wave of modules built side by side (Oct 17): a block of groups each. Whoever builds
+    // a module adds its settings inside its own block only.
+    // --- Logistics and support (the four parts of Warfare "campaigns") ---
+    Group {
+        title: "Supply lines and foraging",
+        at: "modules.warfare.supply",
+        help: "Soldiers near their realm's land are fed from home along supply lines; further out they forage, taking food from the land they stand in.",
+        specs: &[],
+    },
+    Group {
+        title: "Winter",
+        at: "modules.warfare.seasons",
+        help: "Far from the equator, winter slows marches, kills soldiers in camp and makes foraging poor.",
+        specs: &[],
+    },
+    Group {
+        title: "Soldiers' pay",
+        at: "modules.warfare.pay",
+        help: "Where the world keeps coins, realms pay their soldiers from the treasury; unpaid soldiers desert.",
+        specs: &[],
+    },
+    Group {
+        title: "Sieges",
+        at: "modules.warfare.sieges",
+        help: "A besieged province raises no soldiers, its trade is cut and its stores stripped, and it falls faster once its food runs low.",
+        specs: &[],
+    },
+    // --- end of logistics ---
+    // --- Research ---
+    Group {
+        title: "Research",
+        at: "modules.research",
+        help: "Realms study and learn techs from a tree; bigger realms and able rulers learn faster, and knowledge spreads from neighbours and trade partners.",
+        specs: &[],
+    },
+    // --- end of research ---
+    // --- Culture ---
+    Group {
+        title: "Culture",
+        at: "modules.culture",
+        help: "Peoples spread over regions when the world is made; over the years people take up the culture of their neighbours and rulers, and cut-off groups become cultures of their own.",
+        specs: &[],
+    },
+    // --- end of culture ---
 ];
 
 /// Parts of modules that can be switched on or off when a world is made.
@@ -347,6 +393,17 @@ pub static SECTIONS: &[Section] = &[
     Section { key: "modules.markets.trade", label: "Trade between provinces", help: "Goods go from a province to a neighbour where they are dearer, for coins. Off: every province lives on what it makes." },
     Section { key: "modules.realms.unrest", label: "Unrest and uprisings", help: "Famine, occupation and troubled successions make provinces restless; restless provinces rise up and may break away." },
     Section { key: "modules.diplomacy.treaties", label: "Realms choose war and peace", help: "Realms think of each other, declare war and make peace themselves (Diplomacy \"treaties\"; needs armies). Off: wars come only from your pokes and rebellions." },
+    // The first wave of modules built side by side (Oct 17): a block each.
+    // --- Logistics and support ---
+    Section { key: "modules.warfare.supply", label: "Supply lines and foraging", help: "Soldiers are fed from home along supply lines, or forage beyond them. Off: soldiers eat where they stand, as they share food with the people there." },
+    Section { key: "modules.warfare.seasons", label: "Winter", help: "Winter slows armies, kills soldiers in camp and stops new attacks far from the equator. Off: war is the same all year." },
+    Section { key: "modules.warfare.pay", label: "Soldiers' pay", help: "Realms pay their soldiers wages from the treasury, where the world keeps coins. Off: soldiers serve unpaid." },
+    Section { key: "modules.warfare.sieges", label: "Sieges in depth", help: "Besieged provinces raise no soldiers, lose their trade and stores, and fall faster when starving. Off: a siege only counts days." },
+    // --- end of logistics ---
+    // --- Research ---
+    // --- end of research ---
+    // --- Culture ---
+    // --- end of culture ---
 ];
 
 /// What in the configuration isn't a setting here, and why: a key, or the start of keys.
@@ -372,6 +429,13 @@ pub static LEFT_OUT: &[(&str, &str)] = &[
     ("modules.warfare.kinds.*.land", "what land suits the kind: part of the troops' content"),
     ("modules.warfare.kinds.*.coast", "whether only coasts raise it: part of the troops' content"),
     ("modules.warfare.kinds.*.good", "which good the kind uses up: part of the troops' content"),
+    // The first wave of modules built side by side (Oct 17): a block each.
+    // --- Logistics and support ---
+    // --- end of logistics ---
+    // --- Research ---
+    // --- end of research ---
+    // --- Culture ---
+    // --- end of culture ---
 ];
 
 /// One setting of a configuration, as it stands.
@@ -432,7 +496,15 @@ pub fn everything() -> ModuleConfig {
         realms: Some(RealmParams::default()),
         characters: Some(Default::default()),
         diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
-        warfare: Some(TroopParams::default()),
+        warfare: Some(TroopParams {
+            supply: Some(Default::default()),
+            seasons: Some(Default::default()),
+            pay: Some(Default::default()),
+            sieges: Some(Default::default()),
+            ..TroopParams::default()
+        }),
+        research: Some(ResearchParams::default()),
+        culture: Some(CultureParams::default()),
         terrain_params: d.terrain_params,
         climate_params: d.climate_params,
         biome_params: d.biome_params,
@@ -468,6 +540,19 @@ pub fn defaults_for(c: &Config) -> Config {
     {
         p.treaties = None;
     }
+    let mut warfare = on(m.warfare.is_some(), all.warfare);
+    if let (Some(p), Some(x)) = (&mut warfare, &m.warfare) {
+        p.supply = p.supply.take().filter(|_| x.supply.is_some());
+        p.seasons = p.seasons.take().filter(|_| x.seasons.is_some());
+        p.pay = p.pay.take().filter(|_| x.pay.is_some());
+        p.sieges = p.sieges.take().filter(|_| x.sieges.is_some());
+    }
+    // --- Research: its parts ---
+    let research = on(m.research.is_some(), all.research);
+    // --- end of research ---
+    // --- Culture: its parts ---
+    let culture = on(m.culture.is_some(), all.culture);
+    // --- end of culture ---
     let world = WorldParams { n: c.world.n, provinces: c.world.provinces, seed: c.world.seed, ..WorldParams::preset(Size::Small, 0) };
     let modules = ModuleConfig {
         terrain: m.terrain,
@@ -479,7 +564,9 @@ pub fn defaults_for(c: &Config) -> Config {
         realms,
         characters: on(m.characters.is_some(), all.characters),
         diplomacy,
-        warfare: on(m.warfare.is_some(), all.warfare),
+        warfare,
+        research,
+        culture,
         ..ModuleConfig::default()
     };
     Config { world, modules, calendar: c.calendar.clone(), goods: c.goods.clone() }

@@ -202,6 +202,29 @@ pub struct World {
     /// The province where each province's uprising began (field `province.uprising`),
     /// [`crate::grid::NONE`] where it is calm.
     pub uprising: Vec<u32>,
+    // The first wave of modules built side by side (Oct 17), a block each.
+    // Logistics and support (Warfare "campaigns").
+    /// The realm besieging each province (field `province.besieger`), [`crate::grid::NONE`] where
+    /// nobody does.
+    pub besieger: Vec<u32>,
+    // Research "tree".
+    /// The techs of the research tree, in the order of `realm.tech`'s columns. Set from the
+    /// configuration when the world is made; empty without Research. It never changes.
+    pub techs: Arc<Vec<String>>,
+    /// Study banked toward the tech each realm is studying, thousandths of a year (field
+    /// `realm.knowledge`).
+    pub realm_knowledge: Vec<u64>,
+    /// The tech each realm is studying, as its column, [`crate::grid::NONE`] for none (field
+    /// `realm.studying`).
+    pub realm_studying: Vec<u32>,
+    /// The day each realm learned each tech, [`crate::grid::NONE`] if it doesn't know it (field
+    /// `realm.tech`, realm by realm, `techs` columns each).
+    pub realm_tech: Vec<u32>,
+    // Culture "assimilation".
+    /// Every culture, living and gone.
+    pub cultures: crate::culture::Cultures,
+    /// Each realm's culture (field `realm.culture`), [`crate::grid::NONE`] for none.
+    pub realm_culture: Vec<u32>,
 }
 
 impl World {
@@ -242,6 +265,13 @@ impl World {
             relations: Relations::default(),
             unrest: Vec::new(),
             uprising: Vec::new(),
+            besieger: Vec::new(),
+            techs: Arc::default(),
+            realm_knowledge: Vec::new(),
+            realm_studying: Vec::new(),
+            realm_tech: Vec::new(),
+            cultures: crate::culture::Cultures::default(),
+            realm_culture: Vec::new(),
         }
     }
 
@@ -368,6 +398,16 @@ impl World {
             "relation.b" => U32(self.relations.b.clone()),
             "relation.a_of_b" => F32(self.relations.a_of_b.clone()),
             "relation.b_of_a" => F32(self.relations.b_of_a.clone()),
+            "province.besieger" => U32(self.besieger.clone()),
+            "army.supply" => U8(self.armies.supply.clone()),
+            "realm.knowledge" => U64(self.realm_knowledge.clone()),
+            "realm.studying" => U32(self.realm_studying.clone()),
+            "realm.tech" => U32(self.realm_tech.clone()),
+            "culture.parent" => U32(self.cultures.parent.clone()),
+            "culture.born" => U64(self.cultures.born.clone()),
+            "culture.hearth" => U32(self.cultures.hearth.clone()),
+            "culture.died" => U64(self.cultures.died.clone()),
+            "realm.culture" => U32(self.realm_culture.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -380,7 +420,14 @@ impl World {
             Tier::Cell => Some(self.grid.cells()),
             // The province count is set by the province fields themselves; pops, realms, armies
             // and characters vary.
-            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War | Tier::Relation => None,
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::Culture => None,
+            Tier::RealmTech => {
+                let k = self.techs.len();
+                if (k == 0 && !data.is_empty()) || (k > 0 && !data.len().is_multiple_of(k)) {
+                    return Err(format!("{}: {} values, not a whole number of rows of {k} techs", def.name, data.len()));
+                }
+                None
+            }
             Tier::ProvinceGood | Tier::RealmGood => {
                 let k = self.goods.stride();
                 if !data.len().is_multiple_of(k) {
@@ -480,6 +527,16 @@ impl World {
             ("relation.b", U32(v)) => self.relations.b = v,
             ("relation.a_of_b", F32(v)) => self.relations.a_of_b = v,
             ("relation.b_of_a", F32(v)) => self.relations.b_of_a = v,
+            ("province.besieger", U32(v)) => self.besieger = v,
+            ("army.supply", U8(v)) => self.armies.supply = v,
+            ("realm.knowledge", U64(v)) => self.realm_knowledge = v,
+            ("realm.studying", U32(v)) => self.realm_studying = v,
+            ("realm.tech", U32(v)) => self.realm_tech = v,
+            ("culture.parent", U32(v)) => self.cultures.parent = v,
+            ("culture.born", U64(v)) => self.cultures.born = v,
+            ("culture.hearth", U32(v)) => self.cultures.hearth = v,
+            ("culture.died", U64(v)) => self.cultures.died = v,
+            ("realm.culture", U32(v)) => self.realm_culture = v,
             _ => return wrong(),
         }
         Ok(())
@@ -585,6 +642,16 @@ impl World {
             ("relation.b", U32(x)) => put(&mut relations.b, at, x),
             ("relation.a_of_b", F32(x)) => put(&mut relations.a_of_b, at, x),
             ("relation.b_of_a", F32(x)) => put(&mut relations.b_of_a, at, x),
+            ("province.besieger", U32(x)) => put(&mut self.besieger, at, x),
+            ("army.supply", U8(x)) => put(&mut armies.supply, at, x),
+            ("realm.knowledge", U64(x)) => put(&mut self.realm_knowledge, at, x),
+            ("realm.studying", U32(x)) => put(&mut self.realm_studying, at, x),
+            ("realm.tech", U32(x)) => put(&mut self.realm_tech, at, x),
+            ("culture.parent", U32(x)) => put(&mut self.cultures.parent, at, x),
+            ("culture.born", U64(x)) => put(&mut self.cultures.born, at, x),
+            ("culture.hearth", U32(x)) => put(&mut self.cultures.hearth, at, x),
+            ("culture.died", U64(x)) => put(&mut self.cultures.died, at, x),
+            ("realm.culture", U32(x)) => put(&mut self.realm_culture, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -607,7 +674,7 @@ impl World {
         }
         // A new province belongs to nobody, nobody occupies it and nobody rises up in it, until
         // whoever made it says otherwise.
-        for v in [&mut self.owner, &mut self.occupier, &mut self.uprising] {
+        for v in [&mut self.owner, &mut self.occupier, &mut self.uprising, &mut self.besieger] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }
@@ -616,7 +683,7 @@ impl World {
 
     /// Give every realm the values other modules than the one that makes realms keep for it: a
     /// row of stores (empty), a ruler and an heir (nobody); and the realm it broke away from
-    /// (none), for realms made by hand. The engine calls it after every stage and edit, so whoever
+    /// (none), for realms made by hand; no study banked, nothing studied or known, no culture. The engine calls it after every stage and edit, so whoever
     /// adds a realm needn't own those, and they are there with their owners off.
     pub fn fit_realm_rows(&mut self) {
         let n = self.realms.count();
@@ -624,10 +691,17 @@ impl World {
         if self.realm_stock.len() < want {
             self.realm_stock.resize(want, 0);
         }
-        for v in [&mut self.realms.ruler, &mut self.realms.heir, &mut self.realms.broke_from] {
+        for v in [&mut self.realms.ruler, &mut self.realms.heir, &mut self.realms.broke_from, &mut self.realm_studying, &mut self.realm_culture] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }
+        }
+        if self.realm_knowledge.len() < n {
+            self.realm_knowledge.resize(n, 0);
+        }
+        let techs = n * self.techs.len();
+        if self.realm_tech.len() < techs {
+            self.realm_tech.resize(techs, crate::grid::NONE);
         }
     }
 
@@ -650,8 +724,8 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province, pop, realm, army, character, war and relation fields agree on their lengths (after a
-    /// load).
+    /// Check that province, pop, realm, army, character, war, relation and culture fields agree on
+    /// their lengths (after a load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
         let pops = self.pops.size.len();
@@ -667,6 +741,8 @@ impl World {
                 Tier::Character => self.characters.count(),
                 Tier::War => self.wars.count(),
                 Tier::Relation => self.relations.count(),
+                Tier::RealmTech => self.realms.count() * self.techs.len(),
+                Tier::Culture => self.cultures.count(),
                 Tier::Cell => continue,
             };
             if len != want {
@@ -690,11 +766,15 @@ impl World {
                 continue;
             }
             let id = FieldId(k as u16);
-            let rows = if matches!(def.tier, Tier::Realm | Tier::RealmGood) { self.realms.count() } else { self.provinces.count };
-            let per_row = if def.tier.per_good() { self.goods.stride() } else { 1 };
+            let rows = if matches!(def.tier, Tier::Realm | Tier::RealmGood | Tier::RealmTech) { self.realms.count() } else { self.provinces.count };
+            let per_row = match def.tier {
+                t if t.per_good() => self.goods.stride(),
+                Tier::RealmTech => self.techs.len(),
+                _ => 1,
+            };
             let data = match (def.default, self.field(id)) {
                 (crate::fields::Default::Zero, FieldData::U64(_)) => FieldData::U64(vec![0; rows * per_row]),
-                (crate::fields::Default::NoOne, FieldData::U32(_)) => FieldData::U32(vec![crate::grid::NONE; rows]),
+                (crate::fields::Default::NoOne, FieldData::U32(_)) => FieldData::U32(vec![crate::grid::NONE; rows * per_row]),
                 (crate::fields::Default::Empty, d) => match d {
                     FieldData::U64(_) => FieldData::U64(Vec::new()),
                     FieldData::U32(_) => FieldData::U32(Vec::new()),

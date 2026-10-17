@@ -36,7 +36,7 @@ pub struct Ledger {
     pub spoiled: u64,
     pub eaten: u64,
     pub births: u64,
-    /// All deaths, starvation and soldiers killed in war included.
+    /// All deaths, starvation, soldiers killed in war and soldiers lost on campaign included.
     pub deaths: u64,
     pub starved: u64,
     /// Soldiers killed in battle or lost at sea.
@@ -64,15 +64,16 @@ impl Ledger {
         let neg = |q, c| (-f.get(q, c)).max(0) as u64;
         let starved = neg(Quantity::People, Cause::Starvation);
         let killed = neg(Quantity::People, Cause::Killed);
+        let attrition = neg(Quantity::People, Cause::Attrition);
         let food_in = |c| food.map_or(0, |q| pos(q, c));
         let food_out = |c| food.map_or(0, |q| neg(q, c));
         let food_net = |c| food.map_or(0, |q| f.get(q, c));
         Ledger {
             produced: food_in(Cause::Harvest),
             spoiled: food_out(Cause::Spoilage),
-            eaten: food_out(Cause::Eating),
+            eaten: food_out(Cause::Eating) + food_out(Cause::Foraging),
             births: pos(Quantity::People, Cause::Births),
-            deaths: neg(Quantity::People, Cause::Deaths) + starved + killed,
+            deaths: neg(Quantity::People, Cause::Deaths) + starved + killed + attrition,
             starved,
             killed,
             food_clamped: food_net(Cause::ContractClamp),
@@ -294,6 +295,11 @@ impl Sim {
             // Creating the starting stocks and people is not a flow, so no conservation check.
             sim.stage(Stage::Init, &[i], |s| vec![(i, s.call(i, |m, w, cx| m.init(w, cx)))]);
         }
+        // Requests made while the world was made (the cultures people start with) are applied
+        // before its first day, so the first day already shows them.
+        if !sim.queue.is_empty() {
+            sim.apply_requests();
+        }
         sim.arrive();
         Ok(sim)
     }
@@ -315,6 +321,7 @@ impl Sim {
         let records = manifests.iter().map(|m| ModuleRecord::of(m)).collect();
         let mut world = World::empty(&config.world);
         world.goods = Arc::new(goods);
+        world.techs = Arc::new(crate::research::tech_names(&config.modules));
         Ok(Sim {
             world,
             calendar,
@@ -1008,7 +1015,7 @@ impl Sim {
             Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
             Tier::Army => self.world.armies.province.get(e as usize) == Some(&t.province),
             // A realm's, a character's or a war's own values are not a province's.
-            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War | Tier::Relation => false,
+            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => false,
         };
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };

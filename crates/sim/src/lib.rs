@@ -11,6 +11,9 @@ pub mod characters;
 pub mod climate;
 pub mod combos;
 pub mod config;
+pub mod culture;
+#[cfg(test)]
+mod culture_tests;
 pub mod diplomacy;
 #[cfg(test)]
 mod border_trade_tests;
@@ -25,6 +28,7 @@ pub mod fields;
 mod goods_tests;
 pub mod grid;
 pub mod hydrology;
+pub mod logistics;
 pub mod markets;
 pub mod module;
 pub mod pops;
@@ -43,6 +47,9 @@ mod troops_tests;
 #[cfg(test)]
 mod army_tests;
 pub mod requests;
+pub mod research;
+#[cfg(test)]
+mod research_tests;
 pub mod rng;
 pub mod routes;
 pub mod save;

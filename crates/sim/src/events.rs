@@ -77,6 +77,18 @@ pub enum Event {
     /// A poke of the player's no longer fits the world, and why (the wars' own pokes are refused
     /// with [`Event::WarRefused`]).
     Refused { why: String },
+    // The first wave of modules built side by side (Oct 17), a block each.
+    // Research.
+    /// Realm `realm` (its capital then `capital`) has learned tech `tech` (its column).
+    Discovery { realm: u32, tech: u16, capital: u32 },
+    // Culture.
+    /// A new culture `culture` has split off from `parent` (or began, with no parent:
+    /// [`crate::grid::NONE`]) in `provinces` provinces around `hearth`.
+    CultureBorn { culture: u32, parent: u32, hearth: u32, provinces: u32 },
+    /// The last person of culture `culture` is gone.
+    CultureGone { culture: u32 },
+    /// Province `province`'s main culture changed from `from` to `to`.
+    Assimilated { province: u32, from: u32, to: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -103,6 +115,10 @@ pub enum EventKind {
     Breakaway,
     March,
     Refused,
+    Discovery,
+    CultureBorn,
+    CultureGone,
+    Assimilated,
 }
 
 impl EventKind {
@@ -113,7 +129,7 @@ impl EventKind {
     /// | --- | --- | --- |
     /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle, KillRuler |
     /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion, Breakaway |
-    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade, March, Refused |
+    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade, March, Refused, Discovery, CultureBorn, CultureGone, Assimilated |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
@@ -121,6 +137,7 @@ impl EventKind {
             EventKind::Famine | EventKind::Drought | EventKind::Succession | EventKind::Occupied | EventKind::Battle | EventKind::KillRuler => 0,
             EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion | EventKind::Breakaway => 1,
             EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed | EventKind::Trade | EventKind::March | EventKind::Refused => 2,
+            EventKind::Discovery | EventKind::CultureBorn | EventKind::CultureGone | EventKind::Assimilated => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -151,6 +168,10 @@ impl Event {
             Event::Breakaway { .. } => EventKind::Breakaway,
             Event::March { .. } => EventKind::March,
             Event::Refused { .. } => EventKind::Refused,
+            Event::Discovery { .. } => EventKind::Discovery,
+            Event::CultureBorn { .. } => EventKind::CultureBorn,
+            Event::CultureGone { .. } => EventKind::CultureGone,
+            Event::Assimilated { .. } => EventKind::Assimilated,
         }
     }
 
@@ -175,6 +196,9 @@ impl Event {
             Event::KillRuler { character } => *character as u64,
             Event::Breakaway { provinces } => provinces.first().copied().unwrap_or(0) as u64,
             Event::Refused { .. } => 0,
+            Event::Discovery { realm, .. } => *realm as u64,
+            Event::CultureBorn { culture, .. } | Event::CultureGone { culture } => *culture as u64,
+            Event::Assimilated { province, .. } => *province as u64,
         }
     }
 
@@ -189,7 +213,9 @@ impl Event {
             | Event::Calmed { province, .. }
             | Event::March { from: province, .. } => Some(*province),
             Event::Breakaway { provinces } => provinces.first().copied(),
-            Event::Succession { capital, .. } | Event::Rebellion { capital, .. } => Some(*capital),
+            Event::Succession { capital, .. } | Event::Rebellion { capital, .. } | Event::Discovery { capital, .. } => Some(*capital),
+            Event::CultureBorn { hearth, .. } => Some(*hearth),
+            Event::Assimilated { province, .. } => Some(*province),
             _ => None,
         }
     }
@@ -269,6 +295,7 @@ mod tests {
                 cause: Cause::Eating,
                 tag: 0,
                 to: None,
+                shift: None,
             },
             granted: 1,
         };
