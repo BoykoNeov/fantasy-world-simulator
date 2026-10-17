@@ -398,9 +398,11 @@ struct Watch {
 
 /// Fields whose top is an ordinary value, not a sign that something piles up against a bound:
 /// kinds and marks (a field company's role is 1 for as long as it marches, a ruler put on the
-/// throne by the player is so for life) and 0-to-100 scales (a ruler may be as greedy as can be).
+/// throne by the player is so for life, a company far in enemy land forages for as long as it stays)
+/// and 0-to-100 scales (a ruler may be as greedy as can be).
 const ORDINARY_AT_TOP: &[&str] = &[
     "army.role",
+    "army.supply",
     "army.kind",
     "character.succession",
     "character.martial",
@@ -787,7 +789,7 @@ mod tests {
         let mut off = ModuleConfig::default();
         off.without_realms();
         assert_eq!(Mix::of(&off), Mix::parse(bare).unwrap());
-        assert_eq!(all_mixes().len(), 48 * 24 * 2);
+        assert_eq!(all_mixes().len(), 48 * 36 * 2);
     }
 
     #[test]

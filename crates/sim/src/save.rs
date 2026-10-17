@@ -76,7 +76,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// edits and settings of logistics, research and culture, and shift requests (a request's new
 /// `shift`, saved in pending grants).
 /// Format 26 (Research merged): Research's settings and its tech tree in the configuration.
-pub const FORMAT_VERSION: u32 = 26;
+/// Format 27 (Logistics merged): Warfare keeps `province.besieger`; its four parts and markets' `siege_stops` in the configuration.
+pub const FORMAT_VERSION: u32 = 27;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

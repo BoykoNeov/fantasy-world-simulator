@@ -220,7 +220,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Realms, &["basic", "off"]),
     (Slot::Characters, &["rulers", "off"]),
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
-    (Slot::Warfare, &["troops", "off"]),
+    (Slot::Warfare, &["troops", "campaigns", "off"]),
     (Slot::Research, &["off", "tree"]),
 ];
 
@@ -251,7 +251,11 @@ impl ModuleConfig {
                 Some(d) if d.treaties.is_some() => "treaties",
                 Some(_) => "wars",
             },
-            Slot::Warfare => on(self.warfare.is_some(), "troops"),
+            Slot::Warfare => match &self.warfare {
+                None => "off",
+                Some(t) if t.supply.is_some() && t.seasons.is_some() && t.pay.is_some() && t.sieges.is_some() => "campaigns",
+                Some(_) => "troops",
+            },
             Slot::Research => on(self.research.is_some(), "tree"),
             _ => return None,
         })
@@ -286,7 +290,21 @@ impl ModuleConfig {
                     }
                 }
             }
-            Slot::Warfare => self.warfare = if on { self.warfare.take().or_else(|| Some(TroopParams::default())) } else { None },
+            Slot::Warfare => {
+                self.warfare = match version {
+                    "off" => None,
+                    _ => {
+                        // "campaigns" is "troops" with the four parts of logistics on.
+                        let mut t = self.warfare.take().unwrap_or_default();
+                        let c = version == "campaigns";
+                        t.supply = if c { t.supply.take().or_else(|| Some(Default::default())) } else { None };
+                        t.seasons = if c { t.seasons.take().or_else(|| Some(Default::default())) } else { None };
+                        t.pay = if c { t.pay.take().or_else(|| Some(Default::default())) } else { None };
+                        t.sieges = if c { t.sieges.take().or_else(|| Some(Default::default())) } else { None };
+                        Some(t)
+                    }
+                }
+            }
             Slot::Research => self.research = if on { self.research.take().or_else(|| Some(ResearchParams::default())) } else { None },
             _ => unreachable!("checked against CHOICES"),
         }
