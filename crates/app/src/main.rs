@@ -221,6 +221,7 @@ impl Options {
                         "realms" => l.realms = x,
                         "unrest" => l.unrest = x,
                         "cultures" => l.cultures = x,
+                        "faiths" => l.faiths = x,
                         "techs" => l.techs = x,
                         "winter" => l.winter = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
@@ -531,12 +532,13 @@ struct MapApp {
     /// What the economy layers show, and the day state and good they were worked out for.
     market: layers::MarketView,
     market_for: Option<(usize, usize)>,
-    /// Cultures and knowledge for the day shown, for the layers that show them, and what they were
-    /// worked out for (the day state, and which of the two layers were on).
+    /// Cultures, faiths, knowledge and winter for the day shown, for the layers that show them, and
+    /// what they were worked out for (the day state, which layers were on, and winter).
     society: layers::SocietyView,
-    society_for: Option<(usize, bool, bool, bool)>,
-    /// The Cultures section's lines, for the day state they were worked out for.
-    culture_lines: Option<(usize, Vec<inspector::CultureLine>)>,
+    society_for: Option<(usize, layers::Wanted, bool)>,
+    /// The Cultures and Faiths sections' lines, for the day state they were worked out for.
+    culture_lines: Option<(usize, Vec<inspector::GroupLine>)>,
+    faith_lines: Option<(usize, Vec<inspector::GroupLine>)>,
     /// Whether the world trades (markets with trade on): the trade layers are offered.
     trades: bool,
     /// The troop kinds, where armies are kept: node, name, whether ships.
@@ -708,6 +710,7 @@ impl MapApp {
             society: layers::SocietyView::default(),
             society_for: None,
             culture_lines: None,
+            faith_lines: None,
             trades,
             table,
             new_world,
@@ -897,14 +900,19 @@ impl MapApp {
             self.market_for = Some(market_key);
             self.tables_for = None;
         }
-        // Cultures, knowledge and winter: for each day state, only while their layers are shown.
-        let (cultures, techs) = (self.layers.cultures > 0.0 && self.cultures_on(), self.layers.techs > 0.0 && self.techs_on());
+        // Cultures, faiths, knowledge and winter: for each day state, only while their layers are
+        // shown.
+        let wanted = layers::Wanted {
+            cultures: self.layers.cultures > 0.0 && self.cultures_on(),
+            faiths: self.layers.faiths > 0.0 && self.religions_on(),
+            techs: self.layers.techs > 0.0 && self.techs_on(),
+        };
         let seasons = self.shown_state.settings.clone();
         let seasons = seasons.warfare.as_ref().and_then(|t| t.seasons.as_ref()).filter(|_| self.layers.winter > 0.0);
-        let society_key = (Arc::as_ptr(&self.shown_state) as usize, cultures, techs, seasons.is_some());
+        let society_key = (Arc::as_ptr(&self.shown_state) as usize, wanted, seasons.is_some());
         if self.society_for != Some(society_key) {
             let winter = seasons.map(|s| (s, sim::logistics::year_part(&self.calendar, self.day())));
-            self.society = layers::SocietyView::of(&self.geo, cultures, techs, winter);
+            self.society = layers::SocietyView::of(&self.geo, wanted, winter);
             self.society_for = Some(society_key);
             self.tables_for = None;
         }
@@ -1230,6 +1238,10 @@ impl MapApp {
             self.cultures_section(ui);
             ui.separator();
         }
+        if self.religions_on() {
+            self.faiths_section(ui);
+            ui.separator();
+        }
 
         ui.label("Edit");
         let edge = self.at_the_edge();
@@ -1279,7 +1291,7 @@ impl MapApp {
         ui.label("Layers");
         let realms = self.realms_on();
         let armies = self.kept().armies;
-        let (cultures, techs) = (self.cultures_on(), self.techs_on());
+        let (cultures, faiths, techs) = (self.cultures_on(), self.religions_on(), self.techs_on());
         let winter = self.shown_state.settings.warfare.as_ref().is_some_and(|t| t.seasons.is_some());
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
@@ -1323,6 +1335,10 @@ impl MapApp {
         if cultures {
             ui.add(egui::Slider::new(&mut l.cultures, 0.0..=1.0).text("cultures"))
                 .on_hover_text("each province in the colour of its main culture (the one most of its people belong to); the more mixed the province, the paler. The province page lists every culture there");
+        }
+        if faiths {
+            ui.add(egui::Slider::new(&mut l.faiths, 0.0..=1.0).text("faiths"))
+                .on_hover_text("each province in the colour of its main faith (the one most of its people follow); the more mixed the province, the paler. The province page lists every faith there");
         }
         if winter {
             ui.add(egui::Slider::new(&mut l.winter, 0.0..=1.0).text("winter"))
@@ -1515,20 +1531,45 @@ impl MapApp {
 
     /// Every living culture, most people first; each a button to the province where it began.
     fn cultures_section(&mut self, ui: &mut egui::Ui) {
-        let open = self.opts.open_sections.iter().any(|s| s == "cultures");
-        let key = Arc::as_ptr(&self.shown_state) as usize;
         let alive = (0..self.geo.cultures.count() as u32).filter(|&c| self.geo.cultures.alive(c)).count();
+        let key = Arc::as_ptr(&self.shown_state) as usize;
+        // Worked out once for each day shown, and only while the section is open.
+        let mut lines = self.culture_lines.take().filter(|c| c.0 == key);
+        let go = self.groups_section(ui, "cultures", &format!("Cultures ({alive} living)"), &mut lines, inspector::cultures, layers::culture_color);
+        self.culture_lines = lines;
+        self.go_to(go);
+    }
+
+    /// Every living faith, most followers first; each a button to the province where it began.
+    fn faiths_section(&mut self, ui: &mut egui::Ui) {
+        let alive = (0..self.geo.religions.count() as u32).filter(|&f| self.geo.religions.alive(f)).count();
+        let key = Arc::as_ptr(&self.shown_state) as usize;
+        let mut lines = self.faith_lines.take().filter(|c| c.0 == key);
+        let go = self.groups_section(ui, "faiths", &format!("Faiths ({alive} living)"), &mut lines, inspector::faiths, layers::faith_color);
+        self.faith_lines = lines;
+        self.go_to(go);
+    }
+
+    /// A Cultures or Faiths section (`id`, as `--open-section` names it): its lines from `make`,
+    /// kept in `lines` for the day shown, each with its colour; the province to go to, if a button
+    /// was clicked.
+    fn groups_section(
+        &self,
+        ui: &mut egui::Ui,
+        id: &str,
+        title: &str,
+        lines: &mut Option<(usize, Vec<inspector::GroupLine>)>,
+        make: fn(&Names, &sim::calendar::Calendar) -> Vec<inspector::GroupLine>,
+        color: fn(u32, u64) -> [u8; 3],
+    ) -> Option<u32> {
+        let open = self.opts.open_sections.iter().any(|s| s == id);
+        let key = Arc::as_ptr(&self.shown_state) as usize;
         let mut go = None;
-        egui::CollapsingHeader::new(format!("Cultures ({alive} living)")).default_open(open).show(ui, |ui| {
-            // Worked out once for each day shown, and only while the section is open.
-            if self.culture_lines.as_ref().is_none_or(|c| c.0 != key) {
-                let names = Names { world: &self.geo, realms: &self.realm_names };
-                self.culture_lines = Some((key, inspector::cultures(&names, &self.calendar)));
-            }
-            let lines = &self.culture_lines.as_ref().expect("just set").1;
+        egui::CollapsingHeader::new(title).default_open(open).show(ui, |ui| {
+            let lines = &lines.get_or_insert_with(|| (key, make(&self.names(), &self.calendar))).1;
             for l in lines.iter().take(80) {
                 ui.horizontal_wrapped(|ui| {
-                    let [r, g, b] = layers::culture_color(l.culture, self.geo.params.seed);
+                    let [r, g, b] = color(l.id, self.geo.params.seed);
                     ui.label(egui::RichText::new("■").color(egui::Color32::from_rgb(r, g, b)));
                     ui.small(&l.text);
                     if l.hearth != NONE && ui.small_button("where it began").on_hover_text("select the province where it began").clicked() {
@@ -1540,7 +1581,12 @@ impl MapApp {
                 ui.small(format!("and {} smaller ones", lines.len() - 80));
             }
         });
-        if let Some(c) = go.filter(|&c| (c as usize) < self.geo.provinces.count) {
+        go
+    }
+
+    /// Select province `p`, if there is one and it exists.
+    fn go_to(&mut self, p: Option<u32>) {
+        if let Some(c) = p.filter(|&c| (c as usize) < self.geo.provinces.count) {
             (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
         }
     }
@@ -1792,6 +1838,11 @@ impl MapApp {
         self.owners[sim::fields::known("culture.born").0 as usize].1.is_some()
     }
 
+    /// Whether some module keeps faiths (Religion).
+    fn religions_on(&self) -> bool {
+        self.owners[sim::fields::known("religion.born").0 as usize].1.is_some()
+    }
+
     /// Whether some module keeps the realms' techs (Research).
     fn techs_on(&self) -> bool {
         self.owners[sim::fields::known("realm.tech").0 as usize].1.is_some()
@@ -1867,6 +1918,10 @@ impl MapApp {
             if self.cultures_on() {
                 let names = self.names();
                 ui.label(format!("cultures: {}", inspector::cultures_in_words(&names, &inspector::province_cultures(w, p as u32))));
+            }
+            if self.religions_on() {
+                let names = self.names();
+                ui.label(format!("faiths: {}", inspector::faiths_in_words(&names, &inspector::province_faiths(w, p as u32))));
             }
             if self.techs_on()
                 && let Some(r) = w.owner.get(p).copied().filter(|&r| r != NONE)
@@ -2013,12 +2068,16 @@ impl MapApp {
         self.goods_table(ui, pi, &mut when);
         let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
         let size = sim::fields::known("pop.size");
-        // Cultures by name where some module keeps them; else the pops' bare numbers.
+        // Cultures and faiths by name where some module keeps them; else the pops' bare numbers.
         let culture_names = Names { world: &self.geo, realms: &self.realm_names };
-        let cultures_on = self.cultures_on();
+        let (cultures_on, faiths_on) = (self.cultures_on(), self.religions_on());
         let culture_name = |c: u32| if cultures_on { culture_names.culture(c) } else { c.to_string() };
+        let faith_name = |f: u32| if faiths_on { culture_names.faith(f) } else { f.to_string() };
         if cultures_on {
             ui.label(format!("Cultures: {}", inspector::cultures_in_words(&culture_names, &inspector::province_cultures(&self.geo, p))));
+        }
+        if faiths_on {
+            ui.label(format!("Faiths: {}", inspector::faiths_in_words(&culture_names, &inspector::province_faiths(&self.geo, p))));
         }
         // Editing a pop: its size, typed in, set when asked.
         let mut editing = self.pop_edit;
@@ -2027,11 +2086,11 @@ impl MapApp {
             let w = &self.geo.pops;
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!(
-                    "pop {k}: {} people (species {}, culture {}, religion {}, class {}), set by {}; size last changed",
+                    "pop {k}: {} people (species {}, culture {}, faith {}, class {}), set by {}; size last changed",
                     group(w.size[k]),
                     w.species[k],
                     culture_name(w.culture[k] as u32),
-                    w.religion[k],
+                    faith_name(w.religion[k] as u32),
                     w.class[k],
                     self.owners[size.0 as usize].0
                 ));

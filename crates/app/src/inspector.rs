@@ -13,20 +13,22 @@ use sim::fields::Tier;
 use sim::sim::{Stage, TraceStep, Traced, NEVER};
 use sim::world::World;
 
-/// Realm and culture names by number, worked out once per world and extended as realms and
-/// cultures are made ([`sim::realms::names`] and [`sim::culture::names`] give each the same name
-/// whatever comes after it), and the techs' names, from the research tree in force.
+/// Realm, culture and faith names by number, worked out once per world and extended as realms,
+/// cultures and faiths are made ([`sim::realms::names`], [`sim::culture::names`] and
+/// [`sim::religion::names`] give each the same name whatever comes after it), and the techs' names,
+/// from the research tree in force.
 #[derive(Clone, Debug, Default)]
 pub struct RealmNames {
     seed: u64,
     pub names: Vec<String>,
     pub cultures: Vec<String>,
+    pub faiths: Vec<String>,
     pub techs: Vec<String>,
 }
 
 impl RealmNames {
-    /// The names of `w`'s realms and cultures, worked out again only for another seed or more of
-    /// them; the techs of `settings`' research tree.
+    /// The names of `w`'s realms, cultures and faiths, worked out again only for another seed or
+    /// more of them; the techs of `settings`' research tree.
     pub fn update(&mut self, w: &World, settings: &sim::config::ModuleConfig) {
         let seed = w.params.seed;
         if self.seed != seed {
@@ -38,17 +40,21 @@ impl RealmNames {
         if self.cultures.len() < w.cultures.count() {
             self.cultures = sim::culture::names(seed, w.cultures.count());
         }
+        if self.faiths.len() < w.religions.count() {
+            self.faiths = sim::religion::names(seed, w.religions.count());
+        }
         if self.techs.len() != settings.research.as_ref().map_or(0, |p| p.techs.len()) {
             self.techs = sim::research::tech_names(settings);
         }
     }
 }
 
-/// Names for realms, cultures, techs and people in the inspector's words.
+/// Names for realms, cultures, faiths, techs and people in the inspector's words.
 #[derive(Clone, Copy)]
 pub struct Names<'a> {
     pub world: &'a World,
-    /// Realm and culture names by number, as many as are known, and the techs' ([`RealmNames`]).
+    /// Realm, culture and faith names by number, as many as are known, and the techs'
+    /// ([`RealmNames`]).
     pub realms: &'a RealmNames,
 }
 
@@ -66,6 +72,14 @@ impl Names<'_> {
         match c {
             NONE => "none".into(),
             c => self.realms.cultures.get(c as usize).cloned().unwrap_or_else(|| format!("culture {c}")),
+        }
+    }
+
+    /// A faith's name; "none" for none.
+    pub fn faith(&self, f: u32) -> String {
+        match f {
+            NONE => "none".into(),
+            f => self.realms.faiths.get(f as usize).cloned().unwrap_or_else(|| format!("faith {f}")),
         }
     }
 
@@ -168,6 +182,17 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
         }
         let share = if all == 0 { 0.0 } else { foreign as f64 / all as f64 * 100.0 };
         facts.push(format!("culture: {} (its capital's); {share:.0}% of its people are of other cultures", n.culture(c)));
+    }
+    if let Some(&f) = w.realm_religion.get(r as usize).filter(|&&f| f != NONE) {
+        let (mut all, mut other) = (0u64, 0u64);
+        for (k, &p) in w.pops.province.iter().enumerate() {
+            if mine(&w.owner, p as usize) {
+                all += w.pops.size[k];
+                other += if w.pops.religion[k] as u32 == f { 0 } else { w.pops.size[k] };
+            }
+        }
+        let share = if all == 0 { 0.0 } else { other as f64 / all as f64 * 100.0 };
+        facts.push(format!("faith: {} (its capital's); {share:.0}% of its people follow other faiths", n.faith(f)));
     }
     let lost = sim::sim::SoldiersLost::of_realm(w, r);
     if lost.total() > 0 {
@@ -309,12 +334,22 @@ fn research(n: &Names, r: u32, day: u64, cal: &Calendar, settings: &sim::config:
 
 /// Province `p`'s people by culture, most first (the lower number of equals).
 pub fn province_cultures(w: &World, p: u32) -> Vec<(u32, u64)> {
+    province_by(w, p, &w.pops.culture)
+}
+
+/// Province `p`'s people by faith, most first (the lower number of equals).
+pub fn province_faiths(w: &World, p: u32) -> Vec<(u32, u64)> {
+    province_by(w, p, &w.pops.religion)
+}
+
+/// Province `p`'s people by the pops' `key` (their culture or their faith), most first.
+fn province_by(w: &World, p: u32, key: &[u16]) -> Vec<(u32, u64)> {
     let mut out: Vec<(u32, u64)> = Vec::new();
     for (k, &q) in w.pops.province.iter().enumerate() {
         if q != p || w.pops.size[k] == 0 {
             continue;
         }
-        let c = w.pops.culture[k] as u32;
+        let c = key.get(k).copied().unwrap_or(0) as u32;
         match out.iter_mut().find(|e| e.0 == c) {
             Some(e) => e.1 += w.pops.size[k],
             None => out.push((c, w.pops.size[k])),
@@ -326,12 +361,21 @@ pub fn province_cultures(w: &World, p: u32) -> Vec<(u32, u64)> {
 
 /// A province's cultures in words: "Dravish 82%, Kalani 15%, 2 more 3%".
 pub fn cultures_in_words(n: &Names, mix: &[(u32, u64)]) -> String {
+    mix_in_words(mix, |c| n.culture(c))
+}
+
+/// A province's faiths in words: "Tholism 90%, Saphite 10%".
+pub fn faiths_in_words(n: &Names, mix: &[(u32, u64)]) -> String {
+    mix_in_words(mix, |f| n.faith(f))
+}
+
+fn mix_in_words(mix: &[(u32, u64)], name: impl Fn(u32) -> String) -> String {
     let total: u64 = mix.iter().map(|e| e.1).sum();
     if total == 0 {
         return "nobody lives here".into();
     }
     let pct = |x: u64| x as f64 / total as f64 * 100.0;
-    let mut parts: Vec<String> = mix.iter().take(3).map(|&(c, x)| format!("{} {:.0}%", n.culture(c), pct(x))).collect();
+    let mut parts: Vec<String> = mix.iter().take(3).map(|&(c, x)| format!("{} {:.0}%", name(c), pct(x))).collect();
     if mix.len() > 3 {
         let rest: u64 = mix[3..].iter().map(|e| e.1).sum();
         parts.push(format!("{} more {:.0}%", mix.len() - 3, pct(rest)));
@@ -339,55 +383,86 @@ pub fn cultures_in_words(n: &Names, mix: &[(u32, u64)]) -> String {
     parts.join(", ")
 }
 
-/// One culture, for the Cultures section.
+/// One culture or faith, for the Cultures and Faiths sections.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CultureLine {
-    pub culture: u32,
+pub struct GroupLine {
+    /// The culture's or faith's number.
+    pub id: u32,
     pub people: u64,
-    /// Its name, people, the provinces it is the main culture of, and how it began.
+    /// Its name, people, the provinces it is the main one of, and how it began.
     pub text: String,
     /// The province where it began.
     pub hearth: u32,
 }
 
 /// Every living culture, most people first, in words.
-pub fn cultures(n: &Names, cal: &Calendar) -> Vec<CultureLine> {
+pub fn cultures(n: &Names, cal: &Calendar) -> Vec<GroupLine> {
     let w = n.world;
-    let count = w.cultures.count();
-    let mut people = vec![0u64; count];
-    for (k, &c) in w.pops.culture.iter().enumerate() {
-        if let Some(x) = people.get_mut(c as usize) {
-            *x += w.pops.size[k];
-        }
-    }
-    let mut main = vec![0usize; count];
-    for c in sim::culture::main_cultures(w) {
-        if let Some(x) = main.get_mut(c as usize) {
-            *x += 1;
-        }
-    }
-    let total: u64 = people.iter().sum::<u64>().max(1);
     let cu = &w.cultures;
-    let mut out: Vec<CultureLine> = (0..count)
-        .filter(|&c| cu.alive(c as u32) && people[c] > 0)
-        .map(|c| {
-            let began = match cu.parent.get(c).copied().unwrap_or(NONE) {
-                NONE => "a culture from the start".to_string(),
-                parent => format!("split off from the {} in {}", n.culture(parent), cal.format(cu.born.get(c).copied().unwrap_or(0))),
-            };
-            let text = format!(
-                "{}: {} people ({:.1}%), the main culture of {} province{}; {began}",
-                n.culture(c as u32),
-                group(people[c]),
-                people[c] as f64 / total as f64 * 100.0,
-                main[c],
-                if main[c] == 1 { "" } else { "s" }
-            );
-            CultureLine { culture: c as u32, people: people[c], text, hearth: cu.hearth.get(c).copied().unwrap_or(NONE) }
-        })
-        .collect();
-    out.sort_by(|a, b| b.people.cmp(&a.people).then(a.culture.cmp(&b.culture)));
-    out
+    let groups = Groups { parent: &cu.parent, born: &cu.born, hearth: &cu.hearth, died: &cu.died, key: &w.pops.culture, main: sim::culture::main_cultures(w), kind: "culture" };
+    groups.lines(w, cal, |c| n.culture(c), |parent, when| format!("split off from the {} in {when}", n.culture(parent)))
+}
+
+/// Every living faith, most followers first, in words.
+pub fn faiths(n: &Names, cal: &Calendar) -> Vec<GroupLine> {
+    let w = n.world;
+    let re = &w.religions;
+    let groups = Groups { parent: &re.parent, born: &re.born, hearth: &re.hearth, died: &re.died, key: &w.pops.religion, main: sim::religion::main_faiths(w), kind: "faith" };
+    groups.lines(w, cal, |f| n.faith(f), |parent, when| format!("broke away from {} in {when}", n.faith(parent)))
+}
+
+/// Cultures or faiths (`kind`): their table, the pops' key into it and each province's main one.
+struct Groups<'a> {
+    parent: &'a [u32],
+    born: &'a [u64],
+    hearth: &'a [u32],
+    died: &'a [u64],
+    key: &'a [u16],
+    main: Vec<u32>,
+    kind: &'a str,
+}
+
+impl Groups<'_> {
+    /// Every living one, most people first; `split` words one that began from another (its
+    /// parent, and the day).
+    fn lines(&self, w: &World, cal: &Calendar, name: impl Fn(u32) -> String, split: impl Fn(u32, String) -> String) -> Vec<GroupLine> {
+        let count = self.parent.len();
+        let mut people = vec![0u64; count];
+        for (k, &c) in self.key.iter().enumerate() {
+            if let Some(x) = people.get_mut(c as usize) {
+                *x += w.pops.size.get(k).copied().unwrap_or(0);
+            }
+        }
+        let mut main = vec![0usize; count];
+        for &c in &self.main {
+            if let Some(x) = main.get_mut(c as usize) {
+                *x += 1;
+            }
+        }
+        let total: u64 = people.iter().sum::<u64>().max(1);
+        let alive = |c: usize| self.died.get(c).is_some_and(|&d| d == u64::MAX);
+        let mut out: Vec<GroupLine> = (0..count)
+            .filter(|&c| alive(c) && people[c] > 0)
+            .map(|c| {
+                let began = match self.parent.get(c).copied().unwrap_or(NONE) {
+                    NONE => format!("a {} from the start", self.kind),
+                    parent => split(parent, cal.format(self.born.get(c).copied().unwrap_or(0))),
+                };
+                let text = format!(
+                    "{}: {} people ({:.1}%), the main {} of {} province{}; {began}",
+                    name(c as u32),
+                    group(people[c]),
+                    people[c] as f64 / total as f64 * 100.0,
+                    self.kind,
+                    main[c],
+                    if main[c] == 1 { "" } else { "s" }
+                );
+                GroupLine { id: c as u32, people: people[c], text, hearth: self.hearth.get(c).copied().unwrap_or(NONE) }
+            })
+            .collect();
+        out.sort_by(|a, b| b.people.cmp(&a.people).then(a.id.cmp(&b.id)));
+        out
+    }
 }
 
 /// One war going on, for the Wars section.
@@ -736,11 +811,10 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::CultureBorn { culture, parent, provinces, .. } => format!("the {} culture split off from the {} in {provinces} provinces", names.culture(*culture), names.culture(*parent)),
         Event::CultureGone { culture } => format!("the last of the {} culture is gone", names.culture(*culture)),
         Event::Assimilated { from, to, .. } => format!("the province's main culture changed from {} to {}", names.culture(*from), names.culture(*to)),
-        // Faiths are named by number until the window learns their names (after Religion merges).
-        Event::ReligionBorn { religion, parent: NONE, provinces, .. } => format!("faith {religion} began in {provinces} provinces"),
-        Event::ReligionBorn { religion, parent, provinces, .. } => format!("faith {religion} broke away from faith {parent} in {provinces} provinces"),
-        Event::ReligionGone { religion } => format!("the last follower of faith {religion} is gone"),
-        Event::Converted { from, to, .. } => format!("the province's main faith changed from faith {from} to faith {to}"),
+        Event::ReligionBorn { religion, parent: NONE, provinces, .. } => format!("the {} faith began in {provinces} provinces", names.faith(*religion)),
+        Event::ReligionBorn { religion, parent, provinces, .. } => format!("{} broke away from {} in {provinces} provinces", names.faith(*religion), names.faith(*parent)),
+        Event::ReligionGone { religion } => format!("the last follower of {} is gone", names.faith(*religion)),
+        Event::Converted { from, to, .. } => format!("the province's main faith changed from {} to {}", names.faith(*from), names.faith(*to)),
         Event::Plague { .. } => "a plague is to break out here".to_string(),
         Event::Outbreak { outbreak, .. } => format!("plague {outbreak} broke out here"),
         Event::PlagueArrived { outbreak, from, by_sea, .. } => format!("plague {outbreak} arrived {} from province {from}", if *by_sea { "by sea" } else { "over land" }),

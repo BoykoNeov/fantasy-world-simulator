@@ -32,7 +32,8 @@ pub const TABLE_UNREST: usize = 8;
 pub const TABLE_CULTURE: usize = 9;
 pub const TABLE_TECHS: usize = 10;
 pub const TABLE_WINTER: usize = 11;
-pub const TABLE_LAYERS: usize = 12;
+pub const TABLE_FAITH: usize = 12;
+pub const TABLE_LAYERS: usize = 13;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -72,13 +73,15 @@ pub struct MarketView {
     pub balance: Vec<f32>,
 }
 
-/// Cultures, knowledge and winter as the map shows them, per province (empty: nothing to show).
-/// Worked out once for each day shown, not blended: a culture's number can't be.
+/// Cultures, faiths, knowledge and winter as the map shows them, per province (empty: nothing to
+/// show). Worked out once for each day shown, not blended: a culture's number can't be.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SocietyView {
     /// The main culture (the one with the most people) and its share of the people, 0..1;
     /// [`NONE`] where nobody lives.
     pub culture: Vec<(u32, f32)>,
+    /// The main faith and its share of the people, as `culture`.
+    pub faith: Vec<(u32, f32)>,
     /// How many techs the owner knows, from the fewest any living realm knows (0) to the most (1);
     /// NaN where no realm owns it or nobody knows any.
     pub techs: Vec<f32>,
@@ -86,29 +89,40 @@ pub struct SocietyView {
     pub winter: Vec<f32>,
 }
 
+/// Which of the [`SocietyView`]'s layers to work out: those shown, where some module keeps what
+/// they show.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Wanted {
+    pub cultures: bool,
+    pub faiths: bool,
+    pub techs: bool,
+}
+
 impl SocietyView {
-    /// From the world shown: cultures where some module keeps them (`cultures`), knowledge where
-    /// some module keeps techs (`techs`), and winter by Warfare's own rule where its winter part
-    /// runs (`winter`: its settings, and the share of the year gone by on the day shown).
-    pub fn of(w: &World, cultures: bool, techs: bool, winter: Option<(&sim::logistics::SeasonParams, f64)>) -> Self {
-        let culture = if cultures {
-            sim::culture::mix(w)
-                .iter()
-                .map(|m| {
-                    let total: u64 = m.iter().map(|e| e.1).sum();
-                    m.first().map_or((NONE, 0.0), |&(c, x)| (c, (x as f64 / total as f64) as f32))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let techs = if techs { techs_known(w) } else { Vec::new() };
+    /// From the world shown: the layers `wanted`, and winter by Warfare's own rule where its
+    /// winter part runs (`winter`: its settings, and the share of the year gone by on the day
+    /// shown).
+    pub fn of(w: &World, wanted: Wanted, winter: Option<(&sim::logistics::SeasonParams, f64)>) -> Self {
+        let culture = if wanted.cultures { main_shares(&sim::culture::mix(w)) } else { Vec::new() };
+        let faith = if wanted.faiths { main_shares(&sim::religion::mix(w)) } else { Vec::new() };
+        let techs = if wanted.techs { techs_known(w) } else { Vec::new() };
         let winter = match winter {
             Some((s, part)) => w.provinces.lat.iter().map(|&lat| sim::logistics::winter(s, lat.to_degrees(), part) as f32).collect(),
             None => Vec::new(),
         };
-        SocietyView { culture, techs, winter }
+        SocietyView { culture, faith, techs, winter }
     }
+}
+
+/// Each province's main culture or faith (the first of its mix, most first) and its share of the
+/// people; [`NONE`] where nobody lives.
+fn main_shares(mix: &[Vec<(u32, u64)>]) -> Vec<(u32, f32)> {
+    mix.iter()
+        .map(|m| {
+            let total: u64 = m.iter().map(|e| e.1).sum();
+            m.first().map_or((NONE, 0.0), |&(c, x)| (c, (x as f64 / total as f64) as f32))
+        })
+        .collect()
 }
 
 /// How many techs each realm knows (`realm.tech` holds a day for each it knows).
@@ -373,10 +387,14 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView, soc
         }
         out[TABLE_UNREST * size + p] = unrest_color(world.unrest.get(p).copied().unwrap_or(0), realm_of(&world.uprising).is_some());
 
-        // The main culture's colour, paler the more mixed the province.
+        // The main culture's colour, paler the more mixed the province; the same for faiths.
         if let Some(&(c, share)) = society.culture.get(p).filter(|e| e.0 != NONE) {
             let [r, g, b] = culture_color(c, world.params.seed);
             out[TABLE_CULTURE * size + p] = [r, g, b, culture_alpha(share)];
+        }
+        if let Some(&(f, share)) = society.faith.get(p).filter(|e| e.0 != NONE) {
+            let [r, g, b] = faith_color(f, world.params.seed);
+            out[TABLE_FAITH * size + p] = [r, g, b, culture_alpha(share)];
         }
         // The fewest techs any realm knows: pale parchment; the most: deep blue-green.
         if let Some(&t) = society.techs.get(p).filter(|t| !t.is_nan()) {
@@ -402,7 +420,17 @@ pub fn culture_color(c: u32, seed: u64) -> [u8; 3] {
     hsl(hue, sat, light)
 }
 
-/// How strongly a province's main culture colours it, from its share of the people: faint where
+/// A faith's colour: a hue from its number, spread round the wheel otherwise than realms' and
+/// cultures', a little deeper than either.
+pub fn faith_color(f: u32, seed: u64) -> [u8; 3] {
+    let h = sim::rng::mix(seed ^ 0xFA_17B5 ^ (f as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let hue = (f as f64 * 0.276_393_202_25 + 0.61 + (seed % 83) as f64 / 83.0).fract();
+    let sat = 0.45 + (h % 100) as f64 / 100.0 * 0.25;
+    let light = 0.40 + (h / 100 % 100) as f64 / 100.0 * 0.18;
+    hsl(hue, sat, light)
+}
+
+/// How strongly a province's main culture (or faith) colours it, from its share of the people: faint where
 /// it holds under half, full where it is all there is.
 pub fn culture_alpha(share: f32) -> u8 {
     let t = ((share as f64 - 0.4) / 0.6).clamp(0.0, 1.0);
@@ -437,7 +465,9 @@ pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
 /// The tables for the world as it stands.
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
     let w = &sim.world;
-    province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, sim.config.modules.culture.is_some(), sim.config.modules.research.is_some(), None))
+    let m = &sim.config.modules;
+    let wanted = Wanted { cultures: m.culture.is_some(), faiths: m.religion.is_some(), techs: m.research.is_some() };
+    province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, wanted, None))
 }
 
 fn biome_color(b: Biome) -> [u8; 3] {

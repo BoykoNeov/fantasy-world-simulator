@@ -118,16 +118,16 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     assert_eq!(inspector::value(known("province.unrest"), &sim::fields::FieldData::U64(vec![250]), 0, &n), "250 of 1,000 toward an uprising");
 }
 
-/// Whether `s` names a culture or tech by its bare number ("culture 12", "tech 3").
+/// Whether `s` names a culture, faith or tech by its bare number ("culture 12", "tech 3").
 fn by_number(s: &str) -> bool {
-    ["culture ", "tech "].iter().any(|w| s.match_indices(w).any(|(i, _)| s[i + w.len()..].starts_with(|c: char| c.is_ascii_digit())))
+    ["culture ", "faith ", "tech "].iter().any(|w| s.match_indices(w).any(|(i, _)| s[i + w.len()..].starts_with(|c: char| c.is_ascii_digit())))
 }
 
 #[test]
-fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
+fn techs_cultures_and_faiths_are_named_from_what_the_window_is_sent() {
     let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.4, radius_km: 6371.0 });
     c.modules.set_choice(Slot::Economics, "markets").unwrap();
-    assert!(c.modules.research.is_some() && c.modules.culture.is_some(), "both on by default");
+    assert!(c.modules.research.is_some() && c.modules.culture.is_some() && c.modules.religion.is_some(), "all on by default");
     let mut sim = Sim::new(&c).unwrap();
     let first = sim.calendar.def.first_year;
     sim.run_to_year(first + 1);
@@ -141,7 +141,7 @@ fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
     names.update(&geo, &sim.settings);
     let n = Names { world: &geo, realms: &names };
 
-    let (mut knowing, mut with_culture) = (0, 0);
+    let (mut knowing, mut with_culture, mut with_faith) = (0, 0, 0);
     for r in (0..geo.realms.count() as u32).filter(|&r| geo.realms.alive(r)) {
         let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, None, &sim.world.trade, &sim.settings);
         let lines = page.facts.iter().chain(&page.knowledge).chain(page.techs.iter().flat_map(|f| &f.1));
@@ -152,21 +152,28 @@ fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
         assert!(page.knowledge.iter().any(|l| l.starts_with("what its techs do") || l == "its techs do nothing yet"), "{:?}", page.knowledge);
         knowing += !page.techs.is_empty() as usize;
         with_culture += page.facts.iter().any(|f| f.starts_with("culture: ")) as usize;
+        with_faith += page.facts.iter().any(|f| f.starts_with("faith: ")) as usize;
     }
-    assert!(knowing > 0 && with_culture > 0, "realms knowing techs {knowing}, with a culture {with_culture}");
+    assert!(knowing > 0 && with_culture > 0 && with_faith > 0, "realms knowing techs {knowing}, with a culture {with_culture}, a faith {with_faith}");
 
-    let lines = inspector::cultures(&n, &sim.calendar);
-    assert!(!lines.is_empty());
-    for l in &lines {
-        assert!(!by_number(&l.text), "{}", l.text);
+    for lines in [inspector::cultures(&n, &sim.calendar), inspector::faiths(&n, &sim.calendar)] {
+        assert!(!lines.is_empty());
+        for l in &lines {
+            assert!(!by_number(&l.text), "{}", l.text);
+        }
     }
     for p in 0..geo.provinces.count as u32 {
         let words = inspector::cultures_in_words(&n, &inspector::province_cultures(&geo, p));
         assert!(!by_number(&words), "province {p}: {words}");
+        let words = inspector::faiths_in_words(&n, &inspector::province_faiths(&geo, p));
+        assert!(!by_number(&words), "province {p}: {words}");
     }
     let mut named = 0;
     for p in &sim.event_log.entries {
-        if matches!(p.event, Event::Discovery { .. } | Event::CultureBorn { .. } | Event::CultureGone { .. } | Event::Assimilated { .. }) {
+        if matches!(
+            p.event,
+            Event::Discovery { .. } | Event::CultureBorn { .. } | Event::CultureGone { .. } | Event::Assimilated { .. } | Event::ReligionBorn { .. } | Event::ReligionGone { .. } | Event::Converted { .. }
+        ) {
             let text = LogEntry::of_event(p, &geo.goods).text(&sim.calendar, &geo.goods, &n);
             assert!(!by_number(&text), "{text}");
             named += 1;
@@ -176,13 +183,14 @@ fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
 
     // The layers: a main culture wherever people live, and techs wherever a realm owns land.
     let seasons = sim::logistics::SeasonParams::default();
-    let deepest = app::layers::SocietyView::of(&geo, false, false, Some((&seasons, seasons.deepest))).winter;
+    let deepest = app::layers::SocietyView::of(&geo, app::layers::Wanted::default(), Some((&seasons, seasons.deepest))).winter;
     assert!(deepest.iter().all(|&x| (0.0..=1.0).contains(&x)) && deepest.iter().any(|&x| x > 0.5), "winter at its deepest: {deepest:?}");
-    let v = app::layers::SocietyView::of(&geo, true, true, None);
+    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { cultures: true, faiths: true, techs: true }, None);
     let people = geo.province_population();
     for (p, &here) in people.iter().enumerate() {
         assert_eq!(v.culture[p].0 != NONE, here > 0, "province {p}");
         assert!(v.culture[p].1 <= 1.0);
+        assert_eq!(v.faith[p].0 != NONE, here > 0, "province {p}");
         assert_eq!(!v.techs[p].is_nan(), geo.owner[p] != NONE, "province {p}");
     }
 }
