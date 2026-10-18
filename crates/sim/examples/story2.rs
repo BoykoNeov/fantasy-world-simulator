@@ -20,8 +20,8 @@
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
 //! `campaigns` switches on Warfare "campaigns" (every part of logistics, the default for new worlds
 //! since Oct 18; sieges in depth alone before); `supply`, `seasons`, `pay`, `sieges` and `massing`
-//! switch on one part each. With none, armies are plain "troops". `culture` and `research` switch
-//! those modules on (both off without them).
+//! switch on one part each. With none, armies are plain "troops". `culture`, `research`,
+//! `religion`, `disease` and `nature` switch those modules on (all off without them).
 //!
 //! Without seeds it runs the 18 worlds story 2 is judged on since Oct 18 (21, 7, 1–6, 8–17; the
 //! bar, the old 1 in 3: at least 6). Each pass says whether a passing city was taken in a normal
@@ -89,6 +89,17 @@ fn config(seed: u64, set: &[(String, f64)], parts: &[String]) -> Config {
     }
     if on("research") {
         c.modules.research = Some(Default::default());
+    }
+    // The second wave's modules only by name ("campaigns" doesn't switch them on).
+    let named = |p: &str| parts.iter().any(|x| x == p);
+    if named("religion") {
+        c.modules.religion = Some(Default::default());
+    }
+    if named("disease") {
+        c.modules.disease = Some(Default::default());
+    }
+    if named("nature") {
+        c.modules.nature = Some(Default::default());
     }
     for (k, v) in set {
         sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
@@ -697,7 +708,7 @@ fn main() {
     // first three was too noisy to judge by).
     let seeds = if seeds.is_empty() { vec![21, 7, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] } else { seeds };
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
-    let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing", "culture", "research"].contains(&a.as_str())).cloned().collect();
+    let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing", "culture", "research", "religion", "disease", "nature"].contains(&a.as_str())).cloned().collect();
     let runs: Vec<(u64, (bool, bool))> = seeds.iter().map(|&s| (s, run(s, years, &set, &parts))).collect();
     let normal: Vec<u64> = runs.iter().filter(|r| r.1.1).map(|r| r.0).collect();
     let rebels: Vec<u64> = runs.iter().filter(|r| r.1.0 && !r.1.1).map(|r| r.0).collect();
