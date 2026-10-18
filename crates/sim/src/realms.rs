@@ -171,15 +171,24 @@ pub struct UnrestParams {
     /// realm's, and in proportion for fewer (with Culture on; without it everyone shares one).
     #[serde(default = "foreign_default")]
     pub foreign: f64,
+    /// Unrest a month adds where all of a province's people are of another faith than its realm's,
+    /// and in proportion for fewer (with Religion on; without it everyone shares one). It adds to
+    /// `foreign`: 1.5 keeps a province foreign in both under where uprisings calm (the user, Oct 18).
+    #[serde(default = "foreign_faith_default")]
+    pub foreign_faith: f64,
 }
 
 fn foreign_default() -> f64 {
     5.0
 }
 
+fn foreign_faith_default() -> f64 {
+    1.5
+}
+
 impl Default for UnrestParams {
     fn default() -> Self {
-        UnrestParams { half_life_years: 2.0, famine: 180.0, famine_share: 0.02, occupied: 25.0, child_heir: 150.0, claimant: 300.0, join: 500, calm: 250, breakaway: 3, foreign: foreign_default() }
+        UnrestParams { half_life_years: 2.0, famine: 180.0, famine_share: 0.02, occupied: 25.0, child_heir: 150.0, claimant: 300.0, join: 500, calm: 250, breakaway: 3, foreign: foreign_default(), foreign_faith: foreign_faith_default() }
     }
 }
 
@@ -251,7 +260,7 @@ static V1: Manifest = Manifest {
     version: "basic",
     tier: crate::fields::Tier::Realm,
     cadence: Cadence::Monthly,
-    reads: &["pop.province", "pop.size", "pop.culture", "province.cells", "province.center"],
+    reads: &["pop.province", "pop.size", "pop.culture", "pop.religion", "province.cells", "province.center"],
     reads_earlier: &[],
     owns: &["province.owner", "realm.capital", "province.occupier", "province.unrest", "province.uprising", "realm.broke_from"],
     requests: &[],
@@ -268,7 +277,7 @@ static V1: Manifest = Manifest {
 /// The same version where the world keeps coins: it reads the coins and asks for taxes and
 /// spending to be moved between the provinces' stores and the treasuries.
 static V1_TAXES: Manifest = Manifest {
-    reads: &["pop.province", "pop.size", "pop.culture", "province.cells", "province.center", "province.stock", "realm.stock"],
+    reads: &["pop.province", "pop.size", "pop.culture", "pop.religion", "province.cells", "province.center", "province.stock", "realm.stock"],
     requests: &["province.stock", "realm.stock"],
     asks: &["money"],
     moves: &[("province.stock", "realm.stock"), ("realm.stock", "province.stock")],
@@ -319,8 +328,8 @@ impl Module for Founding {
             if !(u.half_life_years.is_finite() && u.half_life_years > 0.0) {
                 return Err("unrest: it takes more than zero years to fall by half".into());
             }
-            if ![u.famine, u.occupied, u.child_heir, u.claimant, u.foreign].iter().all(|x| x.is_finite() && (0.0..=LINE as f64).contains(x)) {
-                return Err(format!("unrest: what famine, occupation, successions and foreign rule add goes from 0 to {LINE}"));
+            if ![u.famine, u.occupied, u.child_heir, u.claimant, u.foreign, u.foreign_faith].iter().all(|x| x.is_finite() && (0.0..=LINE as f64).contains(x)) {
+                return Err(format!("unrest: what famine, occupation, successions and foreign rule (by culture or faith) add goes from 0 to {LINE}"));
             }
             if !(u.famine_share > 0.0 && u.famine_share <= 1.0) {
                 return Err("unrest: a month of famine is one in which more than none, up to all, of the people starve".into());
@@ -535,12 +544,15 @@ impl Founding {
         // Thousandths of each province's people not of its realm's culture: only where people differ
         // in culture (with Culture off everyone is of one, and nothing need be counted).
         let foreign = if u.foreign > 0.0 && w.pops.culture.iter().any(|&c| c != 0) { crate::culture::foreign_share(w) } else { Vec::new() };
+        // And not of its realm's faith, likewise only where people differ in faith (Religion on).
+        let foreign_faith = if u.foreign_faith > 0.0 && w.pops.religion.iter().any(|&f| f != 0) { crate::religion::foreign_share(w) } else { Vec::new() };
         // What each realm knows (Research's effects): what stirs its people is divided by this.
         let calm = self.know.as_ref().map_or(Vec::new(), |t| t.factors(w.earlier.u32s("realm.tech"), crate::research::Effect::Calm));
         for p in 0..n {
             let starved = std::mem::take(&mut self.starved[p]);
             let alien = foreign.get(p).copied().unwrap_or(0);
-            if w.unrest[p] == 0 && starved == 0 && w.occupier[p] == NONE && alien == 0 {
+            let heathen = foreign_faith.get(p).copied().unwrap_or(0);
+            if w.unrest[p] == 0 && starved == 0 && w.occupier[p] == NONE && alien == 0 && heathen == 0 {
                 continue;
             }
             let was = w.unrest[p];
@@ -549,16 +561,19 @@ impl Founding {
             let hunger = u.famine * (share / u.famine_share).min(1.0) / known;
             let occupied = if w.occupier[p] != NONE { u.occupied / known } else { 0.0 };
             let ruled = u.foreign * alien as f64 / 1000.0 / known;
-            // Rounded at random, so a little unrest fades as surely as a lot does.
-            let now = round_stochastic(was as f64 * keep + hunger + occupied + ruled, cx.seed, Rng::Realms, cx.day, p as u64, purpose("unrest"));
+            let faith = u.foreign_faith * heathen as f64 / 1000.0 / known;
+            // Rounded at random, so a little unrest fades as surely as a lot does. (Adding a faith's
+            // 0.0 leaves the sum as it was, so worlds without Religion are the same to the bit.)
+            let now = round_stochastic(was as f64 * keep + hunger + occupied + ruled + faith, cx.seed, Rng::Realms, cx.day, p as u64, purpose("unrest"));
             w.unrest[p] = now.min(LINE);
             if cx.traced(p as u32) {
                 cx.note(format!(
-                    "unrest {was} fades to {:.0}; {:.1}% of the people starved last month, adding {hunger:.0}; {}; {:.1}% of the people are of another culture than the realm's, adding {ruled:.1}{}; now {} of {LINE}",
+                    "unrest {was} fades to {:.0}; {:.1}% of the people starved last month, adding {hunger:.0}; {}; {:.1}% of the people are of another culture than the realm's, adding {ruled:.1}{}{}; now {} of {LINE}",
                     was as f64 * keep,
                     100.0 * share,
                     if occupied > 0.0 { format!("occupied by an enemy, adding {occupied:.0}") } else { "not occupied".to_string() },
                     alien as f64 / 10.0,
+                    if heathen > 0 { format!("; {:.1}% of another faith than the realm's, adding {faith:.1}", heathen as f64 / 10.0) } else { String::new() },
                     if known != 1.0 { format!(" (each divided by {known:.2} for what its realm knows)") } else { String::new() },
                     w.unrest[p]
                 ));

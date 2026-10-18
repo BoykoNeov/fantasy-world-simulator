@@ -169,8 +169,8 @@ impl Module for Population {
 }
 
 /// `people` come to live in `province`, joining its biggest pop (the first, of equals), or a new
-/// one if it has none. Where its people are of more than one culture they are shared out over its
-/// pops by size (largest remainder), so soldiers coming home don't quietly swell the majority. A province with no land left sends them to the nearest that has some; with
+/// one if it has none. Where its people are of more than one culture or faith they are shared out over
+/// its pops by size (largest remainder), so soldiers coming home don't quietly swell the majority. A province with no land left sends them to the nearest that has some; with
 /// none anywhere they are lost, and their sender's flow already says they left.
 fn arrive(w: &mut World, province: u32, people: u64, cause: Cause, cx: &mut Ctx) {
     let p = &w.provinces;
@@ -184,7 +184,7 @@ fn arrive(w: &mut World, province: u32, people: u64, cause: Cause, cx: &mut Ctx)
     let Some(to) = to else { return };
     let pops = &mut w.pops;
     let lived: Vec<usize> = (0..pops.size.len()).filter(|&k| pops.province[k] == to && pops.size[k] > 0).collect();
-    if lived.iter().any(|&k| pops.culture[k] != pops.culture[lived[0]]) {
+    if lived.iter().any(|&k| pops.culture[k] != pops.culture[lived[0]] || pops.religion[k] != pops.religion[lived[0]]) {
         let held: Vec<u64> = lived.iter().map(|&k| pops.size[k]).collect();
         let ids: Vec<u64> = lived.iter().map(|&k| k as u64).collect();
         for (&k, part) in lived.iter().zip(crate::requests::split_proportional(people, &held, &ids)) {

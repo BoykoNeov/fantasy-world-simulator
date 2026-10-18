@@ -90,7 +90,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 32 (the second wave of modules built side by side, Oct 18): the fields, events, causes,
 /// edits and slots of religion, disease and the natural world, and the plague dead in each year's
 /// summary.
-pub const FORMAT_VERSION: u32 = 32;
+/// Format 33 (Religion v1 "conversion"): its settings and saved state, and unrest from rule by a
+/// foreign faith in Realms' settings.
+pub const FORMAT_VERSION: u32 = 33;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

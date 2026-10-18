@@ -283,6 +283,8 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Warfare, &["campaigns", "troops", "off"]),
     (Slot::Research, &["tree", "off"]),
     (Slot::Culture, &["assimilation", "off"]),
+    // Off first while it is off by default.
+    (Slot::Religion, &["off", "conversion"]),
 ];
 
 impl ModuleConfig {
