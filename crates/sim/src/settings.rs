@@ -495,6 +495,52 @@ pub static GROUPS: &[Group] = &[
     // --- Disease ---
     // --- end of disease ---
     // --- Natural world ---
+    Group {
+        title: "Natural world",
+        at: "modules.nature",
+        help: "Each province's wild land: its woodland, the fish in its coastal and river waters, and its wild game. Crowded land is cleared and hunted, fishers take fish, and land people leave grows back over decades. In a world with markets, the woodland and fish left set how much timber and fish the land can give, so a fished-out shore gives less and its fishers turn to other work; without markets they are only tracked and shown.",
+        specs: &[
+            live("modules.nature.crowd_full", "Fully crowded", "People a km² at which a province counts as fully crowded: its land is cleared as far as it goes and its game hunted hardest. A province with half as many is half crowded. Most provinces of a world have about 0.1 to 2 people a km². Lower: even thinly settled land is cleared and hunted; higher: only the most crowded land is.", 0.01, 10_000.0, "people a km²"),
+            live("modules.nature.crowd_effort", "Fishing without markets", "In a world without markets nobody counts fishers, so the fishing done in a province is its crowding × this (1: fully fished). It is also the fishing in the years lived in before the start, in either economy. Without markets the fish change nothing, so this only changes what is shown.", 0.0, 5.0, "a unit of crowding"),
+            made("modules.nature.lived_in_years", "Lived in before the start", "Years the world was lived in, with its starting people, before the first day, so it doesn't begin with untouched forests and seas. 0: the world starts untouched, and the first decades clear and fish it.", 0.0, 2000.0, "years"),
+            live("modules.nature.low", "Warned below", "A province's woodland or fish falling below this share of the untouched is told in the log (woods cleared, fishery collapsed). At most \"back above\".", 0.0, 1.0, "share"),
+            live("modules.nature.back", "Back above", "Once warned, the woodland or fish is told as back when it is above this share again; the gap from \"warned below\" keeps the log from flickering. At least \"warned below\".", 0.0, 1.0, "share"),
+            live("modules.nature.drought", "Droughts slow regrowth", "In a drought, woodland and game grow back slower by the share of the rain missing × this: at 1, a year with half its rain grows back half as fast. 0: droughts don't matter. Nothing dies of them.", 0.0, 1.0, "share"),
+        ],
+    },
+    Group {
+        title: "Woodland",
+        at: "modules.nature.forests",
+        help: "Crowded land is cleared for fields and firewood, and land people leave grows back. In a world with markets, woodcutters fell more, and the woodland standing sets how much timber the province's woods can give (timber from open land stays).",
+        specs: &[
+            live("modules.nature.forests.most_cleared", "Most woodland cleared", "Share of a province's woodland cleared once it is fully crowded, and in proportion for less: a half-crowded province is cleared half as far. Lower keeps more woods standing in crowded land; 0: crowding clears nothing (woodcutters still fell).", 0.0, 1.0, "share"),
+            live("modules.nature.forests.clearing", "Clearing speed", "Share of the way to that a year that clearing goes, where people have come. Higher: new settlers clear their land within a few years; 0: nobody clears.", 0.0, 1.0, "share a year"),
+            live("modules.nature.forests.regrow_years", "Years to grow back", "Years for cleared land people have left to grow back about two-thirds of the way (nearly all of it in three times as long). Fully cleared land comes back too. Lower: abandoned land is forest again within a lifetime.", 1.0, 2000.0, "years"),
+            live("modules.nature.forests.felled_km2", "Felled by a woodcutter", "Km² of woodland each woodcutter fells a year, in a world with markets, on top of what crowding clears; it then grows back like any cleared land. A world has about a tenth of a woodcutter a km² of woodland, more in its crowded heartlands. 0: felling for timber takes nothing.", 0.0, 10.0, "km²"),
+        ],
+    },
+    Group {
+        title: "Fish",
+        at: "modules.nature.fish",
+        help: "The fish in a province's coastal and river waters: fishers take them, and the stock breeds back, fastest at half full, with some swimming in from the open sea, so no fishery dies for good. In a world with markets, the fish left set how much fish the shore can give, so fishers leave a fished-out shore and the fish come back.",
+        specs: &[
+            live("modules.nature.fish.breeding", "Fish breed", "How fast the fish breed back, a year: a half-full stock grows by a quarter of this (as a share of a full one) a year, less nearer empty or full. Higher: fisheries bear more fishing and come back sooner.", 0.0, 5.0, "a year"),
+            live("modules.nature.fish.inflow", "Fish from the open sea", "Share of the missing fish that swim in from the open sea a year, so even a stock fished to nothing comes back. 0: a fishery can be fished out for good.", 0.0, 1.0, "share a year"),
+            live("modules.nature.fish.catch", "Catch when fully fished", "Share of the fish a year that a fully fished shore loses to the catch, and in proportion for less fishing. With the defaults a fully fished shore settles near a quarter of its fish, a half-fished one near half. Higher: fisheries collapse sooner; 0: fishing takes nothing.", 0.0, 5.0, "a year"),
+            live("modules.nature.fish.fishers_per_km", "Fishers a km of shore", "Fishers on a km of shore who fish it fully (the catch above); more fish it harder. 8 is where markets' fishers make the most of a shore. Lower: a few fishers already strain the stock.", 0.01, 10_000.0, "fishers"),
+            live("modules.nature.fish.river_share", "Rivers as shore", "A km of big river counts as this many km of shore, for its fish and for the fishers it takes to fish it fully (markets' fish take a km of river as about two-thirds of a km of coast).", 0.0, 10.0, "km of shore"),
+        ],
+    },
+    Group {
+        title: "Wild game",
+        at: "modules.nature.wildlife",
+        help: "The wild game of a province: it has room in the woodland standing and in open land crowding leaves alone, breeds toward that room, and is hunted where people crowd. It feeds nothing yet; it is tracked and shown.",
+        specs: &[
+            live("modules.nature.wildlife.breeding", "Game breeds", "How fast game breeds back toward the room the land has for it, a year, fastest at half the room. Higher: game comes back sooner where people have left.", 0.0, 5.0, "a year"),
+            live("modules.nature.wildlife.inflow", "Game from the wilds around", "Share of the missing game a year that comes in from the wilds around, so game hunted out comes back. 0: game hunted to nothing is gone.", 0.0, 1.0, "share a year"),
+            live("modules.nature.wildlife.hunting", "Hunting when crowded", "Share of the game a year hunted in a fully crowded province, and in proportion for less. Higher: crowded land is hunted empty; 0: nobody hunts.", 0.0, 5.0, "a year"),
+        ],
+    },
     // --- end of natural world ---
 ];
 
@@ -524,6 +570,9 @@ pub static SECTIONS: &[Section] = &[
     // --- Disease ---
     // --- end of disease ---
     // --- Natural world ---
+    Section { key: "modules.nature.forests", label: "Woodland", help: "Crowded land is cleared and abandoned land grows back; under markets, woodcutters fell and the woods left set the timber the land gives. Off: woodland stays untouched." },
+    Section { key: "modules.nature.fish", label: "Fish", help: "Fishers take fish and the stock breeds back; under markets, the fish left set the fish the shore gives. Off: fish stay untouched." },
+    Section { key: "modules.nature.wildlife", label: "Wild game", help: "Game is pushed out by clearing and hunted where people crowd, and comes back where they leave (tracked and shown only). Off: game stays untouched." },
     // --- end of natural world ---
 ];
 
@@ -566,6 +615,8 @@ pub static LEFT_OUT: &[(&str, &str)] = &[
     // --- Disease ---
     // --- end of disease ---
     // --- Natural world ---
+    ("modules.nature.woodcutters", "a name in the goods tree (whose workers fell woodland), not a number"),
+    ("modules.nature.fishers", "a name in the goods tree (whose workers fish), not a number"),
     // --- end of natural world ---
 ];
 
@@ -702,7 +753,12 @@ pub fn defaults_for(c: &Config) -> Config {
     let disease = on(m.disease.is_some(), all.disease);
     // --- end of disease ---
     // --- Natural world: its parts ---
-    let nature = on(m.nature.is_some(), all.nature);
+    let mut nature = on(m.nature.is_some(), all.nature);
+    if let (Some(p), Some(x)) = (&mut nature, &m.nature) {
+        p.forests = p.forests.take().filter(|_| x.forests.is_some());
+        p.fish = p.fish.take().filter(|_| x.fish.is_some());
+        p.wildlife = p.wildlife.take().filter(|_| x.wildlife.is_some());
+    }
     // --- end of natural world ---
     let world = WorldParams { n: c.world.n, provinces: c.world.provinces, seed: c.world.seed, ..WorldParams::preset(Size::Small, 0) };
     let modules = ModuleConfig {

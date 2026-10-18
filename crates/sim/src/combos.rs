@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn mixes_name_and_parse_their_versions() {
         let d = Mix::defaults();
-        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation religion=off");
+        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation religion=off nature=off");
         assert_eq!(Mix::of(&ModuleConfig::default()), d);
         let m = Mix::parse("economics=off, population=off").unwrap();
         assert_eq!(Mix::of(&m.modules()), m);
@@ -789,7 +789,7 @@ mod tests {
         let mut off = ModuleConfig::default();
         off.without_realms();
         assert_eq!(Mix::of(&off), Mix::parse(bare).unwrap());
-        assert_eq!(all_mixes().len(), 48 * 36 * 2 * 2 * 2);
+        assert_eq!(all_mixes().len(), 48 * 36 * 2 * 2 * 2 * 2);
     }
 
     #[test]

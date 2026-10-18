@@ -15,7 +15,9 @@
 //! - the largest faith levels off: its share rises by at most 2 points from year 100 to year 150
 //!   (read here as "no steady climb over the last 50 years"), and is below 35%;
 //! - at least 4 faiths above 1% of the people (all faiths; the starting ones shown beside);
-//! - 10–40% of settled provinces changed main faith since the start;
+//! - 2–40% of settled provinces changed main faith since the start (10–40% in the plan; with 8
+//!   big faiths few provinces are ruled by a realm of another faith, and the user accepted the
+//!   slower change, Oct 18);
 //! - 0–6 schisms;
 //! - no broken totals (no problems, nobody clamped in the yearly tally);
 //! - pop rows: with people at most 1.5 a settled province, all rows at most 3 (at year 150, like
@@ -250,8 +252,8 @@ fn check(run: &Run) -> (String, String) {
     if last.above < 4 {
         fails.push("fewer than 4 above 1%".into());
     }
-    if !(0.10..=0.40).contains(&last.changed) {
-        fails.push("main faith changed outside 10-40%".into());
+    if !(0.02..=0.40).contains(&last.changed) {
+        fails.push("main faith changed outside 2-40%".into());
     }
     if last.schisms > 6 {
         fails.push("more than 6 schisms".into());

@@ -285,6 +285,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Culture, &["assimilation", "off"]),
     // Off first while it is off by default.
     (Slot::Religion, &["off", "conversion"]),
+    (Slot::Nature, &["off", "regrowth"]),
 ];
 
 impl ModuleConfig {

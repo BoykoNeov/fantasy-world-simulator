@@ -92,7 +92,8 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// summary.
 /// Format 33 (Religion v1 "conversion"): its settings and saved state, and unrest from rule by a
 /// foreign faith in Realms' settings.
-pub const FORMAT_VERSION: u32 = 33;
+/// Format 34 (Natural world v1 "regrowth"): its settings, parts and saved state.
+pub const FORMAT_VERSION: u32 = 34;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
