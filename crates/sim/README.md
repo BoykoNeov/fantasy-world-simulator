@@ -88,6 +88,9 @@ Loads refuse other format versions,
   | Warfare | `campaigns` (the default since the first wave's checks): `troops` with every part of logistics on: sieges in depth, supply lines, winter, pay and armies acting together (sieges alone until Oct 18; see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Each part can be switched off alone | daily (raising and eating monthly) |
   | Research | `tree`: realms study and learn techs (see below); needs realms; on by default (techs have effects: its "effects" part); or off | monthly |
   | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
+  | Religion | `conversion`: faiths spread, and people take up the faith that pulls hardest (see below); needs Population; off by default while the second wave is checked | monthly |
+  | Disease | `plagues`: plagues break out, spread along the ways (far faster by sea) and kill (see below); needs Population; off by default while the second wave is checked | weekly (quiet weeks skipped) |
+  | Nature | `regrowth`: each province's woodland, fish and game, used up and growing back (see below); needs Population; off by default while the second wave is checked | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -887,6 +890,44 @@ Loads refuse other format versions,
   them keep them off, so old ones make the worlds they made (save format 29). The three were built
   at once by agents, each in its own copy of the repository (see the design document, "Building
   several modules at once with agents").
+- **Religion** (step 9; Religion "conversion", `religion.rs`, tests in `religion_tests.rs` and
+  `tests/religion.rs`, 150-year check `examples/religion_check.rs`). 8 large faiths spread by region
+  across realm and culture borders, with mixed borderlands. Each month the faith that pulls hardest
+  on a province (its share of the people there, of next door's, being the ruler's faith, and being
+  the faith most of the province's own people hold across the world) wins people over, 2% a year at
+  the fullest pull; small groups, and groups beyond a province's 3 biggest faiths, join at once.
+  Cut-off groups may break away as new faiths (schisms, a part). A realm's faith is its capital's
+  (`realm.religion`); Realms adds unrest where people are not of it (`unrest.foreign_faith`, 1.5 a
+  month for a wholly foreign province). Soldiers coming home to a province mixed by faith join its
+  pops by size. Events `ReligionBorn`, `ReligionGone`, `Converted`; edits `SetReligion`,
+  `NewReligion`. 150 years: the largest faith levels off at 19–27%; only 2–10% of provinces change
+  main faith (few are ruled by a realm of another faith; accepted by the user).
+- **Disease** (step 10; Disease "plagues", `disease.rs`, tests in `disease_tests.rs` and
+  `tests/disease.rs`; story 3 in `examples/story3.rs`, the 150-year check in
+  `examples/disease_check.rs`). A plague in a province makes some of its people ill each week (how
+  catching, crowding and hunger set how many); the sick are ill 14 days, 30% of them die (a request
+  to Population, cause `Plague`, before recruits) and the rest are immune, losing half of it every
+  15 years. It jumps along the ways to neighbours, a sea way 70 times as readily as a road of the
+  same days, more readily between big towns (standing in for trade, the same in both economies),
+  and weakens with its age. Plagues begin by the player's poke (`Event::Plague`) or, as a part, by
+  chance (5% a year in the world, mostly in ports and big cities). Plague dead are counted in each
+  year's summary (`Ledger::plague`; a column in `simrun`'s year table). Events `Outbreak`,
+  `PlagueArrived`, `OutbreakOver`. Story 3 passes under both economies; over 150 years people end
+  within about 5% of the same worlds without plague.
+- **Natural world** (step 10; Natural world "regrowth", `nature.rs`, tests in `nature_tests.rs` and
+  `tests/nature.rs`, 150-year check `examples/nature_check.rs`). Each province keeps the share of
+  its wild woodland, fish and game that is gone: crowded land is cleared and abandoned land grows
+  back, fishers fish the stock down and it breeds back (some swims in from the open sea), game is
+  pushed out and hunted; droughts slow regrowth. Worlds start as if lived in for 200 years. Under
+  markets the woodland and fish left shrink what timber's and fish's land gives (markets reads
+  `province.woods_lost` and `province.fish_lost`), so fishers leave a fished-out shore; under
+  Economics v0 it is only tracked. Events `WoodsCleared`, `WoodsRegrown`, `FisheryCollapsed`,
+  `FisheryRecovered`; edit `SetNature`. 150 years under markets: 3–7% fewer people than without
+  (accepted by the user).
+- **The second wave** (Oct 18): Religion, Disease and Natural world were built at once by agents
+  like the first wave, and merged one at a time (save format 35). All three are off by default and
+  in files that don't name them, and `without_realms()` switches them off too; whether each goes
+  on for new worlds is decided at the wave's whole checks (stories 1 and 2).
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

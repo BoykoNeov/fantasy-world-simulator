@@ -184,17 +184,18 @@ fn main() {
     let total_s = run_start.elapsed().as_secs_f64();
     let days = busy.0 + idle.0;
 
-    println!("\nyear  population      starved   famine provinces  food stock");
+    println!("\nyear  population      starved  plague dead   famine provinces  food stock");
     let mut rows = sim.history.clone();
     rows.push(sim.year_so_far());
     let stride = (rows.len() / 10).max(1);
     for (k, y) in rows.iter().enumerate() {
         if k.is_multiple_of(stride) || k + 1 == rows.len() {
             println!(
-                "{:>4}  {:>13}  {:>11}  {:>16}  {:>10}",
+                "{:>4}  {:>13}  {:>11}  {:>11}  {:>16}  {:>10}",
                 y.year,
                 group(y.population),
                 group(y.ledger.starved),
+                group(y.ledger.plague),
                 y.famine_provinces,
                 group(y.food_stock)
             );

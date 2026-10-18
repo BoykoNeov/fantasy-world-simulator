@@ -1108,7 +1108,9 @@ impl Sim {
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };
         for e in changed.into_iter().filter(|&e| mine(e)) {
-            let what = Traced::Changed { field: id, entity: e, before: old.value(e as usize), after: new.value(e as usize) };
+            // A value new today (a pop row or a company added in the province) had none before.
+            let before = if (e as usize) < old.len() { old.value(e as usize) } else { f64::NAN };
+            let what = Traced::Changed { field: id, entity: e, before, after: new.value(e as usize) };
             t.steps.push(TraceStep { stage: kind, module, what });
         }
     }
