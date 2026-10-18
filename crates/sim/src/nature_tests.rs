@@ -263,8 +263,8 @@ fn a_file_naming_the_module_but_not_a_part_has_that_part_off() {
     // The module's defaults have every part on.
     let d = NatureParams::default();
     assert!(d.forests.is_some() && d.fish.is_some() && d.wildlife.is_some());
-    // Off by default for new worlds while it is built.
-    assert!(crate::config::ModuleConfig::default().nature.is_none());
+    // On by default for new worlds since the second wave's checks, with every part.
+    assert_eq!(crate::config::ModuleConfig::default().nature, Some(NatureParams::default()));
 }
 
 #[test]

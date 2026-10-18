@@ -114,16 +114,19 @@ pub struct ModuleConfig {
     pub culture: Option<CultureParams>,
     // The second wave of modules built side by side (Oct 18).
     /// Religion v1, "conversion": faiths spread and people take up the faith that pulls hardest
-    /// (step 9). Needs Population. Off by default while it is built, and in files that don't name it.
+    /// (step 9). Needs Population. On by default since the second wave's checks (the user, Oct 18),
+    /// off in files that don't name it.
     #[serde(default)]
     pub religion: Option<ReligionParams>,
     /// Disease v1, "plagues": plagues break out, spread along the ways, kill and leave survivors
-    /// immune (step 10). Needs Population. Off by default while it is built, and in files that don't
-    /// name it.
+    /// immune (step 10). Needs Population. Off by default: with it on, story 2's rich ports fell in
+    /// a normal war on 4 of 18 worlds against 7 without (the second wave's checks, Oct 18), so it
+    /// waits for tuning; off in files that don't name it.
     #[serde(default)]
     pub disease: Option<DiseaseParams>,
     /// Natural world v1, "regrowth": woodland, fish and game used up and growing back (step 10).
-    /// Needs Population. Off by default while it is built, and in files that don't name it.
+    /// Needs Population. On by default since the second wave's checks (the user, Oct 18), off in
+    /// files that don't name it.
     #[serde(default)]
     pub nature: Option<NatureParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
@@ -158,9 +161,9 @@ impl Default for ModuleConfig {
             warfare: Some(campaigns(TroopParams::default())),
             research: Some(ResearchParams::default()),
             culture: Some(CultureParams::default()),
-            religion: None,
+            religion: Some(ReligionParams::default()),
             disease: None,
-            nature: None,
+            nature: Some(NatureParams::default()),
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -283,10 +286,9 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Warfare, &["campaigns", "troops", "off"]),
     (Slot::Research, &["tree", "off"]),
     (Slot::Culture, &["assimilation", "off"]),
-    // Off first while it is off by default.
-    (Slot::Religion, &["off", "conversion"]),
+    (Slot::Religion, &["conversion", "off"]),
     (Slot::Disease, &["off", "plagues"]),
-    (Slot::Nature, &["off", "regrowth"]),
+    (Slot::Nature, &["regrowth", "off"]),
 ];
 
 impl ModuleConfig {

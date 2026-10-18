@@ -88,9 +88,9 @@ Loads refuse other format versions,
   | Warfare | `campaigns` (the default since the first wave's checks): `troops` with every part of logistics on: sieges in depth, supply lines, winter, pay and armies acting together (sieges alone until Oct 18; see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Each part can be switched off alone | daily (raising and eating monthly) |
   | Research | `tree`: realms study and learn techs (see below); needs realms; on by default (techs have effects: its "effects" part); or off | monthly |
   | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
-  | Religion | `conversion`: faiths spread, and people take up the faith that pulls hardest (see below); needs Population; off by default while the second wave is checked | monthly |
-  | Disease | `plagues`: plagues break out, spread along the ways (far faster by sea) and kill (see below); needs Population; off by default while the second wave is checked | weekly (quiet weeks skipped) |
-  | Nature | `regrowth`: each province's woodland, fish and game, used up and growing back (see below); needs Population; off by default while the second wave is checked | monthly |
+  | Religion | `conversion`: faiths spread, and people take up the faith that pulls hardest (see below); needs Population; the default since the second wave's checks; or off | monthly |
+  | Disease | `plagues`: plagues break out, spread along the ways (far faster by sea) and kill (see below); needs Population; off by default (with it, story 2's rich ports fall in a normal war on 4 of 18 worlds against 7 without: it waits for tuning) | weekly (quiet weeks skipped) |
+  | Nature | `regrowth`: each province's woodland, fish and game, used up and growing back (see below); needs Population; the default since the second wave's checks; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
   people to do its work: with Population off it is refused when the world is made.
@@ -925,9 +925,12 @@ Loads refuse other format versions,
   `FisheryRecovered`; edit `SetNature`. 150 years under markets: 3–7% fewer people than without
   (accepted by the user).
 - **The second wave** (Oct 18): Religion, Disease and Natural world were built at once by agents
-  like the first wave, and merged one at a time (save format 35). All three are off by default and
-  in files that don't name them, and `without_realms()` switches them off too; whether each goes
-  on for new worlds is decided at the wave's whole checks (stories 1 and 2).
+  like the first wave, and merged one at a time (save format 35). Files that don't name them keep
+  them off, and `without_realms()` switches them off too. After the wave's checks (story 1 passes
+  with each and with all three; story 2's normal-war passes on its 18 worlds: today's defaults 7,
+  with Religion 6, Natural world 6, Disease 4, all three 5), Religion and Natural world are on for
+  new worlds and Disease is off until it is tuned (the user, Oct 18; `examples/story1.rs`,
+  `examples/story2.rs`).
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
