@@ -714,7 +714,7 @@ impl Plagues {
                 let sea = l.sea_days.map_or(0.0, |d| pr.sea_factor * (-(d as f64) / pr.half_days).exp2());
                 // (Without bounds it is certain to arrive.)
                 let h = push * towns * (land + sea);
-                if !(h > 0.0) {
+                if h.is_nan() || h <= 0.0 {
                     continue;
                 }
                 let k = match slot[q] {

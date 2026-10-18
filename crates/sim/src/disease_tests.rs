@@ -210,13 +210,10 @@ fn ships_carry_it_sooner_than_roads_of_the_same_days() {
         let mut seen = Seen::default();
         run_out(&mut s, 2 * 364, &mut seen);
         trials += 1;
-        match seen.arrived.first() {
-            Some(&(_, q, from, sea, _)) => {
-                assert_eq!(from, p);
-                assert_eq!(sea, q == port, "the way to the port is by sea, the other by road");
-                if q == port { by_sea += 1 } else { by_land += 1 }
-            }
-            None => {}
+        if let Some(&(_, q, from, sea, _)) = seen.arrived.first() {
+            assert_eq!(from, p);
+            assert_eq!(sea, q == port, "the way to the port is by sea, the other by road");
+            if q == port { by_sea += 1 } else { by_land += 1 }
         }
     }
     assert!(by_sea + by_land > trials / 2, "it rarely left the province: {by_sea} + {by_land} of {trials}");
@@ -354,7 +351,7 @@ fn outbreaks_go_on_through_saves_live_settings_and_map_edits() {
     harmless.edit(Edit::Settings { changes: vec![SettingChange { key: "modules.disease.deadliness".into(), value: 0.0 }] }).unwrap();
     let mut seen = Seen::default();
     run(&mut harmless, 100, &mut seen);
-    assert!(seen.granted <= 0, "{} died", seen.granted);
+    assert_eq!(seen.granted, 0, "nobody dies of it");
 
     // A province split off a sick province takes its shares; merged, the shares mix by people.
     let mut e = sim(&config(7, plain()));

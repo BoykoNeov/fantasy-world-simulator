@@ -10,7 +10,7 @@
 //! centres over the weeks since the plague reached the province it came from, by sea and over land;
 //! the plague's dead against the people of the provinces it struck and of the world.
 //!
-//! `check`: the 150-year check on seeds 21, 7 and 1 under both economies, with natural starts on,
+//! `check`: the 150-year check on seeds 21, 7 and 1 (or `SEEDS=...`) under both economies (or `ECON=...`), with natural starts on,
 //! against the same worlds without Disease: people at the end (bar 0.7–1.1 times), outbreaks (2–15),
 //! the most of the world one outbreak killed (at most 40%), the most of a province's people one
 //! outbreak killed (at most 80%), plague dead a year per 1,000 people (about 1–5), and any broken
@@ -209,7 +209,9 @@ fn century(economics: &str, seed: u64, years: i64, sz: Size, disease: bool, args
     let mut c = Config::new(WorldParams::preset(sz, seed));
     c.modules.set_choice(Slot::Economics, economics).unwrap();
     c.modules.disease = disease.then(DiseaseParams::default);
-    set(&mut c, args);
+    // The world without Disease takes every setting but Disease's.
+    let keep: Vec<String> = args.iter().filter(|a| disease || !a.starts_with("modules.disease")).cloned().collect();
+    set(&mut c, &keep);
     let mut s = Sim::new(&c).unwrap();
     let start = s.calendar.date(0).year;
     let mut w = Watch::default();
@@ -248,7 +250,14 @@ fn check(args: &[String]) {
     use rayon::prelude::*;
     let years = args.iter().filter_map(|a| a.parse::<i64>().ok()).next().unwrap_or(150);
     let sz = size(args, Size::Small);
-    let runs: Vec<(&str, u64, bool)> = ["food", "markets"].iter().flat_map(|&e| [21u64, 7, 1].into_iter().flat_map(move |s| [(e, s, true), (e, s, false)])).collect();
+    // SEEDS=21,7,1 (the default) and ECON=food or markets (both by default) to choose.
+    let seeds: Vec<u64> = std::env::var("SEEDS").map(|v| v.split(',').map(|x| x.parse().unwrap()).collect()).unwrap_or(vec![21, 7, 1]);
+    let economies: Vec<&str> = match std::env::var("ECON").as_deref() {
+        Ok("food") => vec!["food"],
+        Ok("markets") => vec!["markets"],
+        _ => vec!["food", "markets"],
+    };
+    let runs: Vec<(&str, u64, bool)> = economies.iter().flat_map(|&e| seeds.iter().flat_map(move |&s| [(e, s, true), (e, s, false)])).collect();
     let out: Vec<String> = runs.par_iter().map(|&(e, seed, d)| century(e, seed, years, sz, d, args)).collect();
     for k in (0..runs.len()).step_by(2) {
         let (e, seed, _) = runs[k];
