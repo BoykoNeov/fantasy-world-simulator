@@ -800,6 +800,21 @@ pub struct Troops {
     pub(crate) more: crate::logistics::More,
     /// Rebuilt from the army fields when missing (after a load).
     ix: Option<Index>,
+    /// What techs do (Research's effects): soldiers and ships are stronger, and sieges faster, for
+    /// a realm that knows more.
+    pub know: Option<Arc<crate::research::Know>>,
+    /// Each realm's factors for land soldiers' strength, ships' strength and siege speed, from
+    /// `realm.tech` as the day began (worked out again each day; empty without effects).
+    edge: Edge,
+}
+
+/// Each realm's factors from what it knows, for the day `day` (see [`Troops::refresh_edge`]).
+#[derive(Default)]
+struct Edge {
+    day: Option<u64>,
+    strength: Vec<f64>,
+    ships: Vec<f64>,
+    siege: Vec<f64>,
 }
 
 impl Troops {
@@ -808,7 +823,7 @@ impl Troops {
     /// name and the same private state, so saves and scenario files don't depend on which it is;
     /// the configuration picks by the economics chosen, as it does for realms' taxes.
     pub fn new(params: TroopParams, coins: bool) -> Troops {
-        Troops { params, coins, resolved: None, st: State::default(), more: Default::default(), ix: None }
+        Troops { params, coins, resolved: None, st: State::default(), more: Default::default(), ix: None, know: None, edge: Edge::default() }
     }
 
     fn resolved(&mut self) -> Arc<Resolved> {
@@ -886,9 +901,19 @@ static V1_COINS: Manifest = Manifest {
     ..V1
 };
 
+/// Both, where techs have effects: they read what each realm knows, for soldiers, ships and
+/// sieges, as the day began, since Research reads who owns what.
+static V1_KNOW: Manifest = Manifest { reads_earlier: &["realm.tech"], ..V1 };
+static V1_COINS_KNOW: Manifest = Manifest { reads_earlier: &["realm.tech"], ..V1_COINS };
+
 impl Module for Troops {
     fn manifest(&self) -> &'static Manifest {
-        if self.coins { &V1_COINS } else { &V1 }
+        match (self.coins, self.know.is_some()) {
+            (true, false) => &V1_COINS,
+            (false, false) => &V1,
+            (true, true) => &V1_COINS_KNOW,
+            (false, true) => &V1_KNOW,
+        }
     }
 
     fn check(&self, goods: &Goods) -> Result<(), String> {
@@ -917,6 +942,7 @@ impl Module for Troops {
             return;
         }
         self.ix(w);
+        self.refresh_edge(w);
         work::add(work::DAYS, 1);
         if cx.calendar.is_month_start(cx.day) {
             work::add(work::MONTHS, 1);
@@ -986,6 +1012,7 @@ impl Module for Troops {
             return;
         }
         self.ix(w);
+        self.refresh_edge(w);
         match *e {
             Event::Granted { request: r, granted } => match r.cause {
                 Cause::Raised => self.recruited(w, cx, &r, granted),
@@ -1765,8 +1792,39 @@ impl Troops {
     }
 
     /// The strength of companies `of`.
-    fn strength(w: &World, res: &Resolved, of: &[u32]) -> f64 {
-        of.iter().map(|&a| w.armies.size[a as usize] as f64 * res.kind(w.armies.kind[a as usize]).strength).sum()
+    fn strength(&self, w: &World, res: &Resolved, of: &[u32]) -> f64 {
+        of.iter().map(|&a| w.armies.size[a as usize] as f64 * self.per_soldier(w, res, a)).sum()
+    }
+
+    /// What one soldier (or crewman) of company `a` counts for in battle: its kind's strength,
+    /// times its realm's factor from what it knows (Research's effects; exactly 1 without them).
+    fn per_soldier(&self, w: &World, res: &Resolved, a: u32) -> f64 {
+        let k = res.kind(w.armies.kind[a as usize]);
+        let edge = if k.ship { &self.edge.ships } else { &self.edge.strength };
+        k.strength * crate::research::factor(edge, w.armies.realm[a as usize])
+    }
+
+    /// For tests: company `a`'s strength a soldier, and realm `r`'s factors for land soldiers,
+    /// ships and sieges, as the world's day began.
+    #[cfg(test)]
+    pub(crate) fn edge_of(&mut self, w: &World, a: u32, r: u32) -> (f64, [f64; 3]) {
+        let res = self.resolved();
+        self.edge = Edge::default();
+        self.refresh_edge(w);
+        let f = |v: &[f64]| crate::research::factor(v, r);
+        (self.per_soldier(w, &res, a), [f(&self.edge.strength), f(&self.edge.ships), f(&self.edge.siege)])
+    }
+
+    /// Each realm's factors from what it knows, as today began (Research's effects): worked out
+    /// once a day, before anything reads them.
+    fn refresh_edge(&mut self, w: &World) {
+        let Some(t) = &self.know else { return };
+        if self.edge.day == Some(w.earlier.day) {
+            return;
+        }
+        let known = w.earlier.u32s("realm.tech");
+        use crate::research::Effect;
+        self.edge = Edge { day: Some(w.earlier.day), strength: t.factors(known, Effect::Strength), ships: t.factors(known, Effect::Ships), siege: t.factors(known, Effect::Siege) };
     }
 
     /// One day's blows between the realms in `sides` (each realm's companies) that are at war with
@@ -1774,7 +1832,7 @@ impl Troops {
     /// the soldiers each side lost.
     fn exchange(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, p: u32, sides: &[(u32, Vec<u32>)], salt: u64) -> Vec<u64> {
         let pr = &self.params;
-        let strength: Vec<f64> = sides.iter().map(|(_, c)| Self::strength(w, res, c)).collect();
+        let strength: Vec<f64> = sides.iter().map(|(_, c)| self.strength(w, res, c)).collect();
         let owner = w.owner.get(p as usize).copied().unwrap_or(NONE);
         let mut loss = vec![0.0; sides.len()];
         for (i, (x, _)) in sides.iter().enumerate() {
@@ -1952,6 +2010,8 @@ impl Troops {
             if free {
                 need *= free_siege;
             }
+            // Faster for a realm that knows more (Research's effects; exactly 1 without them).
+            need /= crate::research::factor(&self.edge.siege, x);
             let need = (need.round() as u32).max(1);
             if cx.traced(p) {
                 cx.note(format!("realm {x} {} it: day {done} of {need}", if free { "frees" } else { "besieges" }));
@@ -2122,7 +2182,7 @@ impl Troops {
         ix.standing.get(&p).map_or(0.0, |s| {
             s.iter()
                 .filter(|&&a| foes.binary_search(&w.armies.realm[a as usize]).is_ok() && res.kind(w.armies.kind[a as usize]).ship == ships)
-                .map(|&a| w.armies.size[a as usize] as f64 * res.kind(w.armies.kind[a as usize]).strength)
+                .map(|&a| w.armies.size[a as usize] as f64 * self.per_soldier(w, res, a))
                 .sum()
         })
     }
@@ -2313,7 +2373,7 @@ impl Troops {
                     let v: Vec<u32> = pool.iter().copied().filter(|&a| !res.kind(w.armies.kind[a as usize]).ship).collect();
                     let (s, n) = v.iter().fold((0.0, 0u64), |(s, n), &a| {
                         let size = w.armies.size[a as usize];
-                        (s + size as f64 * res.kind(w.armies.kind[a as usize]).strength, n + size)
+                        (s + size as f64 * self.per_soldier(w, res, a), n + size)
                     });
                     std::rc::Rc::new((v, s, n))
                 })
@@ -2376,7 +2436,7 @@ impl Troops {
             }
             let members: Vec<u32> = group.map_or(Vec::new(), |k| self.st.groups[&k].members.clone());
             let (troops, ships): (Vec<u32>, Vec<u32>) = members.iter().partition(|&&a| !res.kind(w.armies.kind[a as usize]).ship);
-            let have = Self::strength(w, res, &troops);
+            let have = self.strength(w, res, &troops);
             let have_n: u64 = troops.iter().map(|&a| w.armies.size[a as usize]).sum();
             let mut adds: Sends = Vec::new();
             if have < need || have_n < least || members.is_empty() {
@@ -2414,7 +2474,7 @@ impl Troops {
                     let size = w.armies.size[a as usize] as f64;
                     *short.entry(goes(a, path)).or_default() += if k.ship { -size * k.carry } else { size };
                 }
-                let mut fleet = Self::strength(w, res, &ships);
+                let mut fleet = self.strength(w, res, &ships);
                 let mut ship_pool: Vec<u32> = pool.iter().copied().filter(|&a| res.kind(w.armies.kind[a as usize]).ship).collect();
                 let mut failed = false;
                 let mut biggest = (f64::MIN, gather[0]);
@@ -2427,7 +2487,7 @@ impl Troops {
                     }
                     match self.recruit_ships(w, res, r, foes, q, &ship_pool, lack, 0.0) {
                         Some(chosen) => {
-                            fleet += chosen.iter().map(|(a, _)| Self::strength(w, res, &[*a])).sum::<f64>();
+                            fleet += chosen.iter().map(|(a, _)| self.strength(w, res, &[*a])).sum::<f64>();
                             ship_pool.retain(|b| !chosen.iter().any(|(a, _)| a == b));
                             adds.extend(chosen);
                         }
@@ -2563,7 +2623,7 @@ impl Troops {
                 }
                 let size = w.armies.size[a as usize];
                 *room -= size as i64;
-                got_s += size as f64 * res.kind(w.armies.kind[a as usize]).strength;
+                got_s += size as f64 * self.per_soldier(w, res, a);
                 got_n += size;
                 chosen.push((a, s.route_back(at).into_iter().map(|q| (q, sea)).collect()));
                 rest.retain(|&b| b != a);
@@ -2594,7 +2654,7 @@ impl Troops {
             let k = res.kind(w.armies.kind[a as usize]);
             let size = w.armies.size[a as usize] as f64;
             got_c += size * k.carry;
-            got_s += size * k.strength;
+            got_s += size * self.per_soldier(w, res, a);
             let at = w.armies.province[a as usize];
             chosen.push((a, s.route_back(at).into_iter().map(|q| (q, true)).collect()));
         }
@@ -2620,7 +2680,7 @@ impl Troops {
         };
         let troops: Vec<u32> = present.iter().copied().filter(|&a| !res.kind(arm.kind[a as usize]).ship).collect();
         let soldiers: u64 = troops.iter().map(|&a| arm.size[a as usize]).sum();
-        if troops.is_empty() || Self::strength(w, res, &troops) < need || soldiers < least {
+        if troops.is_empty() || self.strength(w, res, &troops) < need || soldiers < least {
             return;
         }
         if g.sea {

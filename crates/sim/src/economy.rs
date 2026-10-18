@@ -2,14 +2,15 @@
 //!
 //! The module owns `province.stock` and keeps one good in it: food, as a whole (the goods tree's
 //! "food" class). Once a month each province harvests its share of the
-//! year's food (seasonal away from the equator, better or worse by region each year) and some of
-//! the store spoils. Everyone else takes food by change request: at the end of the day the store is
+//! year's food (seasonal away from the equator, better or worse by region each year, bigger where
+//! its owner knows techs that raise harvests: Research's effects) and some of the store spoils. Everyone else takes food by change request: at the end of the day the store is
 //! shared out, essential needs first, in proportion within a class when it runs short.
 
 use crate::calendar::Calendar;
 use crate::events::EventKind;
 use crate::fields::{known, Goods, Quantity};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
+use crate::research::Effect;
 use crate::requests::{serve_goods, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
 use crate::terrain::fbm;
@@ -39,6 +40,8 @@ impl Default for FoodParams {
 
 pub struct Food {
     pub params: FoodParams,
+    /// What techs do (Research's effects): harvests follow the owner's knowledge.
+    pub know: Option<std::sync::Arc<crate::research::Know>>,
 }
 
 /// Where the food store is in `province.stock`: (columns per province, the food column), and the
@@ -66,9 +69,13 @@ static V0: Manifest = Manifest {
     goods: &["food"],
 };
 
+/// The same version where techs have effects: it reads what each province's owner knows, as the
+/// day began, since Realms and Research read the food this module keeps.
+static V0_KNOW: Manifest = Manifest { reads_earlier: &["province.owner", "realm.tech"], ..V0 };
+
 impl Module for Food {
     fn manifest(&self) -> &'static Manifest {
-        &V0
+        if self.know.is_some() { &V0_KNOW } else { &V0 }
     }
 
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
@@ -83,6 +90,7 @@ impl Module for Food {
     fn tick(&mut self, w: &mut World, cx: &mut Ctx) {
         let (p, cal, day, seed) = (&self.params, cx.calendar, cx.day, cx.seed);
         let (k, food, counted) = food_column(&w.goods);
+        let gain = self.know.as_ref().map(|t| t.by_province(w.earlier.u32s("realm.tech"), w.earlier.u32s("province.owner"), w.provinces.count, Effect::Harvest));
         let prov = &w.provinces;
         let date = cal.date(day);
         let harvest_key = draw(seed, Rng::Economics, cal.year_start(date.year), 0, purpose("harvest year"));
@@ -96,7 +104,12 @@ impl Module for Food {
             let share = month_share(cal, p.seasonality, p.harvest_peak, date.month, prov.lat[id] as f64);
             // Crops fail in proportion to the missing rain; exactly 1 in a normal year.
             let rain = 1.0 - w.rain_shortfall[id] as f64 / 1000.0;
-            let expected = prov.food_capacity[id] as f64 * year_factor * share * rain;
+            let mut expected = prov.food_capacity[id] as f64 * year_factor * share * rain;
+            // What its owner knows; exactly 1 without Research's effects.
+            let known = gain.as_ref().map_or(1.0, |g| g[id]);
+            if known != 1.0 {
+                expected *= known;
+            }
             let harvest = round_stochastic(expected, seed, Rng::Economics, day, e, purpose("harvest"));
             let at = id * k + food;
             let stock = w.stock[at] + harvest;
@@ -104,8 +117,10 @@ impl Module for Food {
             w.stock[at] = stock - spoil;
             if cx.traced(id as u32) {
                 cx.note(format!(
-                    "harvest {harvest} rations = {} a year in an average year × {year_factor:.2} for this year's luck × {:.3} of the year's crop due this month × {rain:.2} for the rain",
-                    prov.food_capacity[id], share
+                    "harvest {harvest} rations = {} a year in an average year × {year_factor:.2} for this year's luck × {:.3} of the year's crop due this month × {rain:.2} for the rain{}",
+                    prov.food_capacity[id],
+                    share,
+                    if known != 1.0 { format!(" × {known:.2} for what its realm knows") } else { String::new() }
                 ));
                 cx.note(format!("{spoil} of {stock} stored rations spoiled ({:.0}% a year)", 100.0 * p.spoilage_per_year));
             }

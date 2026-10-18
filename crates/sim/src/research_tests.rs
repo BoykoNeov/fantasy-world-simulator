@@ -1,6 +1,7 @@
 //! Tests of Research "tree" (build step 9): the tree and its check, monthly study, the discount
 //! from neighbours and trade partners, new and gone realms, scholars' wages under coins, the
-//! SetTech edit, and saves, going back and settings changed while the world runs.
+//! SetTech edit, saves, going back and settings changed while the world runs, and what techs do
+//! (their effects) to harvests, goods made, soldiers, ships, sieges and unrest.
 
 use crate::branch::Timelines;
 use crate::config::Config;
@@ -12,7 +13,7 @@ use crate::grid::NONE;
 use crate::module::{Module, Slot};
 use crate::realms::RealmParams;
 use crate::requests::Cause;
-use crate::research::{tech_names, Research, ResearchParams, Survey};
+use crate::research::{factor, tech_names, Effect, EffectParams, Know, Research, ResearchParams, Survey};
 use crate::sim::{Problems, Sim};
 use crate::world::{World, WorldParams};
 
@@ -89,7 +90,9 @@ fn the_shipped_tree_is_a_first_draft_of_24_techs_in_six_fields() {
     assert!(needs.iter().any(|n| n.is_empty()), "something can be studied first");
     // Columns go by name.
     let mut c = Config::new(WorldParams::preset(crate::world::Size::Small, 1));
-    assert!(tech_names(&c.modules).is_empty(), "off by default");
+    assert_eq!(tech_names(&c.modules).len(), 24, "on by default");
+    c.modules.research = None;
+    assert!(tech_names(&c.modules).is_empty(), "none without research");
     c.modules.research = Some(p);
     let names = tech_names(&c.modules);
     assert!(names.windows(2).all(|w| w[0] < w[1]));
@@ -110,6 +113,9 @@ fn a_tree_that_doesnt_fit_together_is_refused() {
     assert!(refused(&|p| p.ruler_effect = -0.1).contains("ruler"));
     assert!(refused(&|p| p.size_cap = 0.5).contains("big realm"));
     assert!(refused(&|p| p.speed = f64::NAN).contains("speed"));
+    assert!(refused(&|p| _ = p.techs.get_mut("writing").unwrap().effects.insert("magic".into(), 0.1)).contains("magic is not an effect"));
+    assert!(refused(&|p| _ = p.techs.get_mut("writing").unwrap().effects.insert("calm".into(), -0.1)).contains("calm effect"));
+    assert!(refused(&|p| p.effects = Some(EffectParams { scale: f64::INFINITY })).contains("scale"));
     // The engine refuses such a world.
     let mut c = config("food", 1);
     c.modules.research.as_mut().unwrap().techs.get_mut("writing").unwrap().needs.push("magic".into());
@@ -463,8 +469,10 @@ fn research_settings_change_while_the_world_runs() {
 
 #[test]
 fn research_leaves_the_rest_of_the_world_as_it_was_under_economics_v0() {
-    // Under Economics v0 research asks nothing of anyone: every other field is as without it.
+    // Under Economics v0 research asks nothing of anyone: with its effects off, every other field
+    // is as without it.
     let mut c = config("food", 4);
+    c.modules.research.as_mut().unwrap().effects = None;
     let mut with = Sim::new(&c).unwrap();
     c.modules.research = None;
     let mut without = Sim::new(&c).unwrap();
@@ -488,4 +496,167 @@ fn a_module_made_again_keeps_its_state() {
     again.load_state(&m.save_state()).unwrap();
     assert_eq!(again.save_state(), m.save_state());
     assert!(again.load_state(&[1, 2, 3]).is_err());
+}
+
+#[test]
+fn the_shipped_tree_gives_each_tech_five_percent_in_its_fields_effect() {
+    let p = ResearchParams::default();
+    assert_eq!(p.effects, Some(EffectParams { scale: 1.0 }), "on in new worlds");
+    let of = |field: &str| -> Vec<(&str, f64)> {
+        match field {
+            "farming" => vec![("harvest", 0.05)],
+            "crafts" => vec![("made", 0.05)],
+            "war" => vec![("siege", 0.05), ("strength", 0.05)],
+            "sea" => vec![("ships", 0.05)],
+            "learning" => vec![("calm", 0.05)],
+            _ => vec![],
+        }
+    };
+    for (name, t) in &p.techs {
+        let has: Vec<(&str, f64)> = t.effects.iter().map(|(e, &x)| (e.as_str(), x)).collect();
+        assert_eq!(has, of(&t.field), "{name}");
+    }
+}
+
+#[test]
+fn a_realms_factor_is_one_plus_the_sizes_of_the_techs_it_knows() {
+    let mut p = ResearchParams::default();
+    let names: Vec<String> = p.techs.keys().cloned().collect();
+    let k = names.len();
+    let col = |n: &str| names.iter().position(|m| m == n).unwrap();
+    // Realm 0 knows two farming techs and a war tech, realm 1 nothing.
+    let mut known = vec![NONE; 2 * k];
+    for t in ["irrigation", "heavy_plough", "fortification"] {
+        known[col(t)] = 100;
+    }
+    let t = Know::new(&p).unwrap();
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
+    let h = t.factors(&known, Effect::Harvest);
+    assert!(close(h[0], 1.10) && h[1] == 1.0, "{h:?}");
+    let s = t.factors(&known, Effect::Strength);
+    assert!(close(s[0], 1.05) && close(t.factors(&known, Effect::Siege)[0], 1.05));
+    // Exactly 1 for an effect none of its techs has, and for no realm at all.
+    assert_eq!(t.factors(&known, Effect::Ships), vec![1.0, 1.0]);
+    assert_eq!((factor(&h, NONE), factor(&h, 7)), (1.0, 1.0));
+    // A province goes by its owner, unowned land by nobody.
+    assert_eq!(t.by_province(&known, &[1, 0, NONE], 3, Effect::Harvest), vec![1.0, h[0], 1.0]);
+    // The scale multiplies every size; without the part techs do nothing.
+    p.effects = Some(EffectParams { scale: 2.0 });
+    assert!(close(Know::new(&p).unwrap().factors(&known, Effect::Harvest)[0], 1.20));
+    p.effects = None;
+    assert!(Know::new(&p).is_none());
+}
+
+/// A world (seed 3) with armies, where techs do what the tree says times `scale` (none: the part
+/// off), run into its second month, with the realms `taught` picks taught every tech; ends at a
+/// month's first day, before it runs.
+fn taught(economics: &str, scale: Option<f64>, taught: &dyn Fn(&World) -> Vec<u32>) -> Sim {
+    let mut c = config(economics, 3);
+    c.modules.warfare = Some(Default::default());
+    c.modules.research.as_mut().unwrap().effects = scale.map(|scale| EffectParams { scale });
+    let mut sim = Sim::new(&c).unwrap();
+    sim.strict = true;
+    sim.run_days(40);
+    for r in taught(&sim.world) {
+        let names: Vec<String> = (*sim.world.techs).clone();
+        for tech in names {
+            if !knows(&sim.world, r, col(&sim.world, &tech)) {
+                sim.edit(Edit::SetTech { realm: r, tech, known: true }).unwrap();
+            }
+        }
+    }
+    sim.run_days(1);
+    to_month_start(&mut sim);
+    sim
+}
+
+#[test]
+fn techs_with_no_effects_leave_the_world_exactly_as_without_the_part() {
+    // Every hook multiplies or divides by exactly 1 when what a realm knows does nothing, so a
+    // world whose effects are scaled to 0 is the world without them, value for value, under both
+    // economies, with every realm knowing everything.
+    for economics in ["food", "markets"] {
+        let mut off = taught(economics, None, &alive);
+        let mut zero = taught(economics, Some(0.0), &alive);
+        off.run_days(365 * 2);
+        zero.run_days(365 * 2);
+        assert_eq!(off.fingerprint(), zero.fingerprint(), "{economics}");
+        assert_eq!(zero.problems, Problems::default());
+    }
+}
+
+#[test]
+fn farming_techs_make_harvests_bigger_and_crafts_techs_more_goods() {
+    // Every realm taught everything: a few months' harvest is about 1.2 times as big (four farming
+    // techs of 0.05), a little less for unowned land, which knows nothing.
+    for economics in ["food", "markets"] {
+        let mut with = taught(economics, Some(1.0), &alive);
+        let mut without = taught(economics, Some(0.0), &alive);
+        let before = (with.year_so_far().ledger.produced, without.year_so_far().ledger.produced);
+        assert_eq!(before.0, before.1, "the same world until the knowledge does something");
+        let made = |sim: &Sim| -> u64 {
+            let w = &sim.world;
+            let food = w.goods.column("food");
+            let k = w.goods.stride();
+            (0..w.provinces.count * k).filter(|&i| Some(i % k) != food).map(|i| w.stock[i]).sum()
+        };
+        let made_before = (made(&with), made(&without));
+        // Three months, so some harvest falls in them wherever the province lies.
+        for _ in 0..3 {
+            with.run_days(1);
+            without.run_days(1);
+            to_month_start(&mut with);
+            to_month_start(&mut without);
+        }
+        let grown = |sim: &Sim, b: u64| (sim.year_so_far().ledger.produced - b) as f64;
+        let ratio = grown(&with, before.0) / grown(&without, before.1);
+        assert!(ratio > 1.05 && ratio < 1.2 + 1e-3, "{economics}: harvests {ratio}");
+        if economics == "markets" {
+            let (a, b) = (made(&with) as i64 - made_before.0 as i64, made(&without) as i64 - made_before.1 as i64);
+            assert!(a > b, "goods made {a} against {b}");
+        }
+        assert_eq!(with.problems, Problems::default());
+    }
+}
+
+#[test]
+fn soldiers_ships_and_sieges_follow_their_realms_knowledge() {
+    let first = |w: &World| vec![alive(w)[0]];
+    let mut sim = taught("food", Some(1.0), &first);
+    sim.run_days(1);
+    let w = &sim.world;
+    let (r, other) = (alive(w)[0], alive(w)[1]);
+    let a = (0..w.armies.realm.len() as u32).find(|&a| w.armies.realm[a as usize] == r && w.armies.size[a as usize] > 0).expect("realm 0 has soldiers");
+    let params = sim.config.modules.warfare.clone().unwrap();
+    let mut troops = crate::warfare::Troops::new(params.clone(), false);
+    troops.know = Know::new(sim.config.modules.research.as_ref().unwrap());
+    let (per, edge) = troops.edge_of(w, a, r);
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    // Four war techs: soldiers 1.2 times as strong, sieges 1.2 times as fast; four sea techs, ships.
+    assert!(edge.iter().all(|&x| close(x, 1.2)), "{edge:?}");
+    assert_eq!(troops.edge_of(w, a, other).1, [1.0; 3], "a realm that knows nothing");
+    // Without the part, nobody is stronger.
+    let (plain, e) = crate::warfare::Troops::new(params, false).edge_of(w, a, r);
+    assert!(close(plain * 1.2, per) && e == [1.0; 3], "{plain} {per} {e:?}");
+}
+
+#[test]
+fn learning_techs_make_unrest_rise_more_slowly() {
+    // The same famine in a province of a realm that knows everything adds less unrest where techs
+    // have effects (four learning techs: what it adds is divided by 1.2).
+    let first = |w: &World| vec![alive(w)[0]];
+    let mut with = taught("food", Some(1.0), &first);
+    let mut without = taught("food", Some(0.0), &first);
+    let w = &with.world;
+    let r = alive(w)[0];
+    let p = land_of(w, r).into_iter().find(|&p| w.realms.capital[r as usize] != p && w.unrest[p as usize] == 0).expect("a calm province");
+    let people = w.province_population()[p as usize];
+    for sim in [&mut with, &mut without] {
+        sim.schedule(sim.day + 1, Event::Famine { province: p, starved: people / 5 }).unwrap();
+        sim.run_days(2);
+        to_month_start(sim);
+        sim.run_days(1);
+    }
+    let (a, b) = (with.world.unrest[p as usize], without.world.unrest[p as usize]);
+    assert!(b > 0 && (a as f64) < b as f64 * 0.9 && (a as f64) > b as f64 / 1.2 * 0.9, "{a} against {b}");
 }

@@ -232,6 +232,8 @@ pub struct Founding {
     /// People who starved in each province this month, as famines are told; turned into unrest at
     /// the next month's start.
     starved: Vec<u64>,
+    /// What techs do (Research's effects): unrest rises more slowly under a realm that knows more.
+    pub know: Option<std::sync::Arc<crate::research::Know>>,
 }
 
 impl Founding {
@@ -240,7 +242,7 @@ impl Founding {
     /// version name and private state, so saves and scenario files don't depend on which it is;
     /// the configuration picks by the economics chosen.
     pub fn new(params: RealmParams, taxes: bool) -> Founding {
-        Founding { params, taxes, last_capital: Vec::new(), starved: Vec::new() }
+        Founding { params, taxes, last_capital: Vec::new(), starved: Vec::new(), know: None }
     }
 }
 
@@ -273,9 +275,19 @@ static V1_TAXES: Manifest = Manifest {
     ..V1
 };
 
+/// Both, where techs have effects: they read what each realm knows, for unrest, as the day began,
+/// since Research reads who owns what.
+static V1_KNOW: Manifest = Manifest { reads_earlier: &["realm.tech"], ..V1 };
+static V1_TAXES_KNOW: Manifest = Manifest { reads_earlier: &["realm.tech"], ..V1_TAXES };
+
 impl Module for Founding {
     fn manifest(&self) -> &'static Manifest {
-        if self.taxes { &V1_TAXES } else { &V1 }
+        match (self.taxes, self.know.is_some()) {
+            (true, false) => &V1_TAXES,
+            (false, false) => &V1,
+            (true, true) => &V1_TAXES_KNOW,
+            (false, true) => &V1_KNOW,
+        }
     }
 
     fn check(&self, _goods: &crate::fields::Goods) -> Result<(), String> {
@@ -523,6 +535,8 @@ impl Founding {
         // Thousandths of each province's people not of its realm's culture: only where people differ
         // in culture (with Culture off everyone is of one, and nothing need be counted).
         let foreign = if u.foreign > 0.0 && w.pops.culture.iter().any(|&c| c != 0) { crate::culture::foreign_share(w) } else { Vec::new() };
+        // What each realm knows (Research's effects): what stirs its people is divided by this.
+        let calm = self.know.as_ref().map_or(Vec::new(), |t| t.factors(w.earlier.u32s("realm.tech"), crate::research::Effect::Calm));
         for p in 0..n {
             let starved = std::mem::take(&mut self.starved[p]);
             let alien = foreign.get(p).copied().unwrap_or(0);
@@ -531,19 +545,21 @@ impl Founding {
             }
             let was = w.unrest[p];
             let share = if starved == 0 { 0.0 } else { starved as f64 / (people[p] + starved) as f64 };
-            let hunger = u.famine * (share / u.famine_share).min(1.0);
-            let occupied = if w.occupier[p] != NONE { u.occupied } else { 0.0 };
-            let ruled = u.foreign * alien as f64 / 1000.0;
+            let known = crate::research::factor(&calm, w.owner[p]);
+            let hunger = u.famine * (share / u.famine_share).min(1.0) / known;
+            let occupied = if w.occupier[p] != NONE { u.occupied / known } else { 0.0 };
+            let ruled = u.foreign * alien as f64 / 1000.0 / known;
             // Rounded at random, so a little unrest fades as surely as a lot does.
             let now = round_stochastic(was as f64 * keep + hunger + occupied + ruled, cx.seed, Rng::Realms, cx.day, p as u64, purpose("unrest"));
             w.unrest[p] = now.min(LINE);
             if cx.traced(p as u32) {
                 cx.note(format!(
-                    "unrest {was} fades to {:.0}; {:.1}% of the people starved last month, adding {hunger:.0}; {}; {:.1}% of the people are of another culture than the realm's, adding {ruled:.1}; now {} of {LINE}",
+                    "unrest {was} fades to {:.0}; {:.1}% of the people starved last month, adding {hunger:.0}; {}; {:.1}% of the people are of another culture than the realm's, adding {ruled:.1}{}; now {} of {LINE}",
                     was as f64 * keep,
                     100.0 * share,
                     if occupied > 0.0 { format!("occupied by an enemy, adding {occupied:.0}") } else { "not occupied".to_string() },
                     alien as f64 / 10.0,
+                    if known != 1.0 { format!(" (each divided by {known:.2} for what its realm knows)") } else { String::new() },
                     w.unrest[p]
                 ));
             }

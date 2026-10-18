@@ -7,6 +7,9 @@
 //! `BARE` (set in the environment) runs without realms, rulers, diplomacy and armies, for a
 //! measure of the rest under the same load.
 //!
+//! `NO_RESEARCH` (set in the environment) runs without Research, which is on by default since
+//! techs have effects.
+//!
 //! `CAMPAIGNS` (set in the environment) switches on the four parts of logistics (supply, winter,
 //! pay and sieges). Warfare's work is counted and printed for the measured days, a round's worth:
 //! route searches, generals' plans and the like; `TIMING` adds how long each part of its day took
@@ -50,6 +53,10 @@ fn main() {
     let economics = args.get(4).map_or("food", |s| s.as_str());
     let mut c = Config::new(WorldParams::preset(Size::Large, seed));
     c.modules.set_choice(Slot::Economics, economics).unwrap();
+    // Research is on by default since techs have effects (Oct 18); `NO_RESEARCH` measures without it.
+    if std::env::var("NO_RESEARCH").is_ok() {
+        c.modules.research = None;
+    }
     if std::env::var("BARE").is_ok() {
         for slot in [Slot::Warfare, Slot::Diplomacy, Slot::Characters, Slot::Realms] {
             c.modules.set_choice(slot, "off").unwrap();

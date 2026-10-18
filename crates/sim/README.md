@@ -86,7 +86,7 @@ Loads refuse other format versions,
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; the default since step 7's checks; or off | monthly |
   | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; the default since step 7's checks; or off | monthly, and on pokes |
   | Warfare | `campaigns` (the default since the first wave's checks): `troops` with sieges in depth (see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Supply lines, winter, pay and armies acting together are parts switched on alone | daily (raising and eating monthly) |
-  | Research | `tree`: realms study and learn techs (see below); needs realms; off by default until techs do something; or off | monthly |
+  | Research | `tree`: realms study and learn techs (see below); needs realms; on by default (techs have effects: its "effects" part); or off | monthly |
   | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
@@ -795,8 +795,25 @@ Loads refuse other format versions,
   faster), and a tech its neighbours and trade partners know costs less. A learned tech is a
   `Discovery` event and a day in `realm.tech` (one column per tech, A to Z). Under markets the
   scholars (0.5% of the people) are paid from the treasury, about 5% of taxes; unpaid scholars
-  don't study. Rebels know what their old realm knew; conquest teaches nothing. Techs do nothing
-  yet: their effects come later. 150 years: the middle realm knows 12–13 techs, the leader 16–19.
+  don't study. Rebels know what their old realm knew; conquest teaches nothing. 150 years: the
+  middle realm knows 12–13 techs, the leader 16–19.
+- **What techs do** (Oct 18; Research's "effects" part, `research::Know`). Each tech has its own
+  effects with a size, in the tree (`techs.NAME.effects`), each a live setting; shipped, +5% for every
+  tech in its field's effect: farming bigger harvests (food; both economies), crafts more goods made
+  (every good but food; markets), war stronger land soldiers and faster sieges, sea stronger ships,
+  learning slower unrest (what hunger, occupation and foreign rule add). Trade techs do nothing of
+  their own yet. A realm's factor is 1 + the sizes of the techs it knows, times the part's `scale`;
+  harvests, goods and strength are multiplied by it, siege days and unrest added divided. A
+  province goes by its owner's knowledge (also while occupied), an army by its realm's. Economics,
+  Realms and Warfare read `realm.tech` as the day began, and only where the part is on (then their
+  manifests add it to `reads_earlier`), so without it the world is value for value as before; a
+  world with the part scaled to 0 is too (a test). 150 years (`examples/research_check.rs
+  compare`, seeds 21/7/1): the research bars still pass; with Research the world ends with about
+  10% more people than without (6–10% under Economics v0, 11–13% under markets), and the realms'
+  taxes are about the same (+0.6%), so scholars' wages (5% of taxes) are paid out of treasuries
+  that are no richer. Speed (`examples/day_cost.rs`, large world, year 40, one thread): about the
+  same with Research as without (v0 2.08 against 1.82 ms a day with 26 against 23 wars going on,
+  one step of the processor clock apart; markets 3.65 both). Save format 30.
 - **Culture** (step 9; Culture "assimilation", `culture.rs`, tests in `culture_tests.rs` and
   `tests/culture.rs`). 30 starting cultures spread by region across realm borders, with mixed
   borderlands. Each month the culture that pulls hardest on a province (its share of the people
@@ -809,8 +826,9 @@ Loads refuse other format versions,
   coming home to a mixed province join its pops by size. Events `CultureBorn`, `CultureGone`,
   `Assimilated`. 150 years: the largest culture levels off at 8–10% of the people.
 - **The first wave's checks** (Oct 18): Warfare "campaigns" (troops with sieges in depth) and
-  Culture "assimilation" are on by default; Research stays off until techs do something (its
-  scholars cost realms about 5% of their taxes for no effect yet) (`ModuleConfig::without_realms()`
+  Culture "assimilation" are on by default; Research was left off until techs did something (its
+  scholars cost realms about 5% of their taxes for no effect yet), and is on since they do
+  (`ModuleConfig::without_realms()`
   switches research and culture off too: the world as it was before step 7); files that don't name
   them keep them off, so old ones make the worlds they made (save format 29). The three were built
   at once by agents, each in its own copy of the repository (see the design document, "Building

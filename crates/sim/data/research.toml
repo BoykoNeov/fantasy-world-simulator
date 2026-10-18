@@ -8,7 +8,16 @@
 # partners already know is cheaper. When a tech is learned the realm chooses its next one at random
 # among those whose `needs` it knows, the cheapest most often.
 #
-# This wave, knowledge is only produced: what techs do to harvests, troops or trade comes later.
+# What techs do: each tech's `effects`, each a share added to the realm's factor for that effect
+# (a realm knowing two techs of +0.05 harvest harvests 1.10 times as much). The effects:
+#   harvest   bigger harvests (food, and goods gathered with the harvest)
+#   made      more goods made (those not gathered with the harvest; in a world with coins)
+#   strength  land soldiers stronger: they deal more and take more to kill
+#   siege     sieges faster: the days a siege needs are divided by the factor
+#   ships     ships stronger
+#   calm      unrest rises more slowly: what hunger, occupation and foreign rule add is divided
+# A province uses its owner's knowledge (also while an enemy occupies it), an army its realm's. The
+# trade techs have no effects of their own yet: they lead to others.
 
 # How fast every realm studies: a middle-sized realm with an ordinary ruler studies this many years
 # of a tech's cost each year.
@@ -38,6 +47,11 @@ wage = 24.0
 # The six fields of knowledge, each tech in one.
 fields = ["farming", "crafts", "trade", "war", "sea", "learning"]
 
+# "Discoveries have effects": leave this table out and techs do nothing. Every effect's size is
+# multiplied by `scale` (1: as listed; 0: nothing; 2: double).
+[effects]
+scale = 1.0
+
 # The techs, by name: their field, their cost in years of study, and the techs a realm must know
 # before it can study them. About 300 years in all, so no realm learns them all in 150 years.
 
@@ -45,118 +59,142 @@ fields = ["farming", "crafts", "trade", "war", "sea", "learning"]
 field = "farming"
 years = 6.0
 needs = []
+effects = { harvest = 0.05 }
 
 [techs.heavy_plough]
 field = "farming"
 years = 10.0
 needs = ["irrigation", "iron_working"]
+effects = { harvest = 0.05 }
 
 [techs.crop_rotation]
 field = "farming"
 years = 15.0
 needs = ["heavy_plough"]
+effects = { harvest = 0.05 }
 
 [techs.selective_breeding]
 field = "farming"
 years = 20.0
 needs = ["crop_rotation", "writing"]
+effects = { harvest = 0.05 }
 
 [techs.bronze_working]
 field = "crafts"
 years = 6.0
 needs = []
+effects = { made = 0.05 }
 
 [techs.iron_working]
 field = "crafts"
 years = 12.0
 needs = ["bronze_working"]
+effects = { made = 0.05 }
 
 [techs.water_mills]
 field = "crafts"
 years = 15.0
 needs = ["iron_working", "irrigation"]
+effects = { made = 0.05 }
 
 [techs.blast_furnace]
 field = "crafts"
 years = 22.0
 needs = ["water_mills", "mathematics"]
+effects = { made = 0.05 }
 
 [techs.coinage]
 field = "trade"
 years = 6.0
 needs = ["bronze_working"]
+effects = {}
 
 [techs.roads]
 field = "trade"
 years = 10.0
 needs = []
+effects = {}
 
 [techs.banking]
 field = "trade"
 years = 16.0
 needs = ["coinage", "mathematics"]
+effects = {}
 
 [techs.guilds]
 field = "trade"
 years = 18.0
 needs = ["coinage", "iron_working", "roads"]
+effects = {}
 
 [techs.horse_riding]
 field = "war"
 years = 6.0
 needs = []
+effects = { strength = 0.05, siege = 0.05 }
 
 [techs.fortification]
 field = "war"
 years = 10.0
 needs = ["bronze_working"]
+effects = { strength = 0.05, siege = 0.05 }
 
 [techs.siege_engines]
 field = "war"
 years = 15.0
 needs = ["fortification", "mathematics"]
+effects = { strength = 0.05, siege = 0.05 }
 
 [techs.standing_army]
 field = "war"
 years = 20.0
 needs = ["coinage", "iron_working", "roads"]
+effects = { strength = 0.05, siege = 0.05 }
 
 [techs.sailing]
 field = "sea"
 years = 5.0
 needs = []
+effects = { ships = 0.05 }
 
 [techs.shipbuilding]
 field = "sea"
 years = 10.0
 needs = ["sailing", "bronze_working"]
+effects = { ships = 0.05 }
 
 [techs.navigation]
 field = "sea"
 years = 15.0
 needs = ["shipbuilding", "astronomy"]
+effects = { ships = 0.05 }
 
 [techs.cartography]
 field = "sea"
 years = 22.0
 needs = ["navigation"]
+effects = { ships = 0.05 }
 
 [techs.writing]
 field = "learning"
 years = 5.0
 needs = []
+effects = { calm = 0.05 }
 
 [techs.mathematics]
 field = "learning"
 years = 10.0
 needs = ["writing"]
+effects = { calm = 0.05 }
 
 [techs.astronomy]
 field = "learning"
 years = 14.0
 needs = ["mathematics"]
+effects = { calm = 0.05 }
 
 [techs.philosophy]
 field = "learning"
 years = 25.0
 needs = ["astronomy"]
+effects = { calm = 0.05 }

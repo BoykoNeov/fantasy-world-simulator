@@ -96,7 +96,7 @@ fn every_research_setting_works_at_the_ends_of_its_range() {
 }
 
 #[test]
-fn research_is_off_by_default_and_on_in_everything() {
-    assert!(sim::config::ModuleConfig::default().research.is_none());
+fn research_is_on_by_default_with_its_effects_and_on_in_everything() {
+    assert!(sim::config::ModuleConfig::default().research.is_some_and(|r| r.effects.is_some()));
     assert!(sim::settings::everything().research.is_some());
 }

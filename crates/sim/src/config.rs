@@ -97,9 +97,10 @@ pub struct ModuleConfig {
     /// name them.
     #[serde(default)]
     pub warfare: Option<TroopParams>,
-    /// Research v1, "tree": realms study and learn techs (step 9). Needs realms. Off by default
-    /// until techs do something (the user, Oct 18: scholars cost realms about 5% of their taxes),
-    /// and in files that don't name it.
+    /// Research v1, "tree": realms study and learn techs (step 9), which do what their effects say
+    /// where its "effects" part is on. Needs realms. On by default since techs have effects (it was
+    /// off until then: the user, Oct 18, as scholars cost realms about 5% of their taxes for
+    /// nothing); off in files that don't name it.
     #[serde(default)]
     pub research: Option<ResearchParams>,
     /// Culture v1, "assimilation": peoples spread and people take up the culture that pulls hardest
@@ -137,7 +138,7 @@ impl Default for ModuleConfig {
             characters: Some(RulerParams::default()),
             diplomacy: Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() }),
             warfare: Some(campaigns(TroopParams::default())),
-            research: None,
+            research: Some(ResearchParams::default()),
             culture: Some(CultureParams::default()),
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
@@ -186,12 +187,16 @@ impl ModuleConfig {
             Box::new(Fertility { params: self.farmland_params.clone() }),
             Box::new(ProvinceGrowth { params: self.province_params.clone() }),
         ];
+        // What techs do, for the modules their effects reach; none without Research or its effects.
+        let know = self.research.as_ref().and_then(crate::research::Know::new);
         if let Some(params) = &self.economics {
-            out.push(Box::new(Food { params: params.clone() }));
+            out.push(Box::new(Food { params: params.clone(), know: know.clone() }));
         }
         // Both set fills the economics slot twice, which the engine refuses.
         if let Some(params) = &self.markets {
-            out.push(Box::new(Markets::new(params.clone())));
+            let mut m = Markets::new(params.clone());
+            m.know = know.clone();
+            out.push(Box::new(m));
         }
         if let Some(params) = &self.population {
             out.push(Box::new(Population { params: params.clone() }));
@@ -201,7 +206,9 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.realms {
             // Realms tax coins only where the world keeps them.
-            out.push(Box::new(Founding::new(params.clone(), self.markets.is_some())));
+            let mut m = Founding::new(params.clone(), self.markets.is_some());
+            m.know = know.clone();
+            out.push(Box::new(m));
         }
         if let Some(params) = &self.characters {
             out.push(Box::new(Rulers { params: params.clone() }));
@@ -211,7 +218,9 @@ impl ModuleConfig {
         }
         if let Some(params) = &self.warfare {
             // Soldiers use up goods and are paid for only where the world keeps them.
-            out.push(Box::new(Troops::new(params.clone(), self.markets.is_some())));
+            let mut m = Troops::new(params.clone(), self.markets.is_some());
+            m.know = know.clone();
+            out.push(Box::new(m));
         }
         if let Some(params) = &self.research {
             // Scholars are paid only where the world keeps coins.
@@ -236,7 +245,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Characters, &["rulers", "off"]),
     (Slot::Diplomacy, &["treaties", "wars", "off"]),
     (Slot::Warfare, &["campaigns", "troops", "off"]),
-    (Slot::Research, &["off", "tree"]),
+    (Slot::Research, &["tree", "off"]),
     (Slot::Culture, &["assimilation", "off"]),
 ];
 

@@ -81,7 +81,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 29 (logistics follow-up): supply reach counted in provinces crossed (`reach_ways`, was
 /// `reach_days`), armies acting together (Warfare's `massing` part, its groups' formation days in
 /// Warfare's state); new worlds get Warfare "campaigns" (sieges in depth on).
-pub const FORMAT_VERSION: u32 = 29;
+/// Format 30 (Research effects): each tech's effects and Research's "effects" part in the
+/// configuration.
+pub const FORMAT_VERSION: u32 = 30;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

@@ -407,7 +407,7 @@ pub static GROUPS: &[Group] = &[
     Group {
         title: "Research",
         at: "modules.research",
-        help: "Realms study and learn techs from a tree, one at a time, each once they know the techs it needs. Bigger realms and able rulers learn faster, and a tech that neighbours and trade partners know is cheaper. In a world with coins, scholars are paid wages from the treasury. For now knowledge does nothing else: what techs do comes later.",
+        help: "Realms study and learn techs from a tree, one at a time, each once they know the techs it needs. Bigger realms and able rulers learn faster, and a tech that neighbours and trade partners know is cheaper. In a world with coins, scholars are paid wages from the treasury. Where discoveries have effects, each tech does what its effects say (bigger harvests, more goods made, stronger soldiers and ships, faster sieges, less unrest), for the realm that knows it: its land, also while an enemy occupies it, and its armies.",
         specs: &[
             live("modules.research.speed", "Study speed", "Years of a tech's cost that a middle-sized realm (by people, against the other living realms) with an ordinary ruler studies in a year. Raise it and every realm learns faster; at 0 nobody learns anything.", 0.0, 10.0, "years a year"),
             live("modules.research.size_power", "Bigger realms learn faster", "A realm studies as fast as its people against the middle realm's, to this power: 0, every realm alike; 0.5, a realm with four times the people studies twice as fast; 1, in proportion to its people.", 0.0, 1.0, "power"),
@@ -418,6 +418,13 @@ pub static GROUPS: &[Group] = &[
             live("modules.research.scholar_share", "Scholars", "In a world with coins, the share of the people who are scholars and are paid wages. More scholars cost the treasury more; they don't study faster (study speed and the realm's size set that). 0: no wages, study is free.", 0.0, 0.1, "share"),
             live("modules.research.wage", "Scholars' wage", "Coins a scholar is paid a year from the treasury, a twelfth each month. Unpaid scholars don't study, so a realm short of coins learns slower: wages are paid after the realm's own spending, sharing what is left with its other lesser payments (such as soldiers' bounties). 0: study is free.", 0.0, 10_000.0, "coins a year"),
             live("modules.research.techs.*.years", "years of study", "What this tech costs: years of study for a middle-sized realm with an ordinary ruler, before neighbours make it cheaper.", 0.1, 1000.0, "years"),
+            live("modules.research.effects.scale", "How much discoveries do", "Every tech's effects are multiplied by this: 1, as each tech's sizes say; 2, twice as strong; 0, techs do nothing (they are still studied and learned).", 0.0, 5.0, "times"),
+            live("modules.research.techs.*.effects.harvest", "bigger harvests", "Knowing this tech makes its realm's harvests (food: grain, livestock, fish) this share bigger. The sizes of the techs a realm knows add up: two techs of 0.05 make harvests 1.10 times as big. More food feeds more people, so the realm grows.", 0.0, 1.0, "share"),
+            live("modules.research.techs.*.effects.made", "more goods made", "Knowing this tech makes its realm's provinces make this share more of every good that isn't food (timber, stone, ore, cloth, tools), in a world with coins. Adds up with the realm's other techs, like harvests.", 0.0, 1.0, "share"),
+            live("modules.research.techs.*.effects.strength", "stronger soldiers", "Knowing this tech makes its realm's land soldiers this share stronger: they deal more in battle and take more to kill, and generals count them so. Adds up with the realm's other techs.", 0.0, 1.0, "share"),
+            live("modules.research.techs.*.effects.siege", "faster sieges", "Knowing this tech makes its realm's sieges this share faster: the days a siege needs are divided by 1 + the sizes of the techs it knows. Higher: provinces fall sooner to a realm that knows it.", 0.0, 1.0, "share"),
+            live("modules.research.techs.*.effects.ships", "stronger ships", "Knowing this tech makes its realm's ships this share stronger, so its fleets win more sea battles and its landings get through. Adds up with the realm's other techs.", 0.0, 1.0, "share"),
+            live("modules.research.techs.*.effects.calm", "less unrest", "Knowing this tech makes unrest in its realm's provinces rise this share more slowly: what hunger, enemy occupation and foreign rule add each month is divided by 1 + the sizes of the techs it knows. Higher: fewer uprisings.", 0.0, 1.0, "share"),
         ],
     },
     // --- end of research ---
@@ -465,6 +472,7 @@ pub static SECTIONS: &[Section] = &[
     Section { key: "modules.warfare.sieges", label: "Sieges in depth", help: "Besieged provinces raise no soldiers, lose their trade and stores, and fall faster when starving. Off: a siege only counts days." },
     // --- end of logistics ---
     // --- Research ---
+    Section { key: "modules.research.effects", label: "Discoveries have effects", help: "Techs do what their effects say: bigger harvests, more goods made, stronger soldiers and ships, faster sieges, less unrest, for the realm that knows them. Off: techs are studied and learned but change nothing." },
     // --- end of research ---
     // --- Culture ---
     Section { key: "modules.culture.splits", label: "New cultures splitting off", help: "Groups cut off from the rest of their people for decades may become new cultures. Off: the world keeps the peoples it starts with (fewer as some fade)." },

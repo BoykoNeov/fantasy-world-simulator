@@ -28,7 +28,13 @@
 //! realm that takes land in war learns nothing from it. A dissolved realm keeps its row and studies
 //! nothing.
 //!
-//! This wave Research only produces knowledge; what techs do is wired up later.
+//! What techs do (the "Discoveries have effects" part, [`EffectParams`]): each tech has its own
+//! effects, each with a size; a realm's factor for an effect is 1 + the sizes of the techs it knows,
+//! added, times the part's `scale` ([`Know`]). The modules the effects reach work them out from
+//! `realm.tech` as the day began: harvests (Economics, both versions) and goods made (markets) are
+//! multiplied by the owner's factor, an occupied province's too; soldiers' and ships' strength by
+//! their realm's; the days a siege needs and the unrest hunger, occupation and foreign rule add are
+//! divided by the besieger's and the owner's.
 
 use crate::calendar::Calendar;
 use crate::config::ModuleConfig;
@@ -42,6 +48,7 @@ use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 /// The parameters shipped in `data/research.toml`.
 pub const STANDARD: &str = include_str!("../data/research.toml");
@@ -56,6 +63,37 @@ pub struct TechParams {
     /// The techs a realm must know before it studies this one.
     #[serde(default)]
     pub needs: Vec<String>,
+    /// What knowing it does, by effect (one of [`EFFECTS`]): the share it adds to the realm's factor
+    /// for that effect. None in files written before techs did anything.
+    #[serde(default)]
+    pub effects: BTreeMap<String, f64>,
+}
+
+/// The effects a tech can have, by their names in [`TechParams::effects`], in [`Effect`]'s order.
+pub const EFFECTS: [&str; 6] = ["harvest", "made", "strength", "siege", "ships", "calm"];
+
+/// What a tech can do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// Bigger harvests: food, and the goods gathered with the harvest.
+    Harvest,
+    /// More goods made: those not gathered with the harvest (markets).
+    Made,
+    /// Land soldiers stronger: they deal more and take more to kill.
+    Strength,
+    /// Sieges faster: the days a siege needs are divided by the factor.
+    Siege,
+    /// Ships stronger.
+    Ships,
+    /// Unrest rises more slowly: what hunger, occupation and foreign rule add is divided by it.
+    Calm,
+}
+
+/// The "Discoveries have effects" part: techs do what their effects say.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EffectParams {
+    /// Every effect's size is multiplied by this: 1 as the tree says, 0 nothing, 2 double.
+    pub scale: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -79,6 +117,10 @@ pub struct ResearchParams {
     pub fields: Vec<String>,
     /// Each tech, by name.
     pub techs: BTreeMap<String, TechParams>,
+    /// Whether techs do anything; none in files that don't name the part (written before techs did
+    /// anything), so their worlds stay as they were.
+    #[serde(default)]
+    pub effects: Option<EffectParams>,
 }
 
 impl Default for ResearchParams {
@@ -116,6 +158,11 @@ impl ResearchParams {
         if !in_range(self.wage, 0.0, 1e6) {
             return Err("a scholar's wage goes from 0 to a million coins".into());
         }
+        if let Some(e) = &self.effects
+            && !in_range(e.scale, 0.0, 100.0)
+        {
+            return Err("the effects' scale goes from 0 to 100".into());
+        }
         if self.techs.len() > u16::MAX as usize {
             return Err("too many techs".into());
         }
@@ -128,6 +175,14 @@ impl ResearchParams {
             }
             if !(t.years.is_finite() && t.years >= 0.001 && t.years <= 1e6) {
                 return Err(format!("{name}: a tech costs from 0.001 to a million years of study"));
+            }
+            for (e, &size) in &t.effects {
+                if !EFFECTS.contains(&e.as_str()) {
+                    return Err(format!("{name}: {e} is not an effect a tech can have (they are {})", EFFECTS.join(", ")));
+                }
+                if !in_range(size, 0.0, 10.0) {
+                    return Err(format!("{name}: the size of its {e} effect goes from 0 to 10"));
+                }
             }
             let mut of = Vec::new();
             for n in &t.needs {
@@ -157,6 +212,46 @@ impl ResearchParams {
 /// [`crate::world::World::techs`]): by name, A to Z; none without Research.
 pub fn tech_names(config: &ModuleConfig) -> Vec<String> {
     config.research.as_ref().map_or(Vec::new(), |p| p.techs.keys().cloned().collect())
+}
+
+/// What the techs do, worked out from the parameters, for the modules their effects reach: each
+/// tech's size of each effect, times the scale. None where techs do nothing.
+#[derive(Debug)]
+pub struct Know {
+    /// By tech, in the order of `realm.tech`'s columns; by effect, in [`Effect`]'s order.
+    sizes: Vec<[f64; EFFECTS.len()]>,
+}
+
+impl Know {
+    /// None without the "Discoveries have effects" part.
+    pub fn new(p: &ResearchParams) -> Option<Arc<Know>> {
+        let scale = p.effects.as_ref()?.scale;
+        let size = |t: &TechParams, e: &str| t.effects.get(e).copied().unwrap_or(0.0) * scale;
+        Some(Arc::new(Know { sizes: p.techs.values().map(|t| EFFECTS.map(|e| size(t, e))).collect() }))
+    }
+
+    /// Each realm's factor for `effect`, from `known` (`realm.tech`): 1 + the sizes of the techs it
+    /// knows. Exactly 1 for a realm whose techs don't have that effect.
+    pub fn factors(&self, known: &[u32], effect: Effect) -> Vec<f64> {
+        let k = self.sizes.len();
+        if k == 0 {
+            return Vec::new();
+        }
+        let e = effect as usize;
+        known.chunks(k).map(|row| 1.0 + row.iter().zip(&self.sizes).filter(|x| *x.0 != NONE).map(|x| x.1[e]).sum::<f64>()).collect()
+    }
+
+    /// Each province's factor for `effect`: its owner's (also while an enemy occupies it), 1 where
+    /// no realm owns it.
+    pub fn by_province(&self, known: &[u32], owner: &[u32], provinces: usize, effect: Effect) -> Vec<f64> {
+        let f = self.factors(known, effect);
+        (0..provinces).map(|p| factor(&f, owner.get(p).copied().unwrap_or(NONE))).collect()
+    }
+}
+
+/// Realm `r`'s factor among `factors` ([`Know::factors`]): 1 for none, or a realm not among them.
+pub fn factor(factors: &[f64], r: u32) -> f64 {
+    factors.get(r as usize).copied().unwrap_or(1.0)
 }
 
 /// What the module keeps between days.

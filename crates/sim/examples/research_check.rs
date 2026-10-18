@@ -12,7 +12,10 @@
 //! cargo run --release -p sim --example research_check -- [food|markets|both] [seeds,comma,separated] [years] [without] [serial] [KEY=VALUE ...]
 //!
 //! `without` runs the same worlds without Research, to compare the time a day takes; `serial` runs
-//! them one after another instead of side by side, for steadier times.
+//! them one after another instead of side by side, for steadier times. `compare` runs each world
+//! with Research and without, and checks that scholars pay for themselves (the bar set when techs
+//! were given effects, Oct 18): at the end the world has at least as many people with Research as
+//! without, and under markets its realms took at least as much in taxes over the years.
 
 use sim::config::Config;
 use sim::grid::NONE;
@@ -28,6 +31,9 @@ struct Report {
     end: (i64, f64, usize),
     finished: Option<i64>,
     ms_per_day: f64,
+    /// People in the world at the end, and taxes the realms took over all the years.
+    people: u64,
+    taxes: u64,
 }
 
 fn run(economics: &str, seed: u64, years: i64, without: bool, set: &[(String, f64)]) -> Report {
@@ -49,7 +55,7 @@ fn run(economics: &str, seed: u64, years: i64, without: bool, set: &[(String, f6
         let median = sizes.get(sizes.len() / 2).copied().unwrap_or(0).max(1);
         lines.push(format!("{economics} seed {seed}: {} realms; the biggest has {:.1}× the middle realm's people", sizes.len(), *sizes.last().unwrap_or(&0) as f64 / median as f64));
     }
-    let (mut wages, mut taxes) = (0u64, 0u64);
+    let (mut wages, mut taxes, mut all_taxes) = (0u64, 0u64, 0u64);
     let mut finished = None;
     let mut end = (0, 0.0, 0);
     let t0 = Instant::now();
@@ -60,7 +66,10 @@ fn run(economics: &str, seed: u64, years: i64, without: bool, set: &[(String, f6
             for (r, granted) in &sim.applied_today {
                 match r.cause {
                     Cause::Scholars => wages += granted,
-                    Cause::Taxes => taxes += granted,
+                    Cause::Taxes => {
+                        taxes += granted;
+                        all_taxes += granted;
+                    }
                     _ => {}
                 }
             }
@@ -96,7 +105,8 @@ fn run(economics: &str, seed: u64, years: i64, without: bool, set: &[(String, f6
         }
     }
     let ms_per_day = t0.elapsed().as_secs_f64() * 1000.0 / sim.day as f64;
-    Report { lines, end, finished, ms_per_day }
+    let people = sim.world.province_population().iter().sum();
+    Report { lines, end, finished, ms_per_day, people, taxes: all_taxes }
 }
 
 fn realm_people(w: &sim::world::World) -> Vec<u64> {
@@ -112,8 +122,8 @@ fn realm_people(w: &sim::world::World) -> Vec<u64> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (without, serial) = (args.iter().any(|a| a == "without"), args.iter().any(|a| a == "serial"));
-    let mut rest = args.iter().filter(|a| !a.contains('=') && *a != "without" && *a != "serial");
+    let (without, serial, compare) = (args.iter().any(|a| a == "without"), args.iter().any(|a| a == "serial"), args.iter().any(|a| a == "compare"));
+    let mut rest = args.iter().filter(|a| !a.contains('=') && !["without", "serial", "compare"].contains(&a.as_str()));
     let economies: Vec<&str> = match rest.next().map(|s| s.as_str()) {
         Some("food") => vec!["food"],
         Some("markets") => vec!["markets"],
@@ -123,14 +133,27 @@ fn main() {
     let years: i64 = rest.next().map_or(150, |s| s.parse().unwrap());
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().unwrap())).collect();
     let runs: Vec<(&str, u64)> = economies.iter().flat_map(|&e| seeds.iter().map(move |&s| (e, s))).collect();
-    let reports: Vec<Report> = if serial {
-        runs.iter().map(|&(e, s)| run(e, s, years, without, &set)).collect()
+    // With `compare`, each world twice: with Research, then without.
+    let jobs: Vec<(&str, u64, bool)> = if compare { runs.iter().flat_map(|&(e, s)| [(e, s, false), (e, s, true)]).collect() } else { runs.iter().map(|&(e, s)| (e, s, without)).collect() };
+    let all: Vec<Report> = if serial {
+        jobs.iter().map(|&(e, s, wo)| run(e, s, years, wo, &set)).collect()
     } else {
         std::thread::scope(|scope| {
             let set = &set;
-            let handles: Vec<_> = runs.iter().map(|&(e, s)| scope.spawn(move || run(e, s, years, without, set))).collect();
+            let handles: Vec<_> = jobs.iter().map(|&(e, s, wo)| scope.spawn(move || run(e, s, years, wo, set))).collect();
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         })
+    };
+    let (reports, without_research): (Vec<Report>, Vec<Report>) = if compare {
+        let mut it = all.into_iter();
+        let mut pairs = (Vec::new(), Vec::new());
+        while let (Some(a), Some(b)) = (it.next(), it.next()) {
+            pairs.0.push(a);
+            pairs.1.push(b);
+        }
+        pairs
+    } else {
+        (all, Vec::new())
     };
     for r in &reports {
         r.lines.iter().for_each(|l| println!("{l}"));
@@ -142,5 +165,25 @@ fn main() {
         let (_, median, most) = r.end;
         let ok = (8.0..=14.0).contains(&median) && most as f64 <= 2.5 * median && r.finished.is_none_or(|y| y >= 120);
         println!("  {e} seed {s}: middle {median}, leader {most}, finished {:?}: {}", r.finished, if ok { "pass" } else { "FAIL" });
+    }
+    if compare {
+        println!("
+Scholars pay for themselves: with Research against without, at year {years}: people at the end, and taxes over the years (markets).");
+        let (mut people, mut taxes) = (Vec::new(), Vec::new());
+        for ((e, s), (a, b)) in runs.iter().zip(reports.iter().zip(&without_research)) {
+            let p = a.people as f64 / b.people.max(1) as f64;
+            people.push(p);
+            let t = if b.taxes > 0 {
+                let t = a.taxes as f64 / b.taxes as f64;
+                taxes.push(t);
+                format!(", taxes {:.3}×", t)
+            } else {
+                String::new()
+            };
+            println!("  {e} seed {s}: people {:.3}×{t}", p);
+        }
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
+        let ok = mean(&people) >= 1.0 && (taxes.is_empty() || mean(&taxes) >= 1.0);
+        println!("  on average: people {:.3}×, taxes {:.3}×: {}", mean(&people), mean(&taxes), if ok { "pass" } else { "FAIL" });
     }
 }

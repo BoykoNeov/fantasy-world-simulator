@@ -37,6 +37,7 @@ use crate::events::{Event, EventKind};
 use crate::grid::NONE;
 use crate::fields::{known, FieldData, FieldId, Goods, Quantity, Tier};
 use crate::module::{Cadence, Ctx, Manifest, Module, Slot};
+use crate::research::Effect;
 use crate::requests::{serve_goods_into, split_proportional, Cause, Request};
 use crate::rng::{draw, purpose, round_stochastic, Module as Rng};
 use crate::routes::Link;
@@ -287,6 +288,12 @@ static V1: Manifest = Manifest {
     goods: &["grain", "fish", "livestock", "timber", "stone", "ore", "cloth", "tools", "coin"],
 };
 
+/// The same version where techs have effects: it reads what each province's owner knows too.
+static V1_KNOW: Manifest = Manifest {
+    reads_earlier: &["province.owner", "province.occupier", "province.uprising", "realm.capital", "war.attacker", "war.defender", "war.ended", "province.besieger", "realm.tech"],
+    ..V1
+};
+
 /// Where a good's land comes from.
 #[derive(Clone, Copy, Debug)]
 enum Source {
@@ -438,11 +445,13 @@ impl Resolved {
 pub struct Markets {
     pub params: MarketParams,
     resolved: Option<Resolved>,
+    /// What techs do (Research's effects): harvests and goods made follow the owner's knowledge.
+    pub know: Option<std::sync::Arc<crate::research::Know>>,
 }
 
 impl Markets {
     pub fn new(params: MarketParams) -> Markets {
-        Markets { params, resolved: None }
+        Markets { params, resolved: None, know: None }
     }
 
     fn resolved(&mut self, goods: &Goods) -> Resolved {
@@ -545,7 +554,7 @@ impl Books {
 
 impl Module for Markets {
     fn manifest(&self) -> &'static Manifest {
-        &V1
+        if self.know.is_some() { &V1_KNOW } else { &V1 }
     }
 
     fn check(&self, goods: &Goods) -> Result<(), String> {
@@ -577,7 +586,7 @@ impl Module for Markets {
             let mut alloc = vec![0.0; r.goods.len()];
             let mut made = vec![0.0; r.goods.len()];
             for _ in 0..40 {
-                alloc = allocate(workers, &worth(&r, &price, &land, &made, boost), p.idle_worth);
+                alloc = allocate(workers, &worth(&r, &price, &land, &made, boost, &vec![1.0; r.goods.len()]), p.idle_worth);
                 for (i, g) in r.goods.iter().enumerate() {
                     made[i] = output(land[i], g.params.per_worker * boost, alloc[i]);
                 }
@@ -627,6 +636,10 @@ impl Module for Markets {
             rain_shortfall: &w.rain_shortfall,
             goods: &w.goods,
             traced: cx.trace,
+            gain: self.know.as_ref().map(|t| {
+                let (known, owner, n) = (w.earlier.u32s("realm.tech"), w.earlier.u32s("province.owner"), w.provinces.count);
+                [t.by_province(known, owner, n, Effect::Harvest), t.by_province(known, owner, n, Effect::Made)]
+            }),
         };
         // Provinces don't touch each other's goods this month, so they are worked out side by side;
         // each one's random draws are its own, so the result is the same however they are shared out.
@@ -688,6 +701,9 @@ struct Month<'a> {
     rain_shortfall: &'a [u64],
     goods: &'a Goods,
     traced: Option<u32>,
+    /// Each province's factors from what its owner knows (Research's effects), for goods counted
+    /// as harvest and for the others; none without them.
+    gain: Option<[Vec<f64>; 2]>,
 }
 
 impl Month<'_> {
@@ -703,7 +719,13 @@ impl Month<'_> {
         let row = (prov * goods.stride()) as u64;
         let people = self.read.people[prov] as f64;
         let workers = (people * p.working_share).round();
-        let land: Vec<f64> = r.goods.iter().map(|g| self.read.land(g, prov)).collect();
+        // What the owner knows makes the land give more and each worker make more, both by its
+        // factor (so a good's output is that many times as much); exactly 1 without it.
+        let gain: Vec<f64> = match &self.gain {
+            Some([h, m]) => r.goods.iter().map(|g| if g.params.harvested { h[prov] } else { m[prov] }).collect(),
+            None => vec![1.0; r.goods.len()],
+        };
+        let land: Vec<f64> = r.goods.iter().enumerate().map(|(i, g)| self.read.land(g, prov) * gain[i]).collect();
         let equip = workers * p.tools_per_worker;
         let boost = 1.0 + p.tool_boost * if equip > 0.0 { (stock[r.tools] as f64 / equip).min(1.0) } else { 1.0 };
         let held: Vec<f64> = r.goods.iter().map(|g| stock[g.column] as f64).collect();
@@ -712,7 +734,7 @@ impl Month<'_> {
 
         // 1. Prices, from the stores against the stores wanted.
         let to_harvest = months_to_harvest(self.cal, p, self.month, lat);
-        let planned: Vec<f64> = r.goods.iter().enumerate().map(|(i, g)| output(land[i], g.params.per_worker * boost, now[i])).collect();
+        let planned: Vec<f64> = r.goods.iter().enumerate().map(|(i, g)| output(land[i], g.params.per_worker * boost * gain[i], now[i])).collect();
         let need = yearly_need(p, r, people, workers, &planned);
         // Goods gathered with the harvest must last until the next one, on top of the reserve.
         let wanted: Vec<f64> = r
@@ -743,7 +765,7 @@ impl Month<'_> {
 
         // 2. Work, toward what pays. Goods made of others use what is held and what a year will make.
         let supply: Vec<f64> = (0..r.goods.len()).map(|i| held[i] + planned[i]).collect();
-        let target = allocate(workers, &worth(r, &price, &land, &supply, boost), p.idle_worth);
+        let target = allocate(workers, &worth(r, &price, &land, &supply, boost, &gain), p.idle_worth);
         let fresh = now.iter().sum::<f64>() == 0.0;
         let moved: Vec<f64> = (0..r.goods.len()).map(|i| if fresh { target[i] } else { now[i] + p.job_change * (target[i] - now[i]) }).collect();
         let weights: Vec<u64> = moved.iter().map(|&a| (a.max(0.0) * 1000.0).round() as u64).collect();
@@ -763,7 +785,7 @@ impl Month<'_> {
                 Season::Harvest => month_share(self.cal, p.seasonality, p.harvest_peak, self.month, lat),
             };
             let weather = if gp.weather { luck } else { 1.0 };
-            let expected = output(land[i], gp.per_worker * boost, working[i] as f64) * share * weather;
+            let expected = output(land[i], gp.per_worker * boost * gain[i], working[i] as f64) * share * weather;
             let entity = row + g.column as u64;
             let mut made = round_stochastic(expected, seed, Rng::Economics, day, entity, purpose("made"));
             // As much as the inputs allow; each input is used up in whole units.
@@ -779,12 +801,13 @@ impl Month<'_> {
             books.add(goods.class_of_column(g.column), if gp.harvested { Cause::Harvest } else { Cause::Made }, made as i64);
             if traced {
                 notes.push(format!(
-                    "{}: {} workers made {made} (a year's land gives at most {:.0}; × {share:.3} of the year{}{}); price {:.3} coins",
+                    "{}: {} workers made {made} (a year's land gives at most {:.0}; × {share:.3} of the year{}{}{}); price {:.3} coins",
                     goods.tree.name(goods.columns[g.column]),
                     working[i],
                     land[i],
                     if gp.weather { format!(" × {weather:.2} for the rain and the year's luck") } else { String::new() },
                     if boost > 1.0 { format!(", tools × {boost:.2}") } else { String::new() },
+                    if gain[i] != 1.0 { format!(", × {:.2} for what its realm knows", gain[i]) } else { String::new() },
                     price[i],
                 ));
             }
@@ -1187,7 +1210,7 @@ fn settle(r: &Resolved, deals: &[Deal], stock: &mut [u64], treasury: &mut [u64],
 /// Each good's worth per unit to the one who makes it, what one worker makes and the land, for
 /// [`allocate`]: its price less what its inputs cost. A good made of others can be made only as far
 /// as `supply` (a year of each good: what is held and what will be made) goes.
-fn worth(r: &Resolved, price: &[f64], land: &[f64], supply: &[f64], boost: f64) -> Vec<(f64, f64, f64)> {
+fn worth(r: &Resolved, price: &[f64], land: &[f64], supply: &[f64], boost: f64, gain: &[f64]) -> Vec<(f64, f64, f64)> {
     let at = |c: usize| Some(r.index[c]).filter(|&i| i != usize::MAX);
     r.goods
         .iter()
@@ -1195,7 +1218,7 @@ fn worth(r: &Resolved, price: &[f64], land: &[f64], supply: &[f64], boost: f64) 
         .map(|(i, g)| {
             let cost: f64 = g.inputs.iter().map(|&(c, per)| per * at(c).map_or(0.0, |j| price[j])).sum();
             let reach = g.inputs.iter().filter(|x| x.1 > 0.0).map(|&(c, per)| at(c).map_or(0.0, |j| supply[j]) / per).fold(land[i], f64::min);
-            ((price[i] - cost).max(0.0), g.params.per_worker * boost, reach)
+            ((price[i] - cost).max(0.0), g.params.per_worker * boost * gain[i], reach)
         })
         .collect()
 }
