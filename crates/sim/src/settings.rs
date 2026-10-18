@@ -464,6 +464,38 @@ pub static GROUPS: &[Group] = &[
     // --- Religion ---
     // --- end of religion ---
     // --- Disease ---
+    Group {
+        title: "Disease",
+        at: "modules.disease",
+        help: "Plagues break out, spread along the ways between provinces (faster by sea and between big towns), kill a share of the sick and leave survivors immune for years. Each week some of the people neither ill nor immune fall ill, more the more are ill; a share of the sick come to the end of their illness, and of those some die and the rest are immune. Soldiers in armies don't catch it (camp disease is Warfare's).",
+        specs: &[
+            live("modules.disease.catching", "How catching", "How many people one sick person gives it to over their illness, where nobody is immune (before crowding, hunger and an outbreak's age). Above 1 it spreads through a province; below 1 it dies out. At 2 about four in five people of a province fall ill at some time (a few more where many die, as the dead no longer meet anyone); at 3 about nineteen in twenty. 0: nobody else catches it.", 0.0, 20.0, "people"),
+            live("modules.disease.days_ill", "Days ill", "How long a person is ill. Longer: an outbreak runs its course in a province more slowly (it lasts longer and its sick have longer to carry it along the ways), though as many fall ill in the end.", 1.0, 365.0, "days"),
+            live("modules.disease.deadliness", "Deadliness", "Share of the sick who die; the rest recover and are immune. 0.3: about a quarter of a province's people die when it passes through. 0: nobody dies of it.", 0.0, 1.0, "share"),
+            live("modules.disease.crowding", "Crowded places", "How much more readily it catches where people live closer together: a province's people per km² against the world's middle province's, to this power (kept between a third and 3 times). Higher: crowded lowlands and cities are struck harder, empty land less. 0: crowding doesn't matter.", 0.0, 2.0, "power"),
+            live("modules.disease.hunger", "Worse among the hungry", "How much more readily it catches where 1% or more of the people starved last month (and in proportion for fewer): 0.5 makes it 1.5 times as catching there. 0: hunger doesn't matter.", 0.0, 10.0, "times"),
+            live("modules.disease.immunity_years", "Immunity lasts", "Survivors' immunity halves every this many years (and newborns are not immune). Shorter: the same places are struck again sooner; longer: a plague can't come back for generations.", 0.1, 1000.0, "years"),
+            live("modules.disease.fade_years", "Outbreaks weaken", "An outbreak catches half as readily every this many years of its age, so an old plague burns out. Shorter: outbreaks die out sooner and reach fewer provinces; longer: one outbreak can go on for decades.", 0.1, 1000.0, "years"),
+            live("modules.disease.land_reach", "Spread over land", "Chance a week that it jumps to a neighbour along a way of no length, for every 1% of a province's people ill, between two middle-sized provinces (it falls with the way's days, below). Higher: plague spreads from province to province more readily and faster. 0: it never leaves the province it starts in.", 0.0, 1.0, "chance"),
+            live("modules.disease.half_days", "Reach of a way", "The chance it jumps along a way halves for every this many days of travel. Shorter: long ways, over mountains or open water, hold it back; longer: distance matters little.", 0.1, 1000.0, "days"),
+            live("modules.disease.sea_factor", "Ships carry it", "How many times as readily it goes along a sea way as along a road of the same days. At 70 (with a way's reach of 4 days) a sea way passes it on as readily as a road about 24 days shorter, so it goes from port to port far faster than over land. 0: ships never carry it.", 0.0, 1000.0, "times"),
+            live("modules.disease.towns", "Big towns trade more", "How much more readily it goes between big towns, standing in for trade: the people at both ends of a way against the middle province's, multiplied together, to this power. Higher: plague follows the busy ways between cities; 0: a village is reached as readily as a city.", 0.0, 2.0, "power"),
+            live("modules.disease.arrival_share", "First cases", "Share of a province's people who fall ill when it arrives there or breaks out there (if that many are not immune). Higher: an outbreak takes hold faster.", 0.000001, 0.1, "share"),
+            live("modules.disease.first_cases", "Fewest first cases", "The fewest people who fall ill when it arrives in a province or breaks out there (if that many are not immune), so a small place isn't struck by a fraction of a person.", 1.0, 1_000_000.0, "people"),
+            live("modules.disease.ends_below", "Dies out under", "A province with fewer sick people than this is free of the plague: its last sick recover. Higher: outbreaks end sooner and spread less from their tail; 0: only a province with nobody ill is free.", 0.0, 1_000_000.0, "people"),
+        ],
+    },
+    Group {
+        title: "Plagues beginning",
+        at: "modules.disease.starts",
+        help: "Each month there is a chance that a plague breaks out somewhere by itself: in a big place, most likely a port. (The player's poke starts one in any province with people, whatever these say.)",
+        specs: &[
+            live("modules.disease.starts.per_year", "Plague chance", "Chance a year that a plague breaks out somewhere in the world (checked each month). 0.02: about one every 50 years. 0: plagues come only from your pokes.", 0.0, 1.0, "chance a year"),
+            live("modules.disease.starts.port_weight", "Ports first", "How many times as likely a province with a sea way is to be where a plague breaks out, against one inland of the same people. 1: no more likely.", 1.0, 1000.0, "times"),
+            live("modules.disease.starts.city_power", "Cities first", "How much more likely a province with more people is to be where a plague breaks out: its people to this power. 1: twice the people, twice as likely; 0: a small place as likely as a city.", 0.0, 3.0, "power"),
+            live("modules.disease.starts.smallest", "Smallest place", "Plagues break out by themselves only in provinces of at least this many people.", 0.0, 1_000_000_000.0, "people"),
+        ],
+    },
     // --- end of disease ---
     // --- Natural world ---
     // --- end of natural world ---
@@ -492,6 +524,7 @@ pub static SECTIONS: &[Section] = &[
     // --- Religion ---
     // --- end of religion ---
     // --- Disease ---
+    Section { key: "modules.disease.starts", label: "Plagues begin on their own", help: "Now and then a plague breaks out by itself, most likely in a big port. Off: plagues break out only where you start them." },
     // --- end of disease ---
     // --- Natural world ---
     // --- end of natural world ---
@@ -666,7 +699,10 @@ pub fn defaults_for(c: &Config) -> Config {
     let religion = on(m.religion.is_some(), all.religion);
     // --- end of religion ---
     // --- Disease: its parts ---
-    let disease = on(m.disease.is_some(), all.disease);
+    let mut disease = on(m.disease.is_some(), all.disease);
+    if let (Some(p), Some(x)) = (&mut disease, &m.disease) {
+        p.starts = p.starts.take().filter(|_| x.starts.is_some());
+    }
     // --- end of disease ---
     // --- Natural world: its parts ---
     let nature = on(m.nature.is_some(), all.nature);
