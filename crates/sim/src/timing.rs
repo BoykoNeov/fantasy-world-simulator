@@ -5,7 +5,10 @@
 //! around each stage and each module call. Not part of the world: not saved, not fingerprinted, not
 //! copied by a fork.
 
+use crate::events::EventKind;
+use crate::fields::FieldId;
 use crate::module::Slot;
+use crate::requests::Cause;
 use crate::sim::Stage;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -22,6 +25,11 @@ pub struct Timing {
     /// The whole of the days run while timing, the engine's work between stages included.
     pub total: Duration,
     pub days: u64,
+    /// Change requests made, by who asked, the field asked of and the cause: work counted, which a
+    /// busy machine can't blur as it does the clock.
+    pub requests: BTreeMap<(Slot, FieldId, Cause), u64>,
+    /// Events sent, by kind.
+    pub events: BTreeMap<EventKind, u64>,
     /// The stage under way: its kind, when it began, and the module work inside it so far.
     current: Option<(Stage, Instant, Duration)>,
 }

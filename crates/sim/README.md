@@ -810,8 +810,15 @@ Loads refuse other format versions,
   measures (sieges alone under markets 4.43 here against 3.65 before): Economics v0 2.08 ms a day
   (22 wars going on) against 2.60 (26 wars), no slower; markets 5.60 against 4.43 (18 wars against
   20, 120 days), about a quarter slower. On the small world the four parts at the shipped 1% and 3%
-  cost 5–8% and the strong disease about 40% more, so the strong disease is the likely cause; the
-  user kept it, the slowdown to be looked into. The tester's
+  cost 5–8% and the strong disease about 40% more, so the strong disease looked the likely cause; the
+  user kept it. Looked into the same day, it isn't. Measured fairly (`day_cost` with `TURNS`, the
+  setups run in turn in one process, so a busy machine's load falls on all alike), markets with
+  every part is about 8% slower than sieges alone (5.3 against 4.9 ms a day, the middle of 10
+  rounds), not a quarter; on the same world changed by live settings, the strong disease costs
+  nothing (5.34 against 5.34 with 1% and 3%) and pay at most a few percent. Counted (`COUNT`),
+  every setup makes 1,100–1,250 change requests a day (wages add 166), too few to matter. The rest is the other parts' daily work and the
+  worlds' different histories; the quarter was the busy machine (one setup measured 6.25 and 8.20
+  ms a day an hour apart). The tester's
   check that the default world is clean now allows known quirks: in its world (seed 11) a province
   held by an enemy for years keeps its unrest at the line, since occupied provinces don't rise up
   (added to the quirk's note).

@@ -1011,6 +1011,14 @@ impl Sim {
                 t.steps.extend(out.applied.iter().filter(|(r, _)| about(r)).map(|&(r, g)| step(Traced::Granted(r, g))));
                 t.steps.extend(out.events.iter().filter(|e| e.province() == Some(p)).map(|e| step(Traced::Sent(e.clone()))));
             }
+            if let Some(t) = &mut self.timing {
+                for r in &out.requests {
+                    *t.requests.entry((slot, r.field, r.cause)).or_default() += 1;
+                }
+                for e in &out.events {
+                    *t.events.entry(e.kind()).or_default() += 1;
+                }
+            }
             self.queue.extend(out.requests);
             self.year_flows.merge(&out.flows);
             self.applied_today.extend(out.applied);
