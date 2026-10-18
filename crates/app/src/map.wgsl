@@ -11,7 +11,7 @@ struct MapParams {
     layers2: vec4<f32>,  // lines: province borders, graticule; opacity: drought, prices
     layers3: vec4<f32>,  // lines: roads and sea lanes, trade; opacity: trade balance, techs known
     layers4: vec4<f32>,  // opacity: realms, unrest; lines: realm borders; opacity: cultures
-    layers5: vec4<f32>,  // opacity: winter, faiths; unused x2
+    layers5: vec4<f32>,  // opacity: winter, faiths, wild land; unused
     ids: vec4<u32>,      // hovered province, selected province (or NO_PROVINCE), unused x2
 };
 
@@ -261,7 +261,7 @@ fn world_color(lon: f32, lat: f32, local: vec2<f32>) -> vec3<f32> {
 
     // Only look the province up when something on screen uses it.
     let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0 || params.layers2.w > 0.0 || params.layers3.z > 0.0
-        || params.layers3.w > 0.0 || params.layers4.x > 0.0 || params.layers4.y > 0.0 || params.layers4.w > 0.0 || params.layers5.x > 0.0 || params.layers5.y > 0.0 || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
+        || params.layers3.w > 0.0 || params.layers4.x > 0.0 || params.layers4.y > 0.0 || params.layers4.w > 0.0 || params.layers5.x > 0.0 || params.layers5.y > 0.0 || params.layers5.z > 0.0 || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
     if (!wanted) {
         return col;
     }
@@ -282,6 +282,10 @@ fn world_color(lon: f32, lat: f32, local: vec2<f32>) -> vec3<f32> {
     if (params.layers5.y > 0.0) {
         let faith = table(prov, 12);
         col = mix(col, faith.rgb, params.layers5.y * faith.a);
+    }
+    if (params.layers5.z > 0.0) {
+        let wild = table(prov, 13);
+        col = mix(col, wild.rgb, params.layers5.z * wild.a);
     }
     let techs = table(prov, 10);
     col = mix(col, techs.rgb, params.layers3.w * techs.a);

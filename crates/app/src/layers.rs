@@ -33,7 +33,8 @@ pub const TABLE_CULTURE: usize = 9;
 pub const TABLE_TECHS: usize = 10;
 pub const TABLE_WINTER: usize = 11;
 pub const TABLE_FAITH: usize = 12;
-pub const TABLE_LAYERS: usize = 13;
+pub const TABLE_WILD: usize = 13;
+pub const TABLE_LAYERS: usize = 14;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -82,6 +83,11 @@ pub struct SocietyView {
     pub culture: Vec<(u32, f32)>,
     /// The main faith and its share of the people, as `culture`.
     pub faith: Vec<(u32, f32)>,
+    /// The share left of the wild land picked ([`Wanted::wild`]), 0 (all gone) to 1 (untouched);
+    /// NaN where the province has none of it (no woodland, or no shore for fish).
+    pub wild: Vec<f32>,
+    /// What `wild` shows.
+    pub wild_kind: Wild,
     /// How many techs the owner knows, from the fewest any living realm knows (0) to the most (1);
     /// NaN where no realm owns it or nobody knows any.
     pub techs: Vec<f32>,
@@ -96,7 +102,66 @@ pub struct Wanted {
     pub cultures: bool,
     pub faiths: bool,
     pub techs: bool,
+    /// The wild land shown, if any.
+    pub wild: Option<Wild>,
 }
+
+/// What the wild land map shows (each a part of Natural world).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Wild {
+    #[default]
+    Woods,
+    Fish,
+    Game,
+}
+
+impl Wild {
+    pub const ALL: [Wild; 3] = [Wild::Woods, Wild::Fish, Wild::Game];
+
+    /// Its name in the window and on the command line.
+    pub fn name(self) -> &'static str {
+        match self {
+            Wild::Woods => "woods",
+            Wild::Fish => "fish",
+            Wild::Game => "game",
+        }
+    }
+
+    /// Whether the Natural world settings `p` run its part.
+    pub fn runs(self, p: &sim::nature::NatureParams) -> bool {
+        match self {
+            Wild::Woods => p.forests.is_some(),
+            Wild::Fish => p.fish.is_some(),
+            Wild::Game => p.wildlife.is_some(),
+        }
+    }
+
+    /// The share of it left in each province, 0..1; NaN where there is none of it to lose.
+    pub fn left(self, w: &World) -> Vec<f32> {
+        let pr = &w.provinces;
+        let left = |lost: &[u64], p: usize| 1.0 - lost.get(p).copied().unwrap_or(0).min(1_000_000) as f32 / 1e6;
+        (0..pr.count)
+            .map(|p| match self {
+                Wild::Woods if pr.forest_km2[p] > 0.0 => left(&w.woods_lost, p),
+                Wild::Fish if pr.coast_km[p] + pr.river_km[p] > 0.0 => left(&w.fish_lost, p),
+                Wild::Game => left(&w.game_lost, p),
+                _ => f32::NAN,
+            })
+            .collect()
+    }
+
+    /// Its colour where untouched (where all of it is gone: bare earth, [`WILD_GONE`]).
+    pub fn color(self) -> [u8; 3] {
+        match self {
+            Wild::Woods => [40, 105, 50],
+            Wild::Fish => [35, 95, 140],
+            Wild::Game => [120, 120, 40],
+        }
+    }
+}
+
+/// The wild land map's colour where all of it is gone: bare, worn earth.
+pub const WILD_GONE: [u8; 3] = [175, 120, 75];
 
 impl SocietyView {
     /// From the world shown: the layers `wanted`, and winter by Warfare's own rule where its
@@ -106,11 +171,12 @@ impl SocietyView {
         let culture = if wanted.cultures { main_shares(&sim::culture::mix(w)) } else { Vec::new() };
         let faith = if wanted.faiths { main_shares(&sim::religion::mix(w)) } else { Vec::new() };
         let techs = if wanted.techs { techs_known(w) } else { Vec::new() };
+        let wild = wanted.wild.map_or(Vec::new(), |k| k.left(w));
         let winter = match winter {
             Some((s, part)) => w.provinces.lat.iter().map(|&lat| sim::logistics::winter(s, lat.to_degrees(), part) as f32).collect(),
             None => Vec::new(),
         };
-        SocietyView { culture, faith, techs, winter }
+        SocietyView { culture, faith, wild, wild_kind: wanted.wild.unwrap_or_default(), techs, winter }
     }
 }
 
@@ -396,6 +462,12 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView, soc
             let [r, g, b] = faith_color(f, world.params.seed);
             out[TABLE_FAITH * size + p] = [r, g, b, culture_alpha(share)];
         }
+        // The wild land picked: its own colour where untouched, through a pale middle to bare
+        // earth where it is all gone; clear where there is none of it.
+        if let Some(&x) = society.wild.get(p).filter(|x| !x.is_nan()) {
+            let [r, g, b] = ramp(&[WILD_GONE, [225, 215, 170], society.wild_kind.color()], x as f64);
+            out[TABLE_WILD * size + p] = [r, g, b, 255];
+        }
         // The fewest techs any realm knows: pale parchment; the most: deep blue-green.
         if let Some(&t) = society.techs.get(p).filter(|t| !t.is_nan()) {
             let [r, g, b] = ramp(&[[238, 228, 196], [120, 175, 160], [25, 85, 105]], t as f64);
@@ -466,7 +538,7 @@ pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
     let w = &sim.world;
     let m = &sim.config.modules;
-    let wanted = Wanted { cultures: m.culture.is_some(), faiths: m.religion.is_some(), techs: m.research.is_some() };
+    let wanted = Wanted { cultures: m.culture.is_some(), faiths: m.religion.is_some(), techs: m.research.is_some(), wild: m.nature.as_ref().map(|_| Wild::Woods) };
     province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, wanted, None))
 }
 

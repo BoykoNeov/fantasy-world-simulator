@@ -95,6 +95,8 @@ struct Options {
     layers: LayerSettings,
     /// The good the price layer shows.
     good: Option<String>,
+    /// What the wild land layer shows.
+    wild: layers::Wild,
     screenshot: Option<String>,
     /// A world to open instead of making one.
     open: Option<String>,
@@ -134,6 +136,7 @@ impl Options {
             view: None,
             layers: LayerSettings::default(),
             good: None,
+            wild: layers::Wild::Woods,
             screenshot: None,
             open: None,
             live_edits: Vec::new(),
@@ -222,6 +225,7 @@ impl Options {
                         "unrest" => l.unrest = x,
                         "cultures" => l.cultures = x,
                         "faiths" => l.faiths = x,
+                        "wild" => l.wild = x,
                         "techs" => l.techs = x,
                         "winter" => l.winter = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
@@ -237,6 +241,10 @@ impl Options {
                     }
                 }
                 "--good" => o.good = Some(value(&mut i)),
+                "--wild" => {
+                    let v = value(&mut i);
+                    o.wild = layers::Wild::ALL.into_iter().find(|k| k.name() == v).unwrap_or_else(|| panic!("unknown wild land {v} (woods, fish or game)"));
+                }
                 "--screenshot" => o.screenshot = Some(value(&mut i)),
                 "--open" => o.open = Some(value(&mut i)),
                 "--paint" => {
@@ -529,6 +537,8 @@ struct MapApp {
     coin_columns: Vec<usize>,
     /// The good the price layer shows (its column).
     price_good: usize,
+    /// What the wild land layer shows (woods, fish or game).
+    wild_kind: layers::Wild,
     /// What the economy layers show, and the day state and good they were worked out for.
     market: layers::MarketView,
     market_for: Option<(usize, usize)>,
@@ -705,6 +715,7 @@ impl MapApp {
             realm_tools: RealmTools::default(),
             army_view: None,
             price_good,
+            wild_kind: opts.wild,
             market: layers::MarketView::default(),
             market_for: None,
             society: layers::SocietyView::default(),
@@ -906,6 +917,7 @@ impl MapApp {
             cultures: self.layers.cultures > 0.0 && self.cultures_on(),
             faiths: self.layers.faiths > 0.0 && self.religions_on(),
             techs: self.layers.techs > 0.0 && self.techs_on(),
+            wild: self.wild_parts().contains(&self.wild_kind).then_some(self.wild_kind).filter(|_| self.layers.wild > 0.0),
         };
         let seasons = self.shown_state.settings.clone();
         let seasons = seasons.warfare.as_ref().and_then(|t| t.seasons.as_ref()).filter(|_| self.layers.winter > 0.0);
@@ -1292,6 +1304,7 @@ impl MapApp {
         let realms = self.realms_on();
         let armies = self.kept().armies;
         let (cultures, faiths, techs) = (self.cultures_on(), self.religions_on(), self.techs_on());
+        let wild_parts = self.wild_parts();
         let winter = self.shown_state.settings.warfare.as_ref().is_some_and(|t| t.seasons.is_some());
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
@@ -1339,6 +1352,20 @@ impl MapApp {
         if faiths {
             ui.add(egui::Slider::new(&mut l.faiths, 0.0..=1.0).text("faiths"))
                 .on_hover_text("each province in the colour of its main faith (the one most of its people follow); the more mixed the province, the paler. The province page lists every faith there");
+        }
+        // Only the parts of Natural world that run.
+        if !wild_parts.is_empty() {
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut l.wild, 0.0..=1.0).text("wild"))
+                    .on_hover_text("how much of the wild land is left: woods (green), fish in its coastal and river waters (blue) or wild game (olive), full colour where untouched, through pale to bare brown where it is all gone. Clear where a province has none of it: no woodland, or no shore for fish");
+                let mut k = if wild_parts.contains(&self.wild_kind) { self.wild_kind } else { wild_parts[0] };
+                egui::ComboBox::from_id_salt("wild layer").selected_text(k.name()).show_ui(ui, |ui| {
+                    for &w in &wild_parts {
+                        ui.selectable_value(&mut k, w, w.name());
+                    }
+                });
+                self.wild_kind = k;
+            });
         }
         if winter {
             ui.add(egui::Slider::new(&mut l.winter, 0.0..=1.0).text("winter"))
@@ -1838,6 +1865,14 @@ impl MapApp {
         self.owners[sim::fields::known("culture.born").0 as usize].1.is_some()
     }
 
+    /// The parts of Natural world running on the day shown (none without it).
+    fn wild_parts(&self) -> Vec<layers::Wild> {
+        match &self.shown_state.settings.nature {
+            Some(p) => layers::Wild::ALL.into_iter().filter(|k| k.runs(p)).collect(),
+            None => Vec::new(),
+        }
+    }
+
     /// Whether some module keeps faiths (Religion).
     fn religions_on(&self) -> bool {
         self.owners[sim::fields::known("religion.born").0 as usize].1.is_some()
@@ -1922,6 +1957,22 @@ impl MapApp {
             if self.religions_on() {
                 let names = self.names();
                 ui.label(format!("faiths: {}", inspector::faiths_in_words(&names, &inspector::province_faiths(w, p as u32))));
+            }
+            let wild: Vec<String> = self
+                .wild_parts()
+                .into_iter()
+                .filter_map(|k| {
+                    let x = *k.left(w).get(p)?;
+                    let what = match k {
+                        layers::Wild::Woods => "woodland",
+                        layers::Wild::Fish => "fish",
+                        layers::Wild::Game => "game",
+                    };
+                    (!x.is_nan()).then(|| format!("{} of its {what}", inspector::share(x as f64)))
+                })
+                .collect();
+            if !wild.is_empty() {
+                ui.label(format!("wild land left: {}", wild.join(", ")));
             }
             if self.techs_on()
                 && let Some(r) = w.owner.get(p).copied().filter(|&r| r != NONE)

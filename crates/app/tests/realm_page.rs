@@ -185,12 +185,29 @@ fn techs_cultures_and_faiths_are_named_from_what_the_window_is_sent() {
     let seasons = sim::logistics::SeasonParams::default();
     let deepest = app::layers::SocietyView::of(&geo, app::layers::Wanted::default(), Some((&seasons, seasons.deepest))).winter;
     assert!(deepest.iter().all(|&x| (0.0..=1.0).contains(&x)) && deepest.iter().any(|&x| x > 0.5), "winter at its deepest: {deepest:?}");
-    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { cultures: true, faiths: true, techs: true }, None);
+    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { cultures: true, faiths: true, techs: true, wild: None }, None);
     let people = geo.province_population();
     for (p, &here) in people.iter().enumerate() {
         assert_eq!(v.culture[p].0 != NONE, here > 0, "province {p}");
         assert!(v.culture[p].1 <= 1.0);
         assert_eq!(v.faith[p].0 != NONE, here > 0, "province {p}");
         assert_eq!(!v.techs[p].is_nan(), geo.owner[p] != NONE, "province {p}");
+    }
+    // Wild land: a share left for every province that has some, clear where it has none; and
+    // Natural world (on by default) has used some of it up in 60 years.
+    use app::layers::Wild;
+    let pr = &geo.provinces;
+    for kind in Wild::ALL {
+        let left = app::layers::SocietyView::of(&geo, app::layers::Wanted { wild: Some(kind), ..Default::default() }, None).wild;
+        for (p, &x) in left.iter().enumerate() {
+            let has = match kind {
+                Wild::Woods => pr.forest_km2[p] > 0.0,
+                Wild::Fish => pr.coast_km[p] + pr.river_km[p] > 0.0,
+                Wild::Game => true,
+            };
+            assert_eq!(!x.is_nan(), has, "{kind:?} in province {p}");
+            assert!(x.is_nan() || (0.0..=1.0).contains(&x), "{kind:?} in province {p}: {x}");
+        }
+        assert!(left.iter().any(|&x| x < 0.9), "{kind:?}: nothing used up");
     }
 }

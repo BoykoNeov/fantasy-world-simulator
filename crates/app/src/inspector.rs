@@ -656,12 +656,41 @@ pub fn value(id: FieldId, data: &FieldData, i: usize, names: &Names) -> String {
         },
         ("province.unrest", _) => format!("{} of {} toward an uprising", group(data.value(i) as u64), group(sim::realms::LINE)),
         ("province.lat", _) => format!("{:.1}°", data.value(i).to_degrees()),
+        ("province.sick", _) => match data.value(i) {
+            0.0 => "nobody ill".into(),
+            v => format!("{} of the people ill now", share(v / 1e6)),
+        },
+        ("province.immune", _) => match data.value(i) {
+            0.0 => "nobody immune".into(),
+            v => format!("{} of the people immune", share(v / 1e6)),
+        },
+        ("province.woods_lost" | "province.fish_lost" | "province.game_lost", _) => {
+            let what = match def.name {
+                "province.woods_lost" => "of its wild woodland cleared",
+                "province.fish_lost" => "of its fish gone",
+                _ => "of its wild game gone",
+            };
+            match data.value(i) {
+                0.0 => "untouched".into(),
+                v => format!("{} {what}", share(v / 1e6)),
+            }
+        }
         ("province.rain_shortfall", _) => {
             let v = data.value(i);
             if v == 0.0 { "none: a normal year".into() } else { format!("{:.0}% of the rain missing", v / 10.0) }
         }
         (_, FieldData::U64(_) | FieldData::U32(_) | FieldData::U16(_) | FieldData::U8(_)) => format!("{} {}", group(data.value(i) as u64), def.unit),
         _ => format!("{:.1} {}", data.value(i), def.unit),
+    }
+}
+
+/// A share (0..1) as a percentage, with more digits when small: "0.05%", "3.2%", "41%".
+pub fn share(x: f64) -> String {
+    let pct = x * 100.0;
+    match pct {
+        p if p < 0.1 => format!("{p:.3}%"),
+        p if p < 10.0 => format!("{p:.1}%"),
+        p => format!("{p:.0}%"),
     }
 }
 

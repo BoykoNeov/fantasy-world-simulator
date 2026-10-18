@@ -53,6 +53,8 @@ pub struct LayerSettings {
     pub cultures: f32,
     /// Each province's main faith, paler where mixed.
     pub faiths: f32,
+    /// How much of the wild land picked (woods, fish or game) is left.
+    pub wild: f32,
     /// How many techs each province's realm knows.
     pub techs: f32,
     /// How deep the winter is, where armies feel it.
@@ -87,6 +89,7 @@ impl Default for LayerSettings {
             unrest: 0.0,
             cultures: 0.0,
             faiths: 0.0,
+            wild: 0.0,
             techs: 0.0,
             winter: 0.0,
             coasts: true,
@@ -115,7 +118,7 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
         layers3: [on(l.roads), l.trade, l.trade_balance, l.techs],
         layers4: [l.realms, l.unrest, on(l.realm_borders), l.cultures],
-        layers5: [l.winter, l.faiths, 0.0, 0.0],
+        layers5: [l.winter, l.faiths, l.wild, 0.0],
         ids: [hover_province, selected_province, 0, 0],
     }
 }
