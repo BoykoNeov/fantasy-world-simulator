@@ -811,14 +811,17 @@ Loads refuse other format versions,
   (22 wars going on) against 2.60 (26 wars), no slower; markets 5.60 against 4.43 (18 wars against
   20, 120 days), about a quarter slower. On the small world the four parts at the shipped 1% and 3%
   cost 5–8% and the strong disease about 40% more, so the strong disease looked the likely cause; the
-  user kept it. Looked into the same day, it isn't. Measured fairly (`day_cost` with `TURNS`, the
-  setups run in turn in one process, so a busy machine's load falls on all alike), markets with
-  every part is about 8% slower than sieges alone (5.3 against 4.9 ms a day, the middle of 10
-  rounds), not a quarter; on the same world changed by live settings, the strong disease costs
-  nothing (5.34 against 5.34 with 1% and 3%) and pay at most a few percent. Counted (`COUNT`),
-  every setup makes 1,100–1,250 change requests a day (wages add 166), too few to matter. The rest is the other parts' daily work and the
-  worlds' different histories; the quarter was the busy machine (one setup measured 6.25 and 8.20
-  ms a day an hour apart). The tester's
+  user kept it. Looked into the same day: there is no steady slowdown. Measured fairly
+  (`day_cost` with `TURNS`: the setups run in turn in one process, so a busy machine's load falls
+  on all alike; 360 days, the middle of 6 rounds), every part against sieges alone is +11% on seed
+  7 (6.25 against 5.64 ms a day), −4% on seed 21 (4.64 against 4.82) and +6% on seed 1 (5.47
+  against 5.17), the weak disease at 5.73, 5.08 and 5.12: differences about the size of the noise. On one world changed by
+  live settings the day's own work is the same with strong or weak disease; the strong disease
+  raises about a quarter more recruits to replace the dead, which if it costs anything costs a few
+  percent. Counted
+  (`COUNT`), every setup makes 1,100–1,250 change requests a day (wages add 166), too few to
+  matter. The quarter was the busy machine: one setup measured 6.25 and 8.20 ms a day an hour
+  apart. The tester's
   check that the default world is clean now allows known quirks: in its world (seed 11) a province
   held by an enemy for years keeps its unrest at the line, since occupied provinces don't rise up
   (added to the quirk's note).

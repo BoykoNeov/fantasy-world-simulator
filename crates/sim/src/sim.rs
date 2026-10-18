@@ -1011,7 +1011,7 @@ impl Sim {
                 t.steps.extend(out.applied.iter().filter(|(r, _)| about(r)).map(|&(r, g)| step(Traced::Granted(r, g))));
                 t.steps.extend(out.events.iter().filter(|e| e.province() == Some(p)).map(|e| step(Traced::Sent(e.clone()))));
             }
-            if let Some(t) = &mut self.timing {
+            if let Some(t) = self.timing.as_mut().filter(|t| t.count) {
                 for r in &out.requests {
                     *t.requests.entry((slot, r.field, r.cause)).or_default() += 1;
                 }

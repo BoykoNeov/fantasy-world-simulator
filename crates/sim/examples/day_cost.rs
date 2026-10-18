@@ -120,7 +120,9 @@ fn main() {
     }
     if std::env::var("COUNT").is_ok() {
         let mut run = sim.fork();
-        run.timing = Some(Box::default());
+        let mut timing = Box::<sim::timing::Timing>::default();
+        timing.count = true;
+        run.timing = Some(timing);
         run.run_days(days);
         let t = run.timing.take().expect("set above");
         println!("Work done in the {days} days, a day on average:");

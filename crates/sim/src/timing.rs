@@ -25,10 +25,13 @@ pub struct Timing {
     /// The whole of the days run while timing, the engine's work between stages included.
     pub total: Duration,
     pub days: u64,
+    /// Whether to count the work below too (off by default, so the speed table times only the
+    /// days).
+    pub count: bool,
     /// Change requests made, by who asked, the field asked of and the cause: work counted, which a
-    /// busy machine can't blur as it does the clock.
+    /// busy machine can't blur as it does the clock. Kept only with `count`.
     pub requests: BTreeMap<(Slot, FieldId, Cause), u64>,
-    /// Events sent, by kind.
+    /// Events sent, by kind. Kept only with `count`.
     pub events: BTreeMap<EventKind, u64>,
     /// The stage under way: its kind, when it began, and the module work inside it so far.
     current: Option<(Stage, Instant, Duration)>,
