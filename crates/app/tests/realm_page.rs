@@ -1,9 +1,10 @@
 //! The realm and ruler page, and realms and rulers by name in the words the inspector shows, built
 //! from the window's copy of the world the way the window keeps it: copied once when it opens, then
 //! given only the values the simulation sends each day. Realms that break away and rulers born
-//! later have every value the page reads, and nothing shows as a raw "none" number. With Research
-//! and Culture on, techs and cultures are named too, and the culture and tech layers have a value
-//! for every province.
+//! later have every value the page reads, and nothing shows as a raw "none" number. With Research,
+//! Culture and Religion on, techs, cultures and faiths are named too, and the culture, faith and
+//! tech layers have a value for every province; the wild land layer for every province with some.
+//! With Disease on and a plague poked, plagues are named and the plague layers show it.
 
 use app::inspector::{self, LogEntry, Names, RealmNames};
 use app::playback::{DayState, MapState};
@@ -118,9 +119,9 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     assert_eq!(inspector::value(known("province.unrest"), &sim::fields::FieldData::U64(vec![250]), 0, &n), "250 of 1,000 toward an uprising");
 }
 
-/// Whether `s` names a culture, faith or tech by its bare number ("culture 12", "tech 3").
+/// Whether `s` names a culture, faith, plague or tech by its bare number ("culture 12", "tech 3").
 fn by_number(s: &str) -> bool {
-    ["culture ", "faith ", "tech "].iter().any(|w| s.match_indices(w).any(|(i, _)| s[i + w.len()..].starts_with(|c: char| c.is_ascii_digit())))
+    ["culture ", "faith ", "plague ", "tech "].iter().any(|w| s.match_indices(w).any(|(i, _)| s[i + w.len()..].starts_with(|c: char| c.is_ascii_digit())))
 }
 
 #[test]
@@ -185,7 +186,7 @@ fn techs_cultures_and_faiths_are_named_from_what_the_window_is_sent() {
     let seasons = sim::logistics::SeasonParams::default();
     let deepest = app::layers::SocietyView::of(&geo, app::layers::Wanted::default(), Some((&seasons, seasons.deepest))).winter;
     assert!(deepest.iter().all(|&x| (0.0..=1.0).contains(&x)) && deepest.iter().any(|&x| x > 0.5), "winter at its deepest: {deepest:?}");
-    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { cultures: true, faiths: true, techs: true, wild: None }, None);
+    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { cultures: true, faiths: true, techs: true, ..Default::default() }, None);
     let people = geo.province_population();
     for (p, &here) in people.iter().enumerate() {
         assert_eq!(v.culture[p].0 != NONE, here > 0, "province {p}");
@@ -210,4 +211,50 @@ fn techs_cultures_and_faiths_are_named_from_what_the_window_is_sent() {
         }
         assert!(left.iter().any(|&x| x < 0.9), "{kind:?}: nothing used up");
     }
+}
+
+#[test]
+fn plagues_are_named_and_shown_from_what_the_window_is_sent() {
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.disease = Some(sim::disease::DiseaseParams { starts: None, ..Default::default() });
+    let mut sim = Sim::new(&c).unwrap();
+    let first = sim.calendar.def.first_year;
+    sim.run_to_year(first + 1);
+    let mut geo = sim.world.clone();
+    let people = sim.world.province_population();
+    let p = (0..people.len()).max_by_key(|&q| people[q]).unwrap();
+    sim.poke(Event::Plague { province: p as u32 });
+    // Half a year: going on in some provinces, with dead.
+    sim.run_days(180);
+    let state = DayState::of(&sim, Arc::new(MapState::of(0, 0, &sim)));
+    for (id, data) in state.map.fields.iter().chain(&state.fields) {
+        geo.set_field(*id, data.clone()).unwrap();
+    }
+    let mut names = RealmNames::default();
+    names.update(&geo, &sim.settings);
+    let n = Names { world: &geo, realms: &names };
+
+    let mut named = 0;
+    for e in &sim.event_log.entries {
+        if matches!(e.event, Event::Outbreak { .. } | Event::PlagueArrived { .. } | Event::OutbreakOver { .. }) {
+            let text = LogEntry::of_event(e, &geo.goods).text(&sim.calendar, &geo.goods, &n);
+            assert!(!by_number(&text) && text.starts_with("the "), "{text}");
+            named += 1;
+        }
+    }
+    assert!(named > 1, "the plague neither broke out nor spread");
+    let outbreak = known("province.outbreak");
+    for q in 0..geo.provinces.count {
+        let v = inspector::value(outbreak, &geo.field(outbreak), q, &n);
+        assert!(!v.contains("4,294,967,295") && !by_number(&v), "province {q}: {v}");
+    }
+
+    let v = app::layers::SocietyView::of(&geo, app::layers::Wanted { plague: true, ..Default::default() }, None);
+    assert!(v.sick.iter().any(|&x| x > 0.0), "nobody ill half a year on");
+    for q in 0..geo.provinces.count {
+        assert_eq!(v.sick[q] > 0.0, geo.sick[q] > 0, "province {q}");
+        assert_eq!(!v.plague_dead[q].is_nan(), geo.plague_dead_total[q] > 0, "province {q}");
+        assert!(v.plague_dead[q].is_nan() || (0.0..=1.0).contains(&v.plague_dead[q]));
+    }
+    assert!(geo.plague_dead_total[p] > 0, "nobody died where it began");
 }

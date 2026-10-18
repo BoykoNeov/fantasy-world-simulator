@@ -911,8 +911,11 @@ Loads refuse other format versions,
   same days, more readily between big towns (standing in for trade, the same in both economies),
   and weakens with its age. Plagues begin by the player's poke (`Event::Plague`) or, as a part, by
   chance (5% a year in the world, mostly in ports and big cities). Plague dead are counted in each
-  year's summary (`Ledger::plague`; a column in `simrun`'s year table). Events `Outbreak`,
-  `PlagueArrived`, `OutbreakOver`. Story 3 passes under both economies; over 150 years people end
+  year's summary (`Ledger::plague`; a column in `simrun`'s year table), in each province since the
+  year began (`province.plague_dead`) and since the world began (`province.plague_dead_total`, for
+  the window's plague dead map; save format 36). Events `Outbreak`, `PlagueArrived`,
+  `OutbreakOver`. Plagues are named from the world's seed (`disease::name`: "the Red Fever"; the
+  first 192 of a world differ, later ones repeat with a number). Story 3 passes under both economies; over 150 years people end
   within about 5% of the same worlds without plague.
 - **Natural world** (step 10; Natural world "regrowth", `nature.rs`, tests in `nature_tests.rs` and
   `tests/nature.rs`, 150-year check `examples/nature_check.rs`). Each province keeps the share of

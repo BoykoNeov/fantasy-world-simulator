@@ -34,7 +34,9 @@ pub const TABLE_TECHS: usize = 10;
 pub const TABLE_WINTER: usize = 11;
 pub const TABLE_FAITH: usize = 12;
 pub const TABLE_WILD: usize = 13;
-pub const TABLE_LAYERS: usize = 14;
+pub const TABLE_SICK: usize = 14;
+pub const TABLE_PLAGUE_DEAD: usize = 15;
+pub const TABLE_LAYERS: usize = 16;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -88,6 +90,11 @@ pub struct SocietyView {
     pub wild: Vec<f32>,
     /// What `wild` shows.
     pub wild_kind: Wild,
+    /// The share of the people ill with plague now, 0..1 (0: nobody).
+    pub sick: Vec<f32>,
+    /// The plague dead since the world began against the people now and those dead, 0..1; NaN
+    /// where nobody has died of plague.
+    pub plague_dead: Vec<f32>,
     /// How many techs the owner knows, from the fewest any living realm knows (0) to the most (1);
     /// NaN where no realm owns it or nobody knows any.
     pub techs: Vec<f32>,
@@ -104,6 +111,8 @@ pub struct Wanted {
     pub techs: bool,
     /// The wild land shown, if any.
     pub wild: Option<Wild>,
+    /// Plague: who is ill now, and who died of it since the world began.
+    pub plague: bool,
 }
 
 /// What the wild land map shows (each a part of Natural world).
@@ -172,12 +181,33 @@ impl SocietyView {
         let faith = if wanted.faiths { main_shares(&sim::religion::mix(w)) } else { Vec::new() };
         let techs = if wanted.techs { techs_known(w) } else { Vec::new() };
         let wild = wanted.wild.map_or(Vec::new(), |k| k.left(w));
+        let (sick, plague_dead) = if wanted.plague { plague(w) } else { (Vec::new(), Vec::new()) };
         let winter = match winter {
             Some((s, part)) => w.provinces.lat.iter().map(|&lat| sim::logistics::winter(s, lat.to_degrees(), part) as f32).collect(),
             None => Vec::new(),
         };
-        SocietyView { culture, faith, wild, wild_kind: wanted.wild.unwrap_or_default(), techs, winter }
+        SocietyView { culture, faith, wild, wild_kind: wanted.wild.unwrap_or_default(), sick, plague_dead, techs, winter }
     }
+}
+
+/// Each province's share of its people ill now, and its plague dead since the world began against
+/// its people now and those dead (NaN where none died).
+fn plague(w: &World) -> (Vec<f32>, Vec<f32>) {
+    let people = w.province_population();
+    let sick = (0..people.len()).map(|p| w.sick.get(p).copied().unwrap_or(0) as f32 / 1e6).collect();
+    let dead = (0..people.len())
+        .map(|p| match w.plague_dead_total.get(p).copied().unwrap_or(0) {
+            0 => f32::NAN,
+            d => (d as f64 / (people[p] + d) as f64) as f32,
+        })
+        .collect();
+    (sick, dead)
+}
+
+/// Where a share sits between `low` and `high` on a log scale, 0..1 (shares of a plague run from a
+/// few in ten thousand to a quarter, so a straight scale would show only the worst).
+fn log_scale(x: f64, low: f64, high: f64) -> f64 {
+    ((x.max(low) / low).ln() / (high / low).ln()).clamp(0.0, 1.0)
 }
 
 /// Each province's main culture or faith (the first of its mix, most first) and its share of the
@@ -468,6 +498,19 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView, soc
             let [r, g, b] = ramp(&[WILD_GONE, [225, 215, 170], society.wild_kind.color()], x as f64);
             out[TABLE_WILD * size + p] = [r, g, b, 255];
         }
+        // Ill now: pale rose where the first few fall ill (1 in 10,000), deep red at a tenth.
+        if let Some(&x) = society.sick.get(p).filter(|&&x| x > 0.0) {
+            let t = log_scale(x as f64, 1e-4, 0.1);
+            let [r, g, b] = ramp(&[[235, 175, 165], [215, 70, 55], [130, 10, 20]], t);
+            out[TABLE_SICK * size + p] = [r, g, b, (255.0 * (0.45 + 0.55 * t)).round() as u8];
+        }
+        // Dead of plague since the world began: ash grey where a few died (1 in 10,000), near
+        // black where a quarter did; clear where none.
+        if let Some(&x) = society.plague_dead.get(p).filter(|x| !x.is_nan()) {
+            let t = log_scale(x as f64, 1e-4, 0.25);
+            let [r, g, b] = ramp(&[[200, 195, 185], [120, 110, 105], [30, 25, 30]], t);
+            out[TABLE_PLAGUE_DEAD * size + p] = [r, g, b, (255.0 * (0.4 + 0.6 * t)).round() as u8];
+        }
         // The fewest techs any realm knows: pale parchment; the most: deep blue-green.
         if let Some(&t) = society.techs.get(p).filter(|t| !t.is_nan()) {
             let [r, g, b] = ramp(&[[238, 228, 196], [120, 175, 160], [25, 85, 105]], t as f64);
@@ -538,7 +581,7 @@ pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
     let w = &sim.world;
     let m = &sim.config.modules;
-    let wanted = Wanted { cultures: m.culture.is_some(), faiths: m.religion.is_some(), techs: m.research.is_some(), wild: m.nature.as_ref().map(|_| Wild::Woods) };
+    let wanted = Wanted { cultures: m.culture.is_some(), faiths: m.religion.is_some(), techs: m.research.is_some(), wild: m.nature.as_ref().map(|_| Wild::Woods), plague: m.disease.is_some() };
     province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, wanted, None))
 }
 

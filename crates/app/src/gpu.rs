@@ -26,6 +26,7 @@ pub struct MapUniforms {
     pub layers3: [f32; 4],
     pub layers4: [f32; 4],
     pub layers5: [f32; 4],
+    pub layers6: [f32; 4],
     pub ids: [u32; 4],
 }
 
@@ -55,6 +56,10 @@ pub struct LayerSettings {
     pub faiths: f32,
     /// How much of the wild land picked (woods, fish or game) is left.
     pub wild: f32,
+    /// How many are ill with plague now.
+    pub sick: f32,
+    /// How many have died of plague since the world began.
+    pub plague_dead: f32,
     /// How many techs each province's realm knows.
     pub techs: f32,
     /// How deep the winter is, where armies feel it.
@@ -90,6 +95,8 @@ impl Default for LayerSettings {
             cultures: 0.0,
             faiths: 0.0,
             wild: 0.0,
+            sick: 0.0,
+            plague_dead: 0.0,
             techs: 0.0,
             winter: 0.0,
             coasts: true,
@@ -118,7 +125,8 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
         layers3: [on(l.roads), l.trade, l.trade_balance, l.techs],
         layers4: [l.realms, l.unrest, on(l.realm_borders), l.cultures],
-        layers5: [l.winter, l.faiths, l.wild, 0.0],
+        layers5: [l.winter, l.faiths, l.wild, l.sick],
+        layers6: [l.plague_dead, 0.0, 0.0, 0.0],
         ids: [hover_province, selected_province, 0, 0],
     }
 }

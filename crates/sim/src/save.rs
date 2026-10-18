@@ -94,7 +94,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// foreign faith in Realms' settings.
 /// Format 34 (Natural world v1 "regrowth"): its settings, parts and saved state.
 /// Format 35 (Disease v1 "plagues"): its settings, natural starts and saved outbreaks.
-pub const FORMAT_VERSION: u32 = 35;
+/// Format 36 (the window's plague map): each province's plague dead since the world began
+/// (`province.plague_dead_total`, Disease's).
+pub const FORMAT_VERSION: u32 = 36;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

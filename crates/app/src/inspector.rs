@@ -83,6 +83,14 @@ impl Names<'_> {
         }
     }
 
+    /// A plague's name, by its outbreak's number ([`sim::disease::name`]); "none" for none.
+    pub fn plague(&self, o: u32) -> String {
+        match o {
+            NONE => "none".into(),
+            o => sim::disease::name(self.world.params.seed, o),
+        }
+    }
+
     /// A tech's name, by its column of `realm.tech`.
     pub fn tech(&self, t: u16) -> String {
         self.realms.techs.get(t as usize).map(|s| s.replace('_', " ")).unwrap_or_else(|| format!("tech {t}"))
@@ -656,6 +664,7 @@ pub fn value(id: FieldId, data: &FieldData, i: usize, names: &Names) -> String {
         },
         ("province.unrest", _) => format!("{} of {} toward an uprising", group(data.value(i) as u64), group(sim::realms::LINE)),
         ("province.lat", _) => format!("{:.1}°", data.value(i).to_degrees()),
+        ("province.outbreak", FieldData::U32(v)) => names.plague(realm(v)),
         ("province.sick", _) => match data.value(i) {
             0.0 => "nobody ill".into(),
             v => format!("{} of the people ill now", share(v / 1e6)),
@@ -845,9 +854,9 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::ReligionGone { religion } => format!("the last follower of {} is gone", names.faith(*religion)),
         Event::Converted { from, to, .. } => format!("the province's main faith changed from {} to {}", names.faith(*from), names.faith(*to)),
         Event::Plague { .. } => "a plague is to break out here".to_string(),
-        Event::Outbreak { outbreak, .. } => format!("plague {outbreak} broke out here"),
-        Event::PlagueArrived { outbreak, from, by_sea, .. } => format!("plague {outbreak} arrived {} from province {from}", if *by_sea { "by sea" } else { "over land" }),
-        Event::OutbreakOver { outbreak, dead, provinces } => format!("plague {outbreak} is over: {} dead in {provinces} provinces", group(*dead)),
+        Event::Outbreak { outbreak, .. } => format!("{} broke out here", names.plague(*outbreak)),
+        Event::PlagueArrived { outbreak, from, by_sea, .. } => format!("{} arrived {} from province {from}", names.plague(*outbreak), if *by_sea { "by sea" } else { "over land" }),
+        Event::OutbreakOver { outbreak, dead, provinces } => format!("{} is over: {} dead in {provinces} provinces", names.plague(*outbreak), group(*dead)),
         Event::WoodsCleared { left, .. } => format!("the province's woods are mostly cleared: {:.0}% of the wild woodland is left", *left as f64 / 1e4),
         Event::WoodsRegrown { .. } => "the province's woods have grown back".to_string(),
         Event::FisheryCollapsed { .. } => "the province's waters are fished out".to_string(),

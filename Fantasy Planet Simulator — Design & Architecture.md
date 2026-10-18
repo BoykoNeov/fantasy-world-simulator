@@ -969,6 +969,28 @@ Each province keeps three measures of its wild land: woodland standing (crowded 
 - **Questions:** (1) province tier *(default)*; (2) scale timber and fish, no new "game" good (it would change every markets world's goods list) — recommend; (3) under Economics v0 track and show only — recommend (or fish and game as a small share of the harvest, a few lines in `economy.rs`); (4) clearing forest doesn't make farmland in v1 — recommend; (5) monsters, migrations, extinctions later — recommend; (6) droughts slow regrowth, no die-off — recommend; (7) on by default once the bars are met — recommend; (8) lived in 200 years — recommend; (9) Nature reads markets' workers rather than markets sending requests, shares lost in millionths, main session makes the markets lines, woodland troops keep the map's forest, the four events, one edit, `without_realms` switches it off *(default)*.
 - **Built and merged (Oct 18, save format 34).** As planned (`nature.rs`; `examples/nature_check.rs` with the probe, the 150-year check and speed). No change to markets beyond the setup's lines (a test: half the woodland gone gives exactly the world with timber's woodland rate halved). The probe kept `crowd_full` 4 and `fishers_per_km` 8. Worlds without Natural world value for value the same (every field after 30 years, seeds 7 and 21, both economies); in the tester's choices ("off" first), table written again: worst Yellow, all 136 findings the one known quirk. **150-year check** (small world, seeds 21/7/1, both economies, against the same worlds without it): every bar met on all six. Clearing follows crowding 0.75–0.96; woods grow back where people left on 3 of 3 seeds; woodland standing 75–84% (v0 seed 21 at 84.4%, near the 85% bar: plague may push it over); no fishery collapsed; under markets people −3.3 to −6.7% (a dip of −8.2% at year 50 on seed 21), starvation +3 to +8%, timber price 0.94–1.34×; under v0 every other value identical. Fish steady (about 0.1% a year). Speed (rough): 0.32–0.5 ms a month start on one thread, 0.14–0.22 with threads; about 0.01 ms a day. No warning event fired in 150 years on any world (nothing fell below 20%). **The user accepted all of it (Oct 18):** the fewer people under markets, the speed, warnings kept at 20% / 50%. The agent's choices kept unless the user objects: months count by their days; provinces already low at the start are marked warned without an event; SetNature refused for a part that is off; nobody fells and fishing is crowding × 0.5 in the lived-in years; warnings only where a province has woodland or shore. Not measured: ships' timber.
 
+### Map views for the second wave (Oct 18)
+
+The user asked for work on the map views; the open window work after the second wave was its map
+layers, faiths and plagues named by number, and no plague button. **The user's choices:** all three;
+the faith map like the culture map (main faith, paler where mixed); two plague layers, "ill with
+plague" now and "plague dead" since the world began; one wild land layer with a picker (woods, fish,
+game); plagues get made-up names from the seed. The simulation kept only each province's plague dead
+since the year began, so a damage map would clear each January: **the user chose to have Disease
+keep a count since the world began** (`province.plague_dead_total`, save format 36; saves of format
+35 no longer open, scenario files do).
+
+Built (`crates/app`, see its README): the faith map, faiths named everywhere, the realm's faith and
+other-faith share, a Faiths section (sharing the Cultures section's code); the wild land map (clear
+where a province has none: no woodland, no shore), what is left on hover and as percentages on the
+province page; "ill with plague" (log scale from 1 in 10,000 to a tenth, since plagues start tiny)
+and "plague dead" (1 in 10,000 to a quarter); plague names (`sim::disease::name`, "the Red Fever",
+192 different a world, then with a number) in the log, values and hover; the plague going on and
+"start a plague here" on the province page; `--plague best|P`, `--wild`, `--layer
+faiths|wild|sick|plague_dead`, `--open-section faiths`. Each new layer reads its table only while it
+is shown. Frame times with the new layers are not measured yet (with the other layers, in the
+quiet-machine speed session).
+
 ## Decisions
 
 - **Time:** the base step is one day; modules run their main logic on their own cadence. An event on day N takes effect on day N+1, with a documented priority order for same-day conflicts.

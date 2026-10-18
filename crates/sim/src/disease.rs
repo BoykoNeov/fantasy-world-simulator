@@ -33,8 +33,9 @@
 //! times as likely in a province with a sea way.
 //!
 //! Deaths are a request to the pops' owner ([`Cause::Plague`], served before everything else, so
-//! before recruits); the dead are counted in `province.plague_dead` (since the year began) and in
-//! the outbreak's tally when the grant comes, the next day. Soldiers in armies don't catch it, and
+//! before recruits); the dead are counted in `province.plague_dead` (since the year began),
+//! `province.plague_dead_total` (since the world began) and in the outbreak's tally when the grant
+//! comes, the next day. Soldiers in armies don't catch it, and
 //! it is kept apart from the camp disease of armies on campaign. Each outbreak is kept in the
 //! module's saved state: where and when it began, when it ended, its dead and the provinces it
 //! reached. Events: [`Event::Outbreak`] when one begins, [`Event::PlagueArrived`] when it reaches a
@@ -210,6 +211,40 @@ impl Plagues {
     }
 }
 
+/// The words plague names are made of: what it is called, and what is said of it.
+const LOOKS: &[&str] = &["Red", "Grey", "Black", "Pale", "Yellow", "Blue", "Burning", "Weeping", "Shaking", "Sweating", "Bloody", "Spotted", "Creeping", "Silent", "Bitter", "Wasting"];
+const ILLS: &[&str] = &["Fever", "Cough", "Pox", "Flux", "Sickness", "Death", "Plague", "Blight", "Rot", "Chill", "Sweat", "Ague"];
+
+/// Outbreak `outbreak`'s name, from the world's seed alone: "the Red Fever", "the Weeping Pox".
+/// The first 192 outbreaks of a world all have different names; later ones repeat a name with a
+/// number ("the Red Fever II").
+pub fn name(seed: u64, outbreak: u32) -> String {
+    let all = (LOOKS.len() * ILLS.len()) as u64;
+    let (round, k) = (outbreak as u64 / all, outbreak as u64 % all);
+    // A shuffle of the names fixed by the seed: k-th in the order of a keyed hash of each.
+    let key = |i: u64| crate::rng::mix(seed ^ 0x9_1A9E ^ i.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let mut order: Vec<u64> = (0..all).collect();
+    order.sort_by_key(|&i| (key(i), i));
+    let i = order[k as usize] as usize;
+    let (look, ill) = (LOOKS[i / ILLS.len()], ILLS[i % ILLS.len()]);
+    match round {
+        0 => format!("the {look} {ill}"),
+        r => format!("the {look} {ill} {}", roman(r + 1)),
+    }
+}
+
+/// `n` in Roman numerals (for the few names that come round again).
+fn roman(mut n: u64) -> String {
+    let mut out = String::new();
+    for (v, s) in [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")] {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
+}
+
 static V1: Manifest = Manifest {
     slot: Slot::Disease,
     version: "plagues",
@@ -217,7 +252,7 @@ static V1: Manifest = Manifest {
     cadence: Cadence::Weekly,
     reads: &["pop.province", "pop.size", "province.cells", "province.area_km2"],
     reads_earlier: &[],
-    owns: &["province.sick", "province.immune", "province.plague_dead", "province.outbreak"],
+    owns: &["province.sick", "province.immune", "province.plague_dead", "province.plague_dead_total", "province.outbreak"],
     // The plague's dead are asked of the pops' owner.
     requests: &["pop.size"],
     asks: &[],
@@ -304,7 +339,7 @@ impl Module for Plagues {
 
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
         let n = w.provinces.count;
-        (w.sick, w.immune, w.plague_dead, w.outbreak) = (vec![0; n], vec![0; n], vec![0; n], vec![NONE; n]);
+        (w.sick, w.immune, w.plague_dead, w.plague_dead_total, w.outbreak) = (vec![0; n], vec![0; n], vec![0; n], vec![0; n], vec![NONE; n]);
         self.st = State {
             outbreaks: Vec::new(),
             people: w.province_population(),
@@ -402,6 +437,9 @@ impl Module for Plagues {
                 {
                     *d += granted;
                 }
+                if let Some(d) = w.plague_dead_total.get_mut(r.entity as usize) {
+                    *d += granted;
+                }
                 if let Some(o) = self.st.outbreaks.get_mut(r.tag as usize) {
                     o.dead += granted;
                 }
@@ -449,6 +487,7 @@ impl Module for Plagues {
                     let (wf, wi) = if weight(f) + weight(i) > 0.0 { (weight(f), weight(i)) } else { (1.0, 1.0) };
                     self.mix(w, i, &[(i, wi), (f, wf)]);
                     w.plague_dead[i] += std::mem::take(&mut w.plague_dead[f]);
+                    w.plague_dead_total[i] += std::mem::take(&mut w.plague_dead_total[f]);
                     (w.sick[f], w.immune[f], w.outbreak[f]) = (0, 0, NONE);
                 }
             }

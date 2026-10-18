@@ -389,4 +389,20 @@ fn the_years_plague_dead_start_again_each_year() {
     assert!(s.world.plague_dead.iter().all(|&d| d == 0), "a year with no plague has no plague dead");
     let ledger: u64 = s.history.iter().map(|y| y.ledger.plague).sum();
     assert_eq!(ledger, seen.granted);
+    // The count since the world began keeps them all, in the province where they died.
+    assert_eq!(s.world.plague_dead_total.iter().sum::<u64>(), seen.granted);
+    assert!(s.world.plague_dead_total[p as usize] > 0);
+}
+
+#[test]
+fn plague_names_differ_and_come_round_with_a_number() {
+    let names: Vec<String> = (0..192).map(|o| crate::disease::name(7, o)).collect();
+    let mut unique = names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), 192, "{names:?}");
+    assert!(names.iter().all(|n| n.starts_with("the ") && n.split(' ').count() == 3), "{names:?}");
+    assert_eq!(crate::disease::name(7, 192), format!("{} II", names[0]));
+    // Another world names them in another order.
+    assert_ne!((0..5).map(|o| crate::disease::name(8, o)).collect::<Vec<_>>(), names[..5]);
 }

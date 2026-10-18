@@ -202,6 +202,33 @@ What exists:
     in per cent; sieges shorter and unrest rising more slowly), from the research tree in force;
     "Techs known" lists them by field with the day each was learned.
   - Techs are named in the log ("Rovaerane learned iron working").
+- **Faiths** (Oct 18; only where Religion runs):
+  - "faiths" colours each province by its main faith, paler the more mixed, as the culture map
+    (`layers::faith_color`, a third spread of hues so faiths, cultures and realms seldom look
+    alike).
+  - Faiths are named everywhere (`sim::religion::names`): the log's new faiths, breakaways, ends and
+    changes of a province's main faith, the pops on the province page, the province's faiths by
+    share on its page and on hover. The realm page gives the realm's faith (its capital's) and the
+    share of its people following other faiths, which stirs unrest from foreign rule.
+  - The Faiths section of the side panel: every living faith, most followers first, with its share
+    of the world, how many provinces it is the main faith of, and how it began, with a button to
+    the province where it began (the same code as the Cultures section).
+- **Wild land** (Oct 18; only where Natural world runs): "wild" with a picker for woods, fish or
+  game (only the parts that run): its own colour (green, blue, olive) where untouched, through pale
+  to bare brown where it is all gone; clear where a province has none of it (no woodland, or no
+  coast or river for fish). Hovering says what is left of each; the province page gives each as
+  "36% of its wild woodland cleared" (it read in millionths).
+- **Plagues** (Oct 18; only where Disease runs, off by default):
+  - "ill with plague": pale rose where the first few fall ill (1 in 10,000) to deep red where a
+    tenth are, on a log scale, since a plague starts at about 1 in 2,000; watch it play to see a
+    plague spread. "plague dead": each province's plague dead since the world began against its
+    people (now and those dead), ash grey at 1 in 10,000 to near black at a quarter, so the marks
+    of old plagues stay (the simulation keeps the count for it: `province.plague_dead_total`, the
+    user's choice; the yearly count clears each January).
+  - Plagues are named ("the Red Fever", `sim::disease::name`) in the log, the province's values and
+    on hover; the province page opens with the plague going on there, if any, and the share ill,
+    and a "start a plague here" button (a poke; refused where nobody lives). Sick and immune read
+    as percentages.
 - **Editing realms, rulers and armies** (step 7's editor; `editor.rs`, `realm_tools.rs`; only
   what the world keeps is offered):
   - The "realms" tool in the Edit section: click provinces to pick them (again to put one back;
@@ -268,9 +295,13 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest`, `cultures`, `techs`, `winter` (0..1), and `coasts`,
+  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest`, `cultures`, `faiths`, `techs`, `winter`, `wild`, `sick`,
+  `plague_dead` (0..1), and `coasts`,
   `rivers`, `borders`, `graticule`, `roads`, `realm_borders`, `armies`, `battles` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
+- `--wild woods|fish|game`: what the wild land map shows (default woods).
+- `--plague best|P`: a plague poked after the first years, with `--drought` (`best`: the province
+  with the most people); it needs Disease, e.g. `--modules disease=plagues`.
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--remake SIZE,SEED,YEARS[,SLOT=VERSION,...]`: once the window is open, make a new world through
   the New world section, as a player would (versions not given stay as they are).
@@ -282,7 +313,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   `simrun --settings` lists the parts, e.g. `--part modules.warfare.seasons=1`).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
-  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|battles|soldiers-lost|cultures|battle`: open that
+  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|battles|soldiers-lost|cultures|faiths|battle`: open that
   section (for scripted screenshots).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.
@@ -298,9 +329,11 @@ gives the same days, and a world saved from the window opens again as it was. On
 realm's page and every log line from the window's copy of the world after 50 years of successions,
 breakaways and a war, given only what the simulation sends each day: everyone is there and named,
 and no "none" shows as a raw number. Another does the same for techs and cultures after 60 years
-with Research and Culture on (no tech or culture by its bare number on realm pages, in the Cultures
-section, province pages or the log), and checks the culture and techs layers have a value for every
-province with people or an owner.
+with Research, Culture and Religion on (no tech, culture or faith by its bare number on realm pages,
+in the Cultures and Faiths sections, province pages or the log), and checks the culture, faith and
+techs layers have a value for every province with people or an owner, and the wild land layer for
+every province with some of it. Another pokes a plague with Disease on: plagues are named in the
+log and the province values, and the plague layers show who is ill and who died.
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app

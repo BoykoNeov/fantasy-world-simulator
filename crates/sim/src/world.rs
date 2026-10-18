@@ -247,6 +247,10 @@ pub struct World {
     pub immune: Vec<u64>,
     /// People dead of plague in each province since the year began (field `province.plague_dead`).
     pub plague_dead: Vec<u64>,
+    /// People dead of plague in each province since the world began (field
+    /// `province.plague_dead_total`): never counted afresh, for the window's map of where plagues
+    /// struck hardest.
+    pub plague_dead_total: Vec<u64>,
     /// The outbreak going on in each province (field `province.outbreak`), [`crate::grid::NONE`]
     /// where there is none.
     pub outbreak: Vec<u32>,
@@ -314,6 +318,7 @@ impl World {
             sick: Vec::new(),
             immune: Vec::new(),
             plague_dead: Vec::new(),
+            plague_dead_total: Vec::new(),
             outbreak: Vec::new(),
             woods_lost: Vec::new(),
             fish_lost: Vec::new(),
@@ -466,6 +471,7 @@ impl World {
             "province.sick" => U64(self.sick.clone()),
             "province.immune" => U64(self.immune.clone()),
             "province.plague_dead" => U64(self.plague_dead.clone()),
+            "province.plague_dead_total" => U64(self.plague_dead_total.clone()),
             "province.outbreak" => U32(self.outbreak.clone()),
             "province.woods_lost" => U64(self.woods_lost.clone()),
             "province.fish_lost" => U64(self.fish_lost.clone()),
@@ -611,6 +617,7 @@ impl World {
             ("province.sick", U64(v)) => self.sick = v,
             ("province.immune", U64(v)) => self.immune = v,
             ("province.plague_dead", U64(v)) => self.plague_dead = v,
+            ("province.plague_dead_total", U64(v)) => self.plague_dead_total = v,
             ("province.outbreak", U32(v)) => self.outbreak = v,
             ("province.woods_lost", U64(v)) => self.woods_lost = v,
             ("province.fish_lost", U64(v)) => self.fish_lost = v,
@@ -742,6 +749,7 @@ impl World {
             ("province.sick", U64(x)) => put(&mut self.sick, at, x),
             ("province.immune", U64(x)) => put(&mut self.immune, at, x),
             ("province.plague_dead", U64(x)) => put(&mut self.plague_dead, at, x),
+            ("province.plague_dead_total", U64(x)) => put(&mut self.plague_dead_total, at, x),
             ("province.outbreak", U32(x)) => put(&mut self.outbreak, at, x),
             ("province.woods_lost", U64(x)) => put(&mut self.woods_lost, at, x),
             ("province.fish_lost", U64(x)) => put(&mut self.fish_lost, at, x),
@@ -757,7 +765,7 @@ impl World {
         let n = self.provinces.count;
         // A new province has nobody sick, immune or dead of plague, and its wild is untouched (Disease
         // and Natural world may give it more, from the provinces its cells came from).
-        for v in [&mut self.starved_this_year, &mut self.rain_shortfall, &mut self.unrest, &mut self.sick, &mut self.immune, &mut self.plague_dead, &mut self.woods_lost, &mut self.fish_lost, &mut self.game_lost] {
+        for v in [&mut self.starved_this_year, &mut self.rain_shortfall, &mut self.unrest, &mut self.sick, &mut self.immune, &mut self.plague_dead, &mut self.plague_dead_total, &mut self.woods_lost, &mut self.fish_lost, &mut self.game_lost] {
             if v.len() < n {
                 v.resize(n, 0);
             }

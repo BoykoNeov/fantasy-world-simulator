@@ -411,6 +411,7 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Zero, ..def("province.sick", Tier::Province, "millionths of the people ill now", 0.0, 1_000_000.0) },
     FieldDef { default: Default::Zero, ..def("province.immune", Tier::Province, "millionths of the people immune", 0.0, 1_000_000.0) },
     FieldDef { default: Default::Zero, ..def("province.plague_dead", Tier::Province, "people dead of plague since the year began", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Zero, ..def("province.plague_dead_total", Tier::Province, "people dead of plague since the world began", 0.0, COUNT_MAX) },
     FieldDef { default: Default::NoOne, ..def("province.outbreak", Tier::Province, "outbreak id going on in it, none where there is none", -UNBOUNDED, UNBOUNDED) },
     // Natural world "regrowth": the share of the wild that is gone, so 0 (the default) is untouched.
     FieldDef { default: Default::Zero, ..def("province.woods_lost", Tier::Province, "millionths of its wild woodland cleared", 0.0, 1_000_000.0) },

@@ -1,7 +1,8 @@
 //! The map view: generate a world, run it some years, then watch it live, poke it and ask why.
 //!
 //! fantasymap [--size small|medium|large|huge] [--seed S] [--n FACE] [--provinces N] [--years Y]
-//!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--days D] [--select best|P] [--explain]
+//!            [--drought best|LON,LAT,RADIUS_KM,PERCENT,YEARS] [--plague best|P] [--days D]
+//!            [--select best|P] [--explain] [--wild woods|fish|game]
 //!            [--speed DAYS_PER_SECOND|max]
 //!            [--projection oval|rect] [--view LON,LAT,ZOOM] [--layer NAME=VALUE]... [--good NAME]
 //!            [--screenshot FILE.png] [--paint LON,LAT,RADIUS_KM,METRES] [--split best|P] [--undo]
@@ -10,8 +11,10 @@
 //!            [--bench --out DIR --tag NAME]
 //!
 //! Layer names: terrain, temperature, rainfall, population, famine, drought, provinces, prices,
-//! trade, balance, realms, unrest (0..1), and coasts, rivers, borders, graticule, roads,
-//! realm_borders (0 or 1); `--good` picks the good the price layer shows. `--view` takes degrees and a zoom (1 = planet
+//! trade, balance, realms, unrest, cultures, faiths, techs, winter, wild, sick, plague_dead (0..1),
+//! and coasts, rivers, borders, graticule, roads, realm_borders, armies, battles (0 or 1); `--good`
+//! picks the good the price layer shows and `--wild` what the wild land layer shows. `--plague`
+//! pokes a plague with the drought (`best`: in the province with the most people). `--view` takes degrees and a zoom (1 = planet
 //! height fits). `--drought` pokes a drought after the first years (`best`: over the province that
 //! grows the most food), `--days` runs that many more days before the window opens, `--select`
 //! opens the inspector on a province, `--explain` explains its last change, and `--speed` starts
@@ -85,6 +88,9 @@ struct Options {
     size: Size,
     years: i64,
     drought: Option<DroughtAt>,
+    /// A plague poked after the first years, with the drought: in a province, or (`None`) in the
+    /// one with the most people.
+    plague: Option<Option<u32>>,
     days: u64,
     /// `Some(None)`: the province that grows the most food.
     select: Option<Option<u32>>,
@@ -128,6 +134,7 @@ impl Options {
             size,
             years: 20,
             drought: None,
+            plague: None,
             days: 0,
             select: None,
             explain: false,
@@ -226,6 +233,8 @@ impl Options {
                         "cultures" => l.cultures = x,
                         "faiths" => l.faiths = x,
                         "wild" => l.wild = x,
+                        "sick" => l.sick = x,
+                        "plague_dead" => l.plague_dead = x,
                         "techs" => l.techs = x,
                         "winter" => l.winter = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
@@ -269,6 +278,10 @@ impl Options {
                     o.parts.push((key.into(), on == "1"));
                 }
                 "--open-section" => o.open_sections.push(value(&mut i)),
+                "--plague" => {
+                    let v = value(&mut i);
+                    o.plague = Some(if v == "best" { None } else { Some(v.parse().expect("--plague best|PROVINCE")) });
+                }
                 "--split" => {
                     let v = value(&mut i);
                     o.live_edits.push(LiveEdit::Split(if v == "best" { None } else { Some(v.parse().expect("--split best|PROVINCE")) }));
@@ -613,7 +626,7 @@ struct MapApp {
     bench_target: (f64, f64),
 }
 
-/// A new world from the command line's options, run for its years, with its drought.
+/// A new world from the command line's options, run for its years, with its drought and plague.
 fn make_world(opts: &Options, drought: &mut DroughtTool) -> Sim {
     let mut sim = Sim::new(&opts.config).unwrap_or_else(|e| panic!("{e}"));
     let first = sim.calendar.def.first_year;
@@ -631,6 +644,11 @@ fn make_world(opts: &Options, drought: &mut DroughtTool) -> Sim {
         };
         let e = drought_event(lon, lat, drought, &sim.calendar);
         sim.poke(e);
+    }
+    if let Some(p) = opts.plague {
+        let people = sim.world.province_population();
+        let p = p.unwrap_or_else(|| (0..people.len()).max_by_key(|&q| (people[q], std::cmp::Reverse(q))).unwrap_or(0) as u32);
+        sim.poke(Event::Plague { province: p });
     }
     sim.run_days(opts.days);
     sim
@@ -918,6 +936,7 @@ impl MapApp {
             faiths: self.layers.faiths > 0.0 && self.religions_on(),
             techs: self.layers.techs > 0.0 && self.techs_on(),
             wild: self.wild_parts().contains(&self.wild_kind).then_some(self.wild_kind).filter(|_| self.layers.wild > 0.0),
+            plague: (self.layers.sick > 0.0 || self.layers.plague_dead > 0.0) && self.disease_on(),
         };
         let seasons = self.shown_state.settings.clone();
         let seasons = seasons.warfare.as_ref().and_then(|t| t.seasons.as_ref()).filter(|_| self.layers.winter > 0.0);
@@ -1305,6 +1324,7 @@ impl MapApp {
         let armies = self.kept().armies;
         let (cultures, faiths, techs) = (self.cultures_on(), self.religions_on(), self.techs_on());
         let wild_parts = self.wild_parts();
+        let disease = self.disease_on();
         let winter = self.shown_state.settings.warfare.as_ref().is_some_and(|t| t.seasons.is_some());
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
@@ -1352,6 +1372,12 @@ impl MapApp {
         if faiths {
             ui.add(egui::Slider::new(&mut l.faiths, 0.0..=1.0).text("faiths"))
                 .on_hover_text("each province in the colour of its main faith (the one most of its people follow); the more mixed the province, the paler. The province page lists every faith there");
+        }
+        if disease {
+            ui.add(egui::Slider::new(&mut l.sick, 0.0..=1.0).text("ill with plague"))
+                .on_hover_text("how many of each province's people are ill with plague today: pale rose where the first few fall ill (1 in 10,000), deep red where a tenth are; clear where nobody is. Watch it to see a plague spread");
+            ui.add(egui::Slider::new(&mut l.plague_dead, 0.0..=1.0).text("plague dead"))
+                .on_hover_text("how hard plagues have struck each province since the world began: its plague dead against its people (now and those dead), ash grey where 1 in 10,000 died, near black where a quarter did; clear where nobody has died of plague");
         }
         // Only the parts of Natural world that run.
         if !wild_parts.is_empty() {
@@ -1873,6 +1899,11 @@ impl MapApp {
         }
     }
 
+    /// Whether some module keeps plagues (Disease).
+    fn disease_on(&self) -> bool {
+        self.owners[sim::fields::known("province.sick").0 as usize].1.is_some()
+    }
+
     /// Whether some module keeps faiths (Religion).
     fn religions_on(&self) -> bool {
         self.owners[sim::fields::known("religion.born").0 as usize].1.is_some()
@@ -1957,6 +1988,16 @@ impl MapApp {
             if self.religions_on() {
                 let names = self.names();
                 ui.label(format!("faiths: {}", inspector::faiths_in_words(&names, &inspector::province_faiths(w, p as u32))));
+            }
+            if self.disease_on() {
+                let names = self.names();
+                if let Some(o) = w.outbreak.get(p).copied().filter(|&o| o != NONE) {
+                    ui.label(format!("{}: {} ill", names.plague(o), inspector::share(w.sick.get(p).copied().unwrap_or(0) as f64 / 1e6)));
+                }
+                let dead = w.plague_dead_total.get(p).copied().unwrap_or(0);
+                if dead > 0 {
+                    ui.label(format!("{} dead of plague since the world began", group(dead)));
+                }
             }
             let wild: Vec<String> = self
                 .wild_parts()
@@ -2067,6 +2108,24 @@ impl MapApp {
                 self.selected = None;
             }
         });
+        if self.disease_on() {
+            let mut start = false;
+            ui.horizontal_wrapped(|ui| {
+                let w = &self.geo;
+                let names = self.names();
+                ui.label(match w.outbreak.get(pi).copied().unwrap_or(NONE) {
+                    NONE => "No plague here.".to_string(),
+                    o => format!("{} is here: {} of the people ill.", names.plague(o), inspector::share(w.sick.get(pi).copied().unwrap_or(0) as f64 / 1e6)),
+                });
+                start = ui
+                    .small_button("start a plague here")
+                    .on_hover_text("a poke: a new plague breaks out here tomorrow and spreads along the roads and sea lanes by the Disease settings (refused where nobody lives)")
+                    .clicked();
+            });
+            if start {
+                self.poke(Event::Plague { province: p });
+            }
+        }
         let today = self.day();
         let mut explain = None;
         if self.realms_on() {
