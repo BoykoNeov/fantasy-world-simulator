@@ -1,7 +1,9 @@
 //! The realm and ruler page, and realms and rulers by name in the words the inspector shows, built
 //! from the window's copy of the world the way the window keeps it: copied once when it opens, then
 //! given only the values the simulation sends each day. Realms that break away and rulers born
-//! later have every value the page reads, and nothing shows as a raw "none" number.
+//! later have every value the page reads, and nothing shows as a raw "none" number. With Research
+//! and Culture on, techs and cultures are named too, and the culture and tech layers have a value
+//! for every province.
 
 use app::inspector::{self, LogEntry, Names, RealmNames};
 use app::playback::{DayState, MapState};
@@ -48,8 +50,8 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     assert!(geo.characters.count() > people_then, "nobody was born or crowned in 50 years");
 
     let mut names = RealmNames::default();
-    names.update(&geo);
-    let n = Names { world: &geo, realms: &names.names };
+    names.update(&geo, &sim.settings);
+    let n = Names { world: &geo, realms: &names };
     let raw = |s: &str| s.contains("4,294,967,295") || s.contains("4294967295") || s.contains("18,446,744") || s.contains("18446744");
     let money = &sim.config.modules.markets.as_ref().unwrap().money;
     let coin = geo.goods.columns_under(geo.goods.tree.find(money).unwrap()).unwrap().first().copied();
@@ -57,7 +59,7 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
     let mut earlier_rulers = 0;
     let mut truces = 0;
     for r in 0..geo.realms.count() as u32 {
-        let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, coin, &sim.world.trade);
+        let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, coin, &sim.world.trade, &sim.settings);
         let mut all = vec![page.name.clone()];
         all.extend(page.facts.iter().cloned());
         all.extend(page.past_rulers.iter().cloned());
@@ -114,4 +116,70 @@ fn every_realm_has_a_page_from_what_the_window_is_sent() {
         assert!(v == "risen up" || v.starts_with("joined the uprising"), "{v}");
     }
     assert_eq!(inspector::value(known("province.unrest"), &sim::fields::FieldData::U64(vec![250]), 0, &n), "250 of 1,000 toward an uprising");
+}
+
+/// Whether `s` names a culture or tech by its bare number ("culture 12", "tech 3").
+fn by_number(s: &str) -> bool {
+    ["culture ", "tech "].iter().any(|w| s.match_indices(w).any(|(i, _)| s[i + w.len()..].starts_with(|c: char| c.is_ascii_digit())))
+}
+
+#[test]
+fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed: 21, land_fraction: 0.4, radius_km: 6371.0 });
+    c.modules.set_choice(Slot::Economics, "markets").unwrap();
+    assert!(c.modules.research.is_some() && c.modules.culture.is_some(), "both on by default");
+    let mut sim = Sim::new(&c).unwrap();
+    let first = sim.calendar.def.first_year;
+    sim.run_to_year(first + 1);
+    let mut geo = sim.world.clone();
+    sim.run_to_year(first + 60);
+    let state = DayState::of(&sim, Arc::new(MapState::of(0, 0, &sim)));
+    for (id, data) in state.map.fields.iter().chain(&state.fields) {
+        geo.set_field(*id, data.clone()).unwrap();
+    }
+    let mut names = RealmNames::default();
+    names.update(&geo, &sim.settings);
+    let n = Names { world: &geo, realms: &names };
+
+    let (mut knowing, mut with_culture) = (0, 0);
+    for r in (0..geo.realms.count() as u32).filter(|&r| geo.realms.alive(r)) {
+        let page = inspector::realm_page(&n, r, sim.day, &sim.calendar, None, &sim.world.trade, &sim.settings);
+        let lines = page.facts.iter().chain(&page.knowledge).chain(page.techs.iter().flat_map(|f| &f.1));
+        for l in lines {
+            assert!(!by_number(l), "{}: {l}", page.name);
+        }
+        assert!(page.knowledge.first().is_some_and(|l| l.starts_with("knows ")), "{}: {:?}", page.name, page.knowledge);
+        assert!(page.knowledge.iter().any(|l| l.starts_with("what its techs do") || l == "its techs do nothing yet"), "{:?}", page.knowledge);
+        knowing += !page.techs.is_empty() as usize;
+        with_culture += page.facts.iter().any(|f| f.starts_with("culture: ")) as usize;
+    }
+    assert!(knowing > 0 && with_culture > 0, "realms knowing techs {knowing}, with a culture {with_culture}");
+
+    let lines = inspector::cultures(&n, &sim.calendar);
+    assert!(!lines.is_empty());
+    for l in &lines {
+        assert!(!by_number(&l.text), "{}", l.text);
+    }
+    for p in 0..geo.provinces.count as u32 {
+        let words = inspector::cultures_in_words(&n, &inspector::province_cultures(&geo, p));
+        assert!(!by_number(&words), "province {p}: {words}");
+    }
+    let mut named = 0;
+    for p in &sim.event_log.entries {
+        if matches!(p.event, Event::Discovery { .. } | Event::CultureBorn { .. } | Event::CultureGone { .. } | Event::Assimilated { .. }) {
+            let text = LogEntry::of_event(p, &geo.goods).text(&sim.calendar, &geo.goods, &n);
+            assert!(!by_number(&text), "{text}");
+            named += 1;
+        }
+    }
+    assert!(named > 0, "no discovery or culture event in 60 years");
+
+    // The layers: a main culture wherever people live, and techs wherever a realm owns land.
+    let v = app::layers::SocietyView::of(&geo, true, true);
+    let people = geo.province_population();
+    for (p, &here) in people.iter().enumerate() {
+        assert_eq!(v.culture[p].0 != NONE, here > 0, "province {p}");
+        assert!(v.culture[p].1 <= 1.0);
+        assert_eq!(!v.techs[p].is_nan(), geo.owner[p] != NONE, "province {p}");
+    }
 }

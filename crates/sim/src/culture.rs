@@ -646,6 +646,19 @@ pub fn main_cultures(w: &World) -> Vec<u32> {
     (0..c.provinces()).map(|p| c.main(p)).collect()
 }
 
+/// Each province's people by culture, most first (the lower number of equals); empty where nobody
+/// lives. For showing: the window's culture map and province page.
+pub fn mix(w: &World) -> Vec<Vec<(u32, u64)>> {
+    let c = Counts::of_world(w);
+    (0..c.provinces())
+        .map(|p| {
+            let mut v: Vec<(u32, u64)> = c.of(p).map(|(k, x)| (k as u32, x)).collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            v
+        })
+        .collect()
+}
+
 /// Each realm's culture: its capital's main culture; [`NONE`] for a dissolved realm or an empty
 /// capital.
 fn realm_cultures(w: &World, main: &[u32]) -> Vec<u32> {

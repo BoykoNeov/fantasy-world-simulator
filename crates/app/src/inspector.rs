@@ -13,30 +13,43 @@ use sim::fields::Tier;
 use sim::sim::{Stage, TraceStep, Traced, NEVER};
 use sim::world::World;
 
-/// Realm names by number, worked out once per world and extended as realms are made
-/// ([`sim::realms::names`] gives each realm the same name whatever comes after it).
+/// Realm and culture names by number, worked out once per world and extended as realms and
+/// cultures are made ([`sim::realms::names`] and [`sim::culture::names`] give each the same name
+/// whatever comes after it), and the techs' names, from the research tree in force.
 #[derive(Clone, Debug, Default)]
 pub struct RealmNames {
     seed: u64,
     pub names: Vec<String>,
+    pub cultures: Vec<String>,
+    pub techs: Vec<String>,
 }
 
 impl RealmNames {
-    /// The names of `w`'s realms, worked out again only for another seed or more realms.
-    pub fn update(&mut self, w: &World) {
-        let count = w.realms.count();
-        if self.seed != w.params.seed || self.names.len() < count {
-            *self = RealmNames { seed: w.params.seed, names: sim::realms::names(w.params.seed, count) };
+    /// The names of `w`'s realms and cultures, worked out again only for another seed or more of
+    /// them; the techs of `settings`' research tree.
+    pub fn update(&mut self, w: &World, settings: &sim::config::ModuleConfig) {
+        let seed = w.params.seed;
+        if self.seed != seed {
+            *self = RealmNames { seed, ..Default::default() };
+        }
+        if self.names.len() < w.realms.count() {
+            self.names = sim::realms::names(seed, w.realms.count());
+        }
+        if self.cultures.len() < w.cultures.count() {
+            self.cultures = sim::culture::names(seed, w.cultures.count());
+        }
+        if self.techs.len() != settings.research.as_ref().map_or(0, |p| p.techs.len()) {
+            self.techs = sim::research::tech_names(settings);
         }
     }
 }
 
-/// Names for realms and people in the inspector's words.
+/// Names for realms, cultures, techs and people in the inspector's words.
 #[derive(Clone, Copy)]
 pub struct Names<'a> {
     pub world: &'a World,
-    /// Realm names by number, as many as are known ([`RealmNames`]).
-    pub realms: &'a [String],
+    /// Realm and culture names by number, as many as are known, and the techs' ([`RealmNames`]).
+    pub realms: &'a RealmNames,
 }
 
 impl Names<'_> {
@@ -44,8 +57,21 @@ impl Names<'_> {
     pub fn realm(&self, r: u32) -> String {
         match r {
             NONE => "nobody".into(),
-            r => self.realms.get(r as usize).cloned().unwrap_or_else(|| format!("realm {r}")),
+            r => self.realms.names.get(r as usize).cloned().unwrap_or_else(|| format!("realm {r}")),
         }
+    }
+
+    /// A culture's name; "none" for none.
+    pub fn culture(&self, c: u32) -> String {
+        match c {
+            NONE => "none".into(),
+            c => self.realms.cultures.get(c as usize).cloned().unwrap_or_else(|| format!("culture {c}")),
+        }
+    }
+
+    /// A tech's name, by its column of `realm.tech`.
+    pub fn tech(&self, t: u16) -> String {
+        self.realms.techs.get(t as usize).map(|s| s.replace('_', " ")).unwrap_or_else(|| format!("tech {t}"))
     }
 
     /// Whether character `c` has every value the words below read.
@@ -85,13 +111,17 @@ pub struct RealmPage {
     pub past_rulers: Vec<String>,
     /// Wars going on, then truces: the other realm, and how they stand.
     pub relations: Vec<(u32, String)>,
+    /// Where Research runs: what it knows and studies, and what its techs do, a line each.
+    pub knowledge: Vec<String>,
+    /// The techs it knows, by field: the field, then each tech with the day it was learned.
+    pub techs: Vec<(String, Vec<String>)>,
 }
 
 /// Realm `r`'s page on `day`. `coin`: the column of the per-good fields that holds coins, if the
-/// world keeps them; `trade`, the last month's trade (for the tolls it collected). Every value is
-/// read with a check, since a realm or person made after the window opened may lack values no
-/// running module keeps.
-pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usize>, trade: &sim::markets::TradeRecord) -> RealmPage {
+/// world keeps them; `trade`, the last month's trade (for the tolls it collected); `settings`, the
+/// modules' settings in force (for the research tree). Every value is read with a check, since a
+/// realm or person made after the window opened may lack values no running module keeps.
+pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usize>, trade: &sim::markets::TradeRecord, settings: &sim::config::ModuleConfig) -> RealmPage {
     let w = n.world;
     let dpy = cal.days_per_year() as f64;
     let capital = w.realms.capital.get(r as usize).copied().filter(|&c| c != NONE);
@@ -128,6 +158,18 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
     if taken > 0 {
         facts.push(format!("holds {taken} province{} of its enemies", plural(taken)));
     }
+    if let Some(&c) = w.realm_culture.get(r as usize).filter(|&&c| c != NONE) {
+        let (mut all, mut foreign) = (0u64, 0u64);
+        for (k, &p) in w.pops.province.iter().enumerate() {
+            if mine(&w.owner, p as usize) {
+                all += w.pops.size[k];
+                foreign += if w.pops.culture[k] as u32 == c { 0 } else { w.pops.size[k] };
+            }
+        }
+        let share = if all == 0 { 0.0 } else { foreign as f64 / all as f64 * 100.0 };
+        facts.push(format!("culture: {} (its capital's); {share:.0}% of its people are of other cultures", n.culture(c)));
+    }
+    let (knowledge, techs) = research(n, r, day, cal, settings);
 
     let ch = &w.characters;
     let years = |from: f64, to: f64| ((to - from) / dpy).floor().max(0.0) as u64;
@@ -203,7 +245,145 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
         }
     }
     fighting.extend(truces);
-    RealmPage { name: n.realm(r), alive: capital.is_some(), capital, facts, ruler, heir, past_rulers, relations: fighting }
+    RealmPage { name: n.realm(r), alive: capital.is_some(), capital, facts, ruler, heir, past_rulers, relations: fighting, knowledge, techs }
+}
+
+/// What realm `r` knows and studies, and what its techs do, a line each; and the techs it knows,
+/// by field, with the day each was learned. Nothing where Research doesn't run.
+fn research(n: &Names, r: u32, day: u64, cal: &Calendar, settings: &sim::config::ModuleConfig) -> (Vec<String>, Vec<(String, Vec<String>)>) {
+    let w = n.world;
+    let Some(p) = settings.research.as_ref() else { return (Vec::new(), Vec::new()) };
+    let k = p.techs.len();
+    let row: &[u32] = w.realm_tech.get(r as usize * k..(r as usize + 1) * k).unwrap_or(&[]);
+    if k == 0 || row.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let known = row.iter().filter(|&&d| d != NONE).count();
+    let mut lines = vec![format!("knows {known} of the {k} techs")];
+    match w.realm_studying.get(r as usize).copied().filter(|&t| t != NONE) {
+        Some(t) => {
+            let banked = w.realm_knowledge.get(r as usize).copied().unwrap_or(0) as f64 / 1000.0;
+            let cost = p.techs.values().nth(t as usize).map_or(0.0, |x| x.years);
+            lines.push(format!("studying {}: {banked:.1} years of study banked; it costs {cost:.0} (less where neighbours and trade partners know it)", n.tech(t as u16)));
+        }
+        None => lines.push("studying nothing (it knows all it can study, or has no scholars paid)".into()),
+    }
+    if let Some(know) = sim::research::Know::new(p) {
+        use sim::research::Effect;
+        let f = |e: Effect| know.factors(row, e).first().copied().unwrap_or(1.0);
+        let pct = |x: f64| ((x - 1.0) * 100.0).round();
+        let said: Vec<String> = [
+            (Effect::Harvest, "harvests"),
+            (Effect::Made, "goods made"),
+            (Effect::Strength, "land soldiers' strength"),
+            (Effect::Ships, "ships' strength"),
+        ]
+        .iter()
+        .filter(|(e, _)| f(*e) != 1.0)
+        .map(|(e, what)| format!("{what} +{}%", pct(f(*e))))
+        .chain([(Effect::Siege, "sieges"), (Effect::Calm, "unrest")].iter().filter(|(e, _)| f(*e) != 1.0).map(|(e, what)| {
+            let faster = (1.0 - 1.0 / f(*e)) * 100.0;
+            if *what == "sieges" { format!("sieges {faster:.0}% shorter") } else { format!("unrest rises {faster:.0}% more slowly") }
+        }))
+        .collect();
+        lines.push(if said.is_empty() { "its techs do nothing yet".into() } else { format!("what its techs do: {}", said.join(", ")) });
+    }
+    let mut by_field: Vec<(String, Vec<String>)> = p.fields.iter().map(|f| (f.clone(), Vec::new())).collect();
+    for (t, (name, tech)) in p.techs.iter().enumerate() {
+        let learned = row[t];
+        if learned == NONE {
+            continue;
+        }
+        let when = if learned as u64 > day || learned == 0 { "from the start".to_string() } else { format!("learned {}", cal.format(learned as u64)) };
+        if let Some(f) = by_field.iter_mut().find(|f| f.0 == tech.field) {
+            f.1.push(format!("{} ({when})", name.replace('_', " ")));
+        }
+    }
+    by_field.retain(|f| !f.1.is_empty());
+    (lines, by_field)
+}
+
+/// Province `p`'s people by culture, most first (the lower number of equals).
+pub fn province_cultures(w: &World, p: u32) -> Vec<(u32, u64)> {
+    let mut out: Vec<(u32, u64)> = Vec::new();
+    for (k, &q) in w.pops.province.iter().enumerate() {
+        if q != p || w.pops.size[k] == 0 {
+            continue;
+        }
+        let c = w.pops.culture[k] as u32;
+        match out.iter_mut().find(|e| e.0 == c) {
+            Some(e) => e.1 += w.pops.size[k],
+            None => out.push((c, w.pops.size[k])),
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    out
+}
+
+/// A province's cultures in words: "Dravish 82%, Kalani 15%, 2 more 3%".
+pub fn cultures_in_words(n: &Names, mix: &[(u32, u64)]) -> String {
+    let total: u64 = mix.iter().map(|e| e.1).sum();
+    if total == 0 {
+        return "nobody lives here".into();
+    }
+    let pct = |x: u64| x as f64 / total as f64 * 100.0;
+    let mut parts: Vec<String> = mix.iter().take(3).map(|&(c, x)| format!("{} {:.0}%", n.culture(c), pct(x))).collect();
+    if mix.len() > 3 {
+        let rest: u64 = mix[3..].iter().map(|e| e.1).sum();
+        parts.push(format!("{} more {:.0}%", mix.len() - 3, pct(rest)));
+    }
+    parts.join(", ")
+}
+
+/// One culture, for the Cultures section.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CultureLine {
+    pub culture: u32,
+    pub people: u64,
+    /// Its name, people, the provinces it is the main culture of, and how it began.
+    pub text: String,
+    /// The province where it began.
+    pub hearth: u32,
+}
+
+/// Every living culture, most people first, in words.
+pub fn cultures(n: &Names, cal: &Calendar) -> Vec<CultureLine> {
+    let w = n.world;
+    let count = w.cultures.count();
+    let mut people = vec![0u64; count];
+    for (k, &c) in w.pops.culture.iter().enumerate() {
+        if let Some(x) = people.get_mut(c as usize) {
+            *x += w.pops.size[k];
+        }
+    }
+    let mut main = vec![0usize; count];
+    for c in sim::culture::main_cultures(w) {
+        if let Some(x) = main.get_mut(c as usize) {
+            *x += 1;
+        }
+    }
+    let total: u64 = people.iter().sum::<u64>().max(1);
+    let cu = &w.cultures;
+    let mut out: Vec<CultureLine> = (0..count)
+        .filter(|&c| cu.alive(c as u32) && people[c] > 0)
+        .map(|c| {
+            let began = match cu.parent.get(c).copied().unwrap_or(NONE) {
+                NONE => "a culture from the start".to_string(),
+                parent => format!("split off from the {} in {}", n.culture(parent), cal.format(cu.born.get(c).copied().unwrap_or(0))),
+            };
+            let text = format!(
+                "{}: {} people ({:.1}%), the main culture of {} province{}; {began}",
+                n.culture(c as u32),
+                group(people[c]),
+                people[c] as f64 / total as f64 * 100.0,
+                main[c],
+                if main[c] == 1 { "" } else { "s" }
+            );
+            CultureLine { culture: c as u32, people: people[c], text, hearth: cu.hearth.get(c).copied().unwrap_or(NONE) }
+        })
+        .collect();
+    out.sort_by(|a, b| b.people.cmp(&a.people).then(a.culture.cmp(&b.culture)));
+    out
 }
 
 /// One war going on, for the Wars section.
@@ -522,10 +702,11 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Breakaway { provinces } => format!("{} province{} to break away", provinces.len(), if provinces.len() == 1 { " is" } else { "s are" }),
         Event::March { realm: r, to, .. } => format!("{}'s field companies here are to march to province {to}", realm(r)),
         Event::Refused { why } => format!("your poke was turned down: {why}"),
-        Event::Discovery { realm: r, tech, .. } => format!("{} learned tech {tech}", realm(r)),
-        Event::CultureBorn { culture, provinces, .. } => format!("culture {culture} was born in {provinces} provinces"),
-        Event::CultureGone { culture } => format!("the last of culture {culture} is gone"),
-        Event::Assimilated { from, to, .. } => format!("the province's main culture changed from {from} to {to}"),
+        Event::Discovery { realm: r, tech, .. } => format!("{} learned {}", realm(r), names.tech(*tech)),
+        Event::CultureBorn { culture, parent: NONE, provinces, .. } => format!("the {} culture began in {provinces} provinces", names.culture(*culture)),
+        Event::CultureBorn { culture, parent, provinces, .. } => format!("the {} culture split off from the {} in {provinces} provinces", names.culture(*culture), names.culture(*parent)),
+        Event::CultureGone { culture } => format!("the last of the {} culture is gone", names.culture(*culture)),
+        Event::Assimilated { from, to, .. } => format!("the province's main culture changed from {} to {}", names.culture(*from), names.culture(*to)),
     }
 }
 
@@ -647,7 +828,8 @@ mod tests {
     #[test]
     fn a_refused_poke_is_logged_with_the_players_pokes() {
         let world = World::empty(&sim::world::WorldParams::preset(sim::world::Size::Small, 1));
-        let names = Names { world: &world, realms: &[] };
+        let known = RealmNames::default();
+        let names = Names { world: &world, realms: &known };
         let posted = Posted { day: 9, emitter: Some(Slot::Warfare), seq: 0, event: Event::Refused { why: "no way leads there".into() } };
         let e = LogEntry::of_event(&posted, &world.goods);
         // The province page shows entries about no province only when they are the player's.

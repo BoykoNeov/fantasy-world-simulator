@@ -29,7 +29,9 @@ pub const TABLE_BALANCE: usize = 5;
 pub const TABLE_REALM: usize = 6;
 pub const TABLE_OCCUPIER: usize = 7;
 pub const TABLE_UNREST: usize = 8;
-pub const TABLE_LAYERS: usize = 9;
+pub const TABLE_CULTURE: usize = 9;
+pub const TABLE_TECHS: usize = 10;
+pub const TABLE_LAYERS: usize = 11;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -67,6 +69,65 @@ pub struct MarketView {
     /// Whether the province sold or bought more last month, -1 (bought) to 1 (sold); NaN where it
     /// didn't trade. See [`trade_balance`].
     pub balance: Vec<f32>,
+}
+
+/// Cultures and knowledge as the map shows them, per province (empty: nothing to show). Worked out
+/// once for each day shown, not blended: a culture's number can't be.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SocietyView {
+    /// The main culture (the one with the most people) and its share of the people, 0..1;
+    /// [`NONE`] where nobody lives.
+    pub culture: Vec<(u32, f32)>,
+    /// How many techs the owner knows, from the fewest any living realm knows (0) to the most (1);
+    /// NaN where no realm owns it or nobody knows any.
+    pub techs: Vec<f32>,
+}
+
+impl SocietyView {
+    /// From the world shown: cultures where some module keeps them (`cultures`), knowledge where
+    /// some module keeps techs (`techs`).
+    pub fn of(w: &World, cultures: bool, techs: bool) -> Self {
+        let culture = if cultures {
+            sim::culture::mix(w)
+                .iter()
+                .map(|m| {
+                    let total: u64 = m.iter().map(|e| e.1).sum();
+                    m.first().map_or((NONE, 0.0), |&(c, x)| (c, (x as f64 / total as f64) as f32))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let techs = if techs { techs_known(w) } else { Vec::new() };
+        SocietyView { culture, techs }
+    }
+}
+
+/// How many techs each realm knows (`realm.tech` holds a day for each it knows).
+pub fn realm_techs(w: &World) -> Vec<usize> {
+    let realms = w.realms.count();
+    if realms == 0 || w.realm_tech.is_empty() {
+        return vec![0; realms];
+    }
+    w.realm_tech.chunks(w.realm_tech.len() / realms).map(|row| row.iter().filter(|&&d| d != NONE).count()).collect()
+}
+
+/// Each province's owner's techs, from the fewest any living realm knows (0) to the most (1), so
+/// realms that know nearly as much as each other still look different; 0.5 everywhere when all
+/// know the same; NaN where no realm owns it or nobody knows any.
+fn techs_known(w: &World) -> Vec<f32> {
+    let known = realm_techs(w);
+    let living = || (0..known.len()).filter(|&r| w.realms.alive(r as u32)).map(|r| known[r]);
+    let (least, most) = (living().min().unwrap_or(0), living().max().unwrap_or(0));
+    (0..w.provinces.count)
+        .map(|p| match w.owner.get(p).copied() {
+            Some(r) if r != NONE && most > 0 => known.get(r as usize).map_or(f32::NAN, |&k| match most - least {
+                0 => 0.5,
+                span => (k.saturating_sub(least) as f32 / span as f32).min(1.0),
+            }),
+            _ => f32::NAN,
+        })
+        .collect()
 }
 
 /// Each of `provinces`' trade last month: the worth of what it sold less what it bought, against
@@ -252,7 +313,7 @@ pub fn table_rows(count: usize) -> usize {
 /// gives the provinces' areas, the seed for their colours, and who owns, occupies and is restless
 /// where (realm numbers are never blended between days, so these come from the day shown); `v` the
 /// values shown.
-pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> Vec<Rgba> {
+pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView, society: &SocietyView) -> Vec<Rgba> {
     let count = world.provinces.count;
     let size = TABLE_WIDTH * table_rows(count);
     let mut out = vec![[0u8; 4]; size * TABLE_LAYERS];
@@ -303,8 +364,36 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView) -> 
             out[TABLE_OCCUPIER * size + p] = [r, g, b, 255];
         }
         out[TABLE_UNREST * size + p] = unrest_color(world.unrest.get(p).copied().unwrap_or(0), realm_of(&world.uprising).is_some());
+
+        // The main culture's colour, paler the more mixed the province.
+        if let Some(&(c, share)) = society.culture.get(p).filter(|e| e.0 != NONE) {
+            let [r, g, b] = culture_color(c, world.params.seed);
+            out[TABLE_CULTURE * size + p] = [r, g, b, culture_alpha(share)];
+        }
+        // The fewest techs any realm knows: pale parchment; the most: deep blue-green.
+        if let Some(&t) = society.techs.get(p).filter(|t| !t.is_nan()) {
+            let [r, g, b] = ramp(&[[238, 228, 196], [120, 175, 160], [25, 85, 105]], t as f64);
+            out[TABLE_TECHS * size + p] = [r, g, b, 255];
+        }
     }
     out
+}
+
+/// A culture's colour: a hue from its number, spread round the wheel otherwise than realms', so a
+/// realm and its own culture seldom look alike.
+pub fn culture_color(c: u32, seed: u64) -> [u8; 3] {
+    let h = sim::rng::mix(seed ^ 0xC0_17A2 ^ (c as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let hue = (c as f64 * 0.381_966_011_25 + 0.29 + (seed % 89) as f64 / 89.0).fract();
+    let sat = 0.40 + (h % 100) as f64 / 100.0 * 0.25;
+    let light = 0.45 + (h / 100 % 100) as f64 / 100.0 * 0.2;
+    hsl(hue, sat, light)
+}
+
+/// How strongly a province's main culture colours it, from its share of the people: faint where
+/// it holds under half, full where it is all there is.
+pub fn culture_alpha(share: f32) -> u8 {
+    let t = ((share as f64 - 0.4) / 0.6).clamp(0.0, 1.0);
+    (255.0 * (0.25 + 0.75 * t)).round() as u8
 }
 
 /// How restless a province is (`unrest`, thousandths of the way to an uprising), as a colour:
@@ -334,7 +423,8 @@ pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
 
 /// The tables for the world as it stands.
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
-    province_tables(&sim.world, &ProvinceView::now(sim), &MarketView::default())
+    let w = &sim.world;
+    province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, sim.config.modules.culture.is_some(), sim.config.modules.research.is_some()))
 }
 
 fn biome_color(b: Biome) -> [u8; 3] {
@@ -436,7 +526,7 @@ mod tests {
         (w.unrest[0], w.unrest[2]) = (500, 1000);
         w.uprising[2] = 2;
         let v = ProvinceView { people: vec![0.0; count], starved: vec![0.0; count], drought: vec![0.0; count] };
-        let t = province_tables(&w, &v, &MarketView::default());
+        let t = province_tables(&w, &v, &MarketView::default(), &SocietyView::default());
         let size = TABLE_WIDTH * table_rows(count);
         let at = |layer: usize, p: usize| t[layer * size + p];
         let colour = |r| {
@@ -456,7 +546,7 @@ mod tests {
         assert_eq!(at(TABLE_UNREST, 2), unrest_color(1000, true));
         // A world without realms keeps empty lists: everything clear, nothing out of bounds.
         let bare = World::generate(&sim::world::WorldParams { n: 24, provinces: 30, seed: 5, land_fraction: 0.4, radius_km: 6371.0 });
-        let t = province_tables(&bare, &v, &MarketView::default());
+        let t = province_tables(&bare, &v, &MarketView::default(), &SocietyView::default());
         assert!((0..count).all(|p| t[TABLE_REALM * size + p][3] == 0 && t[TABLE_OCCUPIER * size + p][3] == 0 && t[TABLE_UNREST * size + p][3] == 0));
     }
 

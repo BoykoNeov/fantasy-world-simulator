@@ -146,6 +146,32 @@ What exists:
     what it was declared over, soldiers and battles each side lost, provinces each holds of the
     other), each side a button to its capital, and the peaces of the last five years. The realm
     page's wars say what each side has lost.
+- **Cultures** (Oct 18; only where Culture runs):
+  - "cultures" colours each province by its main culture (the one most of its people belong to),
+    a hue from the culture's number (`layers::culture_color`, spread round the wheel otherwise than
+    realms'), paler the more mixed the province: faint where the main culture holds under half the
+    people, full where it is all there is. Worked out once for each day shown, only while the layer
+    is on (`layers::SocietyView`, from `sim::culture::mix`); never blended between days.
+  - The province page lists its cultures by share ("Rayir 82%, Khetu 15%, 2 more 3%"), and pops
+    name their culture. Hovering says the same.
+  - The realm page gives the realm's culture (its capital's) and the share of its people of other
+    cultures, which is what stirs unrest from foreign rule.
+  - The Cultures section of the side panel: every living culture, most people first, with its
+    people and share of the world, how many provinces it is the main culture of, and whether it
+    was there from the start or split off from another (and when); a button goes to the province
+    where it began.
+  - Cultures are named everywhere (`sim::culture::names`, from the seed), the event log's births,
+    splits, ends and changes of a province's main culture included.
+- **Research** (Oct 18; only where Research runs):
+  - "techs known" shades each province by how many techs its realm knows: pale for the least
+    learned living realm, deep blue-green for the most learned (stretched between the two, since
+    most realms know nearly as many as each other); clear where no realm owns the land. Hovering
+    says how many.
+  - The realm page says how many of the techs it knows, what it is studying (study banked against
+    the tech's cost), and what its techs do (harvests, goods made, soldiers' and ships' strength
+    in per cent; sieges shorter and unrest rising more slowly), from the research tree in force;
+    "Techs known" lists them by field with the day each was learned.
+  - Techs are named in the log ("Rovaerane learned iron working").
 - **Editing realms, rulers and armies** (step 7's editor; `editor.rs`, `realm_tools.rs`; only
   what the world keeps is offered):
   - The "realms" tool in the Edit section: click provinces to pick them (again to put one back;
@@ -212,7 +238,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest` (0..1), and `coasts`,
+  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest`, `cultures`, `techs` (0..1), and `coasts`,
   `rivers`, `borders`, `graticule`, `roads`, `realm_borders`, `armies`, `battles` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
@@ -224,7 +250,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   checks that the window copes with provinces going away).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
-  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars`: open that
+  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|cultures`: open that
   section (for scripted screenshots).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.
@@ -239,7 +265,10 @@ a change in the past starts a timeline and leaves the old one as it was, going b
 gives the same days, and a world saved from the window opens again as it was. One builds every
 realm's page and every log line from the window's copy of the world after 50 years of successions,
 breakaways and a war, given only what the simulation sends each day: everyone is there and named,
-and no "none" shows as a raw number.
+and no "none" shows as a raw number. Another does the same for techs and cultures after 60 years
+with Research and Culture on (no tech or culture by its bare number on realm pages, in the Cultures
+section, province pages or the log), and checks the culture and techs layers have a value for every
+province with people or an owner.
 
 ```
 cargo test --release --manifest-path M:\claud_projects\fantasymap\Cargo.toml -p app

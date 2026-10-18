@@ -9,8 +9,8 @@ struct MapParams {
     layers0: vec4<f32>,  // opacity: terrain, temperature, rainfall, population
     layers1: vec4<f32>,  // opacity: famine, provinces; lines: coasts, rivers
     layers2: vec4<f32>,  // lines: province borders, graticule; opacity: drought, prices
-    layers3: vec4<f32>,  // lines: roads and sea lanes, trade; opacity: trade balance; unused
-    layers4: vec4<f32>,  // opacity: realms, unrest; lines: realm borders; unused
+    layers3: vec4<f32>,  // lines: roads and sea lanes, trade; opacity: trade balance, techs known
+    layers4: vec4<f32>,  // opacity: realms, unrest; lines: realm borders; opacity: cultures
     ids: vec4<u32>,      // hovered province, selected province (or NO_PROVINCE), unused x2
 };
 
@@ -260,7 +260,7 @@ fn world_color(lon: f32, lat: f32, local: vec2<f32>) -> vec3<f32> {
 
     // Only look the province up when something on screen uses it.
     let wanted = params.layers0.w > 0.0 || params.layers1.x > 0.0 || params.layers1.y > 0.0 || params.layers2.z > 0.0 || params.layers2.w > 0.0 || params.layers3.z > 0.0
-        || params.layers4.x > 0.0 || params.layers4.y > 0.0 || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
+        || params.layers3.w > 0.0 || params.layers4.x > 0.0 || params.layers4.y > 0.0 || params.layers4.w > 0.0 || params.ids.x != NO_PROVINCE || params.ids.y != NO_PROVINCE;
     if (!wanted) {
         return col;
     }
@@ -276,6 +276,10 @@ fn world_color(lon: f32, lat: f32, local: vec2<f32>) -> vec3<f32> {
     col = mix(col, price.rgb, params.layers2.w * price.a);
     let balance = table(prov, 5);
     col = mix(col, balance.rgb, params.layers3.z * balance.a);
+    let culture = table(prov, 9);
+    col = mix(col, culture.rgb, params.layers4.w * culture.a);
+    let techs = table(prov, 10);
+    col = mix(col, techs.rgb, params.layers3.w * techs.a);
     // The owner's colour; where an enemy occupies it, diagonal stripes of the occupier's.
     let realm = table(prov, 6);
     col = mix(col, realm.rgb, params.layers4.x * 0.6 * realm.a);

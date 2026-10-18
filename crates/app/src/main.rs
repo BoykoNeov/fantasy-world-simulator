@@ -216,6 +216,8 @@ impl Options {
                         "balance" => l.trade_balance = x,
                         "realms" => l.realms = x,
                         "unrest" => l.unrest = x,
+                        "cultures" => l.cultures = x,
+                        "techs" => l.techs = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
                         "armies" => l.armies = x > 0.5,
                         "battles" => l.battles = x > 0.5,
@@ -516,6 +518,12 @@ struct MapApp {
     /// What the economy layers show, and the day state and good they were worked out for.
     market: layers::MarketView,
     market_for: Option<(usize, usize)>,
+    /// Cultures and knowledge for the day shown, for the layers that show them, and what they were
+    /// worked out for (the day state, and which of the two layers were on).
+    society: layers::SocietyView,
+    society_for: Option<(usize, bool, bool)>,
+    /// The Cultures section's lines, for the day state they were worked out for.
+    culture_lines: Option<(usize, Vec<inspector::CultureLine>)>,
     /// Whether the world trades (markets with trade on): the trade layers are offered.
     trades: bool,
     /// The troop kinds, where armies are kept: node, name, whether ships.
@@ -684,6 +692,9 @@ impl MapApp {
             price_good,
             market: layers::MarketView::default(),
             market_for: None,
+            society: layers::SocietyView::default(),
+            society_for: None,
+            culture_lines: None,
             trades,
             table,
             new_world,
@@ -759,6 +770,7 @@ impl MapApp {
         self.cam = None;
         (self.pop_edit, self.stock_good, self.stock_edit) = (None, 0, None);
         (self.market, self.market_for, self.tables_for, self.trade_lines_for) = (layers::MarketView::default(), None, None, None);
+        (self.society, self.society_for) = (layers::SocietyView::default(), None);
         (self.pending_tables, self.pending_trade) = (None, None);
         (self.realm_borders, self.realm_lines_for, self.pending_realm, self.realm_names) = (data.realm_borders.clone(), None, None, RealmNames::default());
         self.provinces = ProvinceLookup { n: data.n, ids: data.province_ids.clone(), warp: data.warp.clone() };
@@ -872,6 +884,14 @@ impl MapApp {
             self.market_for = Some(market_key);
             self.tables_for = None;
         }
+        // Cultures and knowledge: for each day state, only while their layers are shown.
+        let (cultures, techs) = (self.layers.cultures > 0.0 && self.cultures_on(), self.layers.techs > 0.0 && self.techs_on());
+        let society_key = (Arc::as_ptr(&self.shown_state) as usize, cultures, techs);
+        if self.society_for != Some(society_key) {
+            self.society = layers::SocietyView::of(&self.geo, cultures, techs);
+            self.society_for = Some(society_key);
+            self.tables_for = None;
+        }
         // Trade lines: for each month's trade, on the map drawn, when they are shown.
         let lines_key = (Arc::as_ptr(&self.shown_state.trade) as usize, Arc::as_ptr(&self.drawn_map) as usize);
         if self.layers.trade > 0.0 && self.trade_lines_for != Some(lines_key) && self.geo.provinces.count == self.gpu_provinces {
@@ -887,7 +907,7 @@ impl MapApp {
             self.pending_realm = Some(self.realm_borders.lines(&self.geo.owner));
             self.realm_lines_for = Some((self.geo.owner.clone(), drawn));
         }
-        self.realm_names.update(&self.geo);
+        self.realm_names.update(&self.geo, &self.shown_state.settings);
         if self.tables_for != Some(key) {
             self.view = match next {
                 Some(n) => ProvinceView::blend(&front.state.view, &n.state.view, t),
@@ -895,7 +915,7 @@ impl MapApp {
             };
             // Until a changed map's picture is ready, the GPU's tables have the old map's size.
             if self.geo.provinces.count == self.gpu_provinces {
-                self.pending_tables = Some(layers::province_tables(&self.geo, &self.view, &self.market));
+                self.pending_tables = Some(layers::province_tables(&self.geo, &self.view, &self.market, &self.society));
                 self.tables_for = Some(key);
             }
         }
@@ -1190,6 +1210,10 @@ impl MapApp {
             self.wars_section(ui);
             ui.separator();
         }
+        if self.cultures_on() {
+            self.cultures_section(ui);
+            ui.separator();
+        }
 
         ui.label("Edit");
         let edge = self.at_the_edge();
@@ -1207,7 +1231,7 @@ impl MapApp {
                 self.change(Change::Redo);
             }
         });
-        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let names = Names { world: &self.geo, realms: &self.realm_names };
         let realms = self.realms_on().then_some((&self.geo, &names));
         if let Some(a) = self.editor.panel(ui, self.selected, realms) {
             self.act(a);
@@ -1239,6 +1263,7 @@ impl MapApp {
         ui.label("Layers");
         let realms = self.realms_on();
         let armies = self.kept().armies;
+        let (cultures, techs) = (self.cultures_on(), self.techs_on());
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
@@ -1278,6 +1303,14 @@ impl MapApp {
             ui.add(egui::Slider::new(&mut l.unrest, 0.0..=1.0).text("unrest"))
                 .on_hover_text("how restless each province is: clear when calm, then yellow through orange to red as it nears an uprising; deep crimson where it has risen up");
         }
+        if cultures {
+            ui.add(egui::Slider::new(&mut l.cultures, 0.0..=1.0).text("cultures"))
+                .on_hover_text("each province in the colour of its main culture (the one most of its people belong to); the more mixed the province, the paler. The province page lists every culture there");
+        }
+        if techs {
+            ui.add(egui::Slider::new(&mut l.techs, 0.0..=1.0).text("techs known"))
+                .on_hover_text("how many techs the realm that owns each province knows: pale where it knows as few as the least learned realm, deep blue-green where it knows as many as the most learned; clear where no realm owns the land. Hovering a province says how many");
+        }
         ui.checkbox(&mut l.coasts, "coastlines");
         ui.checkbox(&mut l.rivers, "rivers");
         ui.checkbox(&mut l.borders, "province borders (zoom in)");
@@ -1307,7 +1340,7 @@ impl MapApp {
 
     /// Every war going on, and the peaces of the last five years; each side a button to its capital.
     fn wars_section(&mut self, ui: &mut egui::Ui) {
-        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let names = Names { world: &self.geo, realms: &self.realm_names };
         let (going, peaces) = inspector::wars(&names, self.day(), &self.calendar, 5 * self.calendar.days_per_year() as u64);
         let open = self.opts.open_sections.iter().any(|s| s == "wars");
         let mut go = None;
@@ -1339,6 +1372,38 @@ impl MapApp {
             }
         });
         if let Some(c) = go {
+            (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
+        }
+    }
+
+    /// Every living culture, most people first; each a button to the province where it began.
+    fn cultures_section(&mut self, ui: &mut egui::Ui) {
+        let open = self.opts.open_sections.iter().any(|s| s == "cultures");
+        let key = Arc::as_ptr(&self.shown_state) as usize;
+        let alive = (0..self.geo.cultures.count() as u32).filter(|&c| self.geo.cultures.alive(c)).count();
+        let mut go = None;
+        egui::CollapsingHeader::new(format!("Cultures ({alive} living)")).default_open(open).show(ui, |ui| {
+            // Worked out once for each day shown, and only while the section is open.
+            if self.culture_lines.as_ref().is_none_or(|c| c.0 != key) {
+                let names = Names { world: &self.geo, realms: &self.realm_names };
+                self.culture_lines = Some((key, inspector::cultures(&names, &self.calendar)));
+            }
+            let lines = &self.culture_lines.as_ref().expect("just set").1;
+            for l in lines.iter().take(80) {
+                ui.horizontal_wrapped(|ui| {
+                    let [r, g, b] = layers::culture_color(l.culture, self.geo.params.seed);
+                    ui.label(egui::RichText::new("■").color(egui::Color32::from_rgb(r, g, b)));
+                    ui.small(&l.text);
+                    if l.hearth != NONE && ui.small_button("where it began").on_hover_text("select the province where it began").clicked() {
+                        go = Some(l.hearth);
+                    }
+                });
+            }
+            if lines.len() > 80 {
+                ui.small(format!("and {} smaller ones", lines.len() - 80));
+            }
+        });
+        if let Some(c) = go.filter(|&c| (c as usize) < self.geo.provinces.count) {
             (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
         }
     }
@@ -1585,8 +1650,18 @@ impl MapApp {
         self.owners[sim::fields::known("province.owner").0 as usize].1.is_some()
     }
 
+    /// Whether some module keeps cultures (Culture).
+    fn cultures_on(&self) -> bool {
+        self.owners[sim::fields::known("culture.born").0 as usize].1.is_some()
+    }
+
+    /// Whether some module keeps the realms' techs (Research).
+    fn techs_on(&self) -> bool {
+        self.owners[sim::fields::known("realm.tech").0 as usize].1.is_some()
+    }
+
     fn names(&self) -> Names<'_> {
-        Names { world: &self.geo, realms: &self.realm_names.names }
+        Names { world: &self.geo, realms: &self.realm_names }
     }
 
     fn cell_info(&self, ui: &mut egui::Ui, c: usize, p: u32) {
@@ -1642,6 +1717,15 @@ impl MapApp {
                 } else if unrest > 0 {
                     ui.label(format!("unrest {} of {} toward an uprising", group(unrest), group(sim::realms::LINE)));
                 }
+            }
+            if self.cultures_on() {
+                let names = self.names();
+                ui.label(format!("cultures: {}", inspector::cultures_in_words(&names, &inspector::province_cultures(w, p as u32))));
+            }
+            if self.techs_on()
+                && let Some(r) = w.owner.get(p).copied().filter(|&r| r != NONE)
+            {
+                ui.label(format!("its realm knows {} techs", layers::realm_techs(w).get(r as usize).copied().unwrap_or(0)));
             }
             if self.view.drought[p] > 0.0 {
                 ui.label(format!("drought: {:.0}% of the rain missing", 100.0 * self.view.drought[p]));
@@ -1757,7 +1841,7 @@ impl MapApp {
                 });
             }
         };
-        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let names = Names { world: &self.geo, realms: &self.realm_names };
         egui::Grid::new("values").striped(true).num_columns(4).show(ui, |ui| {
             ui.small("value");
             ui.small("now");
@@ -1783,6 +1867,13 @@ impl MapApp {
         self.goods_table(ui, pi, &mut when);
         let pops: Vec<usize> = (0..self.geo.pops.size.len()).filter(|&k| self.geo.pops.province[k] == p).collect();
         let size = sim::fields::known("pop.size");
+        // Cultures by name where some module keeps them; else the pops' bare numbers.
+        let culture_names = Names { world: &self.geo, realms: &self.realm_names };
+        let cultures_on = self.cultures_on();
+        let culture_name = |c: u32| if cultures_on { culture_names.culture(c) } else { c.to_string() };
+        if cultures_on {
+            ui.label(format!("Cultures: {}", inspector::cultures_in_words(&culture_names, &inspector::province_cultures(&self.geo, p))));
+        }
         // Editing a pop: its size, typed in, set when asked.
         let mut editing = self.pop_edit;
         let mut set_pop = None;
@@ -1793,7 +1884,7 @@ impl MapApp {
                     "pop {k}: {} people (species {}, culture {}, religion {}, class {}), set by {}; size last changed",
                     group(w.size[k]),
                     w.species[k],
-                    w.culture[k],
+                    culture_name(w.culture[k] as u32),
                     w.religion[k],
                     w.class[k],
                     self.owners[size.0 as usize].0
@@ -1865,7 +1956,7 @@ impl MapApp {
         }
         if self.kept().armies {
             ui.separator();
-            let names = Names { world: &self.geo, realms: &self.realm_names.names };
+            let names = Names { world: &self.geo, realms: &self.realm_names };
             let (action, march) = self.realm_tools.armies(ui, &self.geo, &names, p, &self.troop_kinds);
             if let Some(a) = action {
                 self.act(a);
@@ -1978,7 +2069,7 @@ impl MapApp {
                             ui.label(egui::RichText::new(inspector::stage(s.stage)).italics());
                             stage = Some(s.stage);
                         }
-                        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+                        let names = Names { world: &self.geo, realms: &self.realm_names };
                         ui.label(format!("• {}", inspector::trace_step(s, &self.calendar, &self.geo.goods, &names)));
                     }
                 }
@@ -2016,7 +2107,7 @@ impl MapApp {
             }
         });
         let mut shown = 0;
-        let names = Names { world: &self.geo, realms: &self.realm_names.names };
+        let names = Names { world: &self.geo, realms: &self.realm_names };
         for e in self.log.iter().rev() {
             if e.province.is_some_and(|q| q != p) || (e.province.is_none() && e.source != Source::Player) || self.hidden_sources.contains(&e.source) {
                 continue;
@@ -2044,8 +2135,8 @@ impl MapApp {
             ui.label("No realm owns this province.");
             return;
         };
-        let names = Names { world: w, realms: &self.realm_names.names };
-        let page = inspector::realm_page(&names, r, self.day(), &self.calendar, self.coin_columns.first().copied(), &self.shown_state.trade);
+        let names = Names { world: w, realms: &self.realm_names };
+        let page = inspector::realm_page(&names, r, self.day(), &self.calendar, self.coin_columns.first().copied(), &self.shown_state.trade, &self.shown_state.settings);
         let mut go = None;
         ui.horizontal(|ui| {
             let [cr, cg, cb] = layers::realm_color(r, w.params.seed);
@@ -2098,6 +2189,20 @@ impl MapApp {
                     && ui.small_button("go").on_hover_text(format!("select {}'s capital", names.realm(*other))).clicked()
                 {
                     go = Some(c);
+                }
+            });
+        }
+        for l in &page.knowledge {
+            ui.label(l);
+        }
+        if !page.techs.is_empty() {
+            let known: usize = page.techs.iter().map(|f| f.1.len()).sum();
+            egui::CollapsingHeader::new(format!("Techs known ({known})")).id_salt(("techs known", r)).show(ui, |ui| {
+                for (field, techs) in &page.techs {
+                    ui.label(egui::RichText::new(field).strong());
+                    for t in techs {
+                        ui.label(format!("   {t}"));
+                    }
                 }
             });
         }
@@ -2436,7 +2541,7 @@ impl eframe::App for MapApp {
                             if let Some(h) = hover
                                 && h.distance(c) <= r + 2.0
                             {
-                                let names = Names { world: geo, realms: &self.realm_names.names };
+                                let names = Names { world: geo, realms: &self.realm_names };
                                 label = Some((c, app::armies::describe(m, &self.troop_kinds, &names.realm(m.realm))));
                             }
                         }

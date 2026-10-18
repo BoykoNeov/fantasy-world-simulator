@@ -48,6 +48,10 @@ pub struct LayerSettings {
     pub realms: f32,
     /// How restless each province is, and where it has risen up.
     pub unrest: f32,
+    /// Each province's main culture, paler where mixed.
+    pub cultures: f32,
+    /// How many techs each province's realm knows.
+    pub techs: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
@@ -76,6 +80,8 @@ impl Default for LayerSettings {
             trade: 0.0,
             realms: 0.0,
             unrest: 0.0,
+            cultures: 0.0,
+            techs: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
@@ -100,8 +106,8 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers0: [l.terrain, l.temperature, l.rainfall, l.population],
         layers1: [l.famine, l.provinces, on(l.coasts), on(l.rivers)],
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
-        layers3: [on(l.roads), l.trade, l.trade_balance, 0.0],
-        layers4: [l.realms, l.unrest, on(l.realm_borders), 0.0],
+        layers3: [on(l.roads), l.trade, l.trade_balance, l.techs],
+        layers4: [l.realms, l.unrest, on(l.realm_borders), l.cultures],
         ids: [hover_province, selected_province, 0, 0],
     }
 }
@@ -143,7 +149,7 @@ impl MapData {
             fields: layers::spread(&halo, &layers::fields(w)),
             province_ids: layers::spread(&halo, &w.provinces.of_cell),
             warp,
-            tables: layers::province_tables(w, view, &layers::MarketView::default()),
+            tables: layers::province_tables(w, view, &layers::MarketView::default(), &layers::SocietyView::default()),
             lines,
             line_ranges,
             realm_borders,
