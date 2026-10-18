@@ -462,6 +462,34 @@ pub static GROUPS: &[Group] = &[
     // The second wave of modules built side by side (Oct 18): a block of groups each. Whoever builds
     // a module adds its settings inside its own block only.
     // --- Religion ---
+    Group {
+        title: "Religion",
+        at: "modules.religion",
+        help: "A few large faiths spread over regions when the world is made, across realm and culture borders; over the years people take up the faith of their neighbours, their rulers and their own people, and cut-off groups break away as faiths of their own. Each month every faith pulls on each province's people: by its share of them, by its share of the people next door, by being the ruling realm's faith (its capital's main faith), and by being the faith most of the province's people's culture holds across the world. People of the other faiths there slowly take up the one that pulls hardest.",
+        specs: &[
+            made("modules.religion.starting", "Starting faiths", "About how many faiths the world starts with, each over a region of settled land (at most one a settled province). Faiths cross realm and culture borders. More makes smaller faiths and more mixed borderlands.", 1.0, 1000.0, "faiths"),
+            made("modules.religion.borderland", "Mixed borderlands", "Where two faiths meet at the start, this share of each border province's people is of the neighbouring faith. 0: sharp borders between faiths.", 0.0, 0.5, "share"),
+            live("modules.religion.per_year", "Conversion speed", "Share of a group a year that takes up the leading faith of its province when the leader pulls on it as hard as it can, and less as the pulls are closer. Higher: provinces take up their rulers' and neighbours' faiths faster, and the map of faiths follows the realms sooner. 0: nobody changes faith (except by schisms).", 0.0, 1.0, "share a year"),
+            live("modules.religion.own", "Holding to one's faith", "How hard a faith pulls on a province's people for being all of them, and in proportion for a share: how stubbornly people keep their faith. Higher: majorities hold out longer against rulers and neighbours.", 0.0, 100.0, ""),
+            live("modules.religion.neighbours", "Pull of neighbours", "How hard a faith pulls on a province for being all of the people next door (each neighbour counted less the further away it is in days). Higher: faiths spread across borders, and pockets are swallowed by what surrounds them.", 0.0, 100.0, ""),
+            live("modules.religion.neighbour_half_days", "Neighbours' reach", "A neighbour's pull halves for every this many days of travel to it. Lower: mountains and seas keep faiths apart; higher: even distant neighbours pull fully.", 0.1, 1000.0, "days"),
+            live("modules.religion.ruler", "Pull of the ruler's faith", "How hard the faith of the realm holding a province pulls on its people. Above \"holding to one's faith\", a ruler slowly wins over a province all of another faith, unless its neighbours of that faith or its people's faith hold it (with the shipped numbers, a province whose neighbours, all of its own faith, are within about five days of it, or whose people's faith is its own, holds out). 0: rulers don't change their subjects' faith.", 0.0, 100.0, ""),
+            live("modules.religion.kin", "Pull of one's people's faith", "How hard the faith most of a province's people's culture (its main culture) holds across the world pulls on them, so peoples tend to keep one faith. Only where the world has more than one culture with people. Higher: a faith follows its people; 0: culture doesn't change faith.", 0.0, 100.0, ""),
+            live("modules.religion.small_people", "Small groups: people", "A group of fewer people than this in a province takes up the leading faith at once, so provinces don't keep many tiny groups.", 0.0, 1_000_000.0, "people"),
+            live("modules.religion.small_share", "Small groups: share", "A group less than this share of its province's people takes up the leading faith at once.", 0.0, 1.0, "share"),
+            live("modules.religion.most", "Most faiths in a province", "A province keeps at most this many faiths, the leading one counted: the followers of smaller faiths there take up the leading faith at once. Lower: fewer mixed provinces (and a faster world); 1: every province holds one faith, the one that pulls hardest.", 1.0, 1000.0, "faiths"),
+        ],
+    },
+    Group {
+        title: "Faiths breaking apart",
+        at: "modules.religion.schisms",
+        help: "Once a year, the provinces where a faith is the main one are grouped by how they hang together along the ways. A group cut off from the faith's biggest group long enough may break away as a new faith, remembering the one it came from.",
+        specs: &[
+            live("modules.religion.schisms.years", "Cut off for", "Years a group must have been cut off from its faith's heartland before it may break away. Lower: new faiths appear sooner, after shorter separations.", 1.0, 1000.0, "years"),
+            live("modules.religion.schisms.provinces", "Smallest schism", "The fewest provinces a cut-off group needs to break away as a new faith. Lower: even small pockets become faiths of their own.", 1.0, 1000.0, "provinces"),
+            live("modules.religion.schisms.per_year", "Schism chance", "Each year, the chance that a group cut off long enough breaks away. 0: none ever does.", 0.0, 1.0, "chance"),
+        ],
+    },
     // --- end of religion ---
     // --- Disease ---
     // --- end of disease ---
@@ -490,6 +518,7 @@ pub static SECTIONS: &[Section] = &[
     // --- end of culture ---
     // The second wave of modules built side by side (Oct 18): a block each.
     // --- Religion ---
+    Section { key: "modules.religion.schisms", label: "Faiths breaking apart", help: "Groups cut off from the rest of their faith for decades may break away as new faiths. Off: the world keeps the faiths it starts with (fewer as some fade)." },
     // --- end of religion ---
     // --- Disease ---
     // --- end of disease ---
@@ -663,7 +692,10 @@ pub fn defaults_for(c: &Config) -> Config {
     }
     // --- end of culture ---
     // --- Religion: its parts ---
-    let religion = on(m.religion.is_some(), all.religion);
+    let mut religion = on(m.religion.is_some(), all.religion);
+    if let (Some(p), Some(x)) = (&mut religion, &m.religion) {
+        p.schisms = p.schisms.take().filter(|_| x.schisms.is_some());
+    }
     // --- end of religion ---
     // --- Disease: its parts ---
     let disease = on(m.disease.is_some(), all.disease);
