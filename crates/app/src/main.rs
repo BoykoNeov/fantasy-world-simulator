@@ -1494,7 +1494,7 @@ impl MapApp {
                 ui.small(format!("      {}", how.join("; ")))
                     .on_hover_text("Strength is its soldiers times what each counts for: their kind (heavy infantry most, then cavalry, then levies) and what their realm knows. Each day each side loses soldiers in proportion to the other's strength.");
             }
-            ui.small("A side breaks when it has lost its breaking share of the soldiers it brought; the log then says who held the field and what each side lost.");
+            ui.small("A side breaks when it has lost its breaking share of the soldiers it brought; the log then says who held the field and what each side lost. Its soldiers now can be fewer than it brought less its battle dead: camp disease, cold and desertion take soldiers too, and companies may leave.");
         }
         let before: Vec<String> = self
             .log
