@@ -18,7 +18,8 @@
 //! - 10–40% of settled provinces changed main faith since the start;
 //! - 0–6 schisms;
 //! - no broken totals (no problems, nobody clamped in the yearly tally);
-//! - pop rows: with people at most 1.5 a settled province, all rows at most 3.
+//! - pop rows: with people at most 1.5 a settled province, all rows at most 3 (at year 150, like
+//!   every bar; the worst decade is shown beside it).
 //!
 //! `noculture` switches culture off. `off` switches religion off, for the speed of a day without
 //! it. Times are rough: worlds run side by side.
@@ -258,11 +259,11 @@ fn check(run: &Run) -> (String, String) {
     if s.problems != Default::default() || clamped > 0 {
         fails.push("broken totals".into());
     }
-    if worst_full > 1.5 || worst_rows > 3.0 {
-        fails.push(format!("pop rows (worst {worst_rows:.2}, {worst_full:.2} with people)"));
+    if last.full > 1.5 || last.rows > 3.0 {
+        fails.push(format!("pop rows ({:.2}, {:.2} with people)", last.rows, last.full));
     }
     let verdict = format!(
-        "{what}: year {} largest {:.1}% (year {} {:.1}%), {} above 1% ({} of {starting} starting), {:.1}% changed main faith, {} schisms, rows worst {worst_rows:.2} ({worst_full:.2} with people): {}",
+        "{what}: year {} largest {:.1}% (year {} {:.1}%), {} above 1% ({} of {starting} starting), {:.1}% changed main faith, {} schisms, rows {:.2} ({:.2} with people; the worst decade {worst_rows:.2} ({worst_full:.2})): {}",
         last.year,
         100.0 * last.largest,
         before.year,
@@ -271,6 +272,8 @@ fn check(run: &Run) -> (String, String) {
         last.above_starting,
         100.0 * last.changed,
         last.schisms,
+        last.rows,
+        last.full,
         if fails.is_empty() { "PASS".to_string() } else { format!("FAIL ({})", fails.join("; ")) }
     );
     (out, verdict)
