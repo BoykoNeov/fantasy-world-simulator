@@ -175,7 +175,10 @@ fn techs_and_cultures_are_named_from_what_the_window_is_sent() {
     assert!(named > 0, "no discovery or culture event in 60 years");
 
     // The layers: a main culture wherever people live, and techs wherever a realm owns land.
-    let v = app::layers::SocietyView::of(&geo, true, true);
+    let seasons = sim::logistics::SeasonParams::default();
+    let deepest = app::layers::SocietyView::of(&geo, false, false, Some((&seasons, seasons.deepest))).winter;
+    assert!(deepest.iter().all(|&x| (0.0..=1.0).contains(&x)) && deepest.iter().any(|&x| x > 0.5), "winter at its deepest: {deepest:?}");
+    let v = app::layers::SocietyView::of(&geo, true, true, None);
     let people = geo.province_population();
     for (p, &here) in people.iter().enumerate() {
         assert_eq!(v.culture[p].0 != NONE, here > 0, "province {p}");

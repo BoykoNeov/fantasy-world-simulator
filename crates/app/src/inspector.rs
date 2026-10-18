@@ -561,6 +561,10 @@ pub fn value(id: FieldId, data: &FieldData, i: usize, names: &Names) -> String {
         }
         ("province.owner", FieldData::U32(v)) if realm(v) == NONE => "no realm".into(),
         ("province.owner" | "province.occupier", FieldData::U32(v)) => names.realm(realm(v)),
+        ("province.besieger", FieldData::U32(v)) => match realm(v) {
+            NONE => "nobody".into(),
+            r => format!("besieged by {}", names.realm(r)),
+        },
         ("province.uprising", FieldData::U32(v)) => match realm(v) {
             NONE => "calm".into(),
             seat if seat as usize == i => "risen up".into(),
@@ -689,12 +693,19 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Uprising { realm: r, seat, .. } => format!("the province joined the uprising against {} begun in province {seat}", realm(r)),
         Event::Calmed { realm: r, .. } => format!("the uprising against {} died down", realm(r)),
         Event::Rebellion { realm: r, from, provinces, .. } => format!("{provinces} provinces broke away from {} as {}", realm(from), realm(r)),
-        Event::Battle { winner, loser, killed, .. } => match (*winner, *loser) {
-            (NONE, NONE) => format!("a battle here ended with nobody holding the field: {} killed", group(*killed)),
-            (w, NONE) => format!("a battle here ended with {} holding the field: {} killed", realm(&w), group(*killed)),
-            (NONE, l) => format!("a battle here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
-            (w, l) => format!("{} beat {} in battle here: {} killed", realm(&w), realm(&l), group(*killed)),
-        },
+        Event::Battle { winner, loser, killed, sides, .. } => {
+            let what = match (*winner, *loser) {
+                (NONE, NONE) => format!("a battle here ended with nobody holding the field: {} killed", group(*killed)),
+                (w, NONE) => format!("a battle here ended with {} holding the field: {} killed", realm(&w), group(*killed)),
+                (NONE, l) => format!("a battle here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
+                (w, l) => format!("{} beat {} in battle here: {} killed", realm(&w), realm(&l), group(*killed)),
+            };
+            // Each side's dead, where more than one side fought.
+            match sides.len() {
+                0 | 1 => what,
+                _ => format!("{what} ({})", sides.iter().map(|(r, dead)| format!("{} lost {}", realm(r), group(*dead))).collect::<Vec<_>>().join(", ")),
+            }
+        }
         Event::Trade { a, b, a_to_b, b_to_a } => {
             format!("{} sold {} coins' worth of goods to {} last month, and bought {} coins' worth", realm(a), group(*a_to_b), realm(b), group(*b_to_a))
         }

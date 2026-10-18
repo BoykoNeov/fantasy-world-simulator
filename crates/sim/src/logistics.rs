@@ -213,8 +213,8 @@ pub fn winter(p: &SeasonParams, lat: f32, year_part: f64) -> f64 {
     far * (std::f64::consts::TAU * (year_part - deepest)).cos().max(0.0)
 }
 
-/// The share of the year gone by on `day`.
-pub(crate) fn year_part(cal: &crate::calendar::Calendar, day: u64) -> f64 {
+/// The share of the year gone by on `day` (for [`winter`]; the window's winter map uses it too).
+pub fn year_part(cal: &crate::calendar::Calendar, day: u64) -> f64 {
     let start = cal.year_start(cal.date(day).year);
     (day - start) as f64 / cal.days_per_year() as f64
 }

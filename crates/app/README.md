@@ -146,6 +146,21 @@ What exists:
     what it was declared over, soldiers and battles each side lost, provinces each holds of the
     other), each side a button to its capital, and the peaces of the last five years. The realm
     page's wars say what each side has lost.
+- **Sieges, supply, winter and battles** (Oct 18; Warfare's parts, each shown only where it runs):
+  - "winter" (the winter part) shades provinces pale ice to deeper blue by how deep the winter is
+    on the day shown, worked out by Warfare's own rule (`sim::logistics::winter`) with the settings
+    in force that day, so it shows exactly where marches slow, soldiers away from home die of
+    cold, foragers find less and no new attack begins. Hovering says how deep, as a share of the
+    deepest.
+  - A besieged province says by whom on its page, on hover, and in its values (no longer a raw
+    number where nobody besieges it); a besieging company says for how many days.
+  - With supply lines on, a company on the province page and an army marker's hover say whether it
+    is fed from home along a supply line or foraging (a marker by its worst-off company).
+  - Battles: where one is fought on the day shown, the province page lists each side with its
+    soldiers by kind (`armies::battle_sides`, by Warfare's own rule); "Battles fought here" lists
+    the earlier ones from the log. A battle's report now gives each side's dead ("Dreinmark beat
+    Tholia in battle here: 3,100 killed (Dreinmark lost 900, Tholia 2,200)"). There is no running
+    count of the dead while a battle goes on: that would need the simulation to keep one.
 - **Cultures** (Oct 18; only where Culture runs):
   - "cultures" colours each province by its main culture (the one most of its people belong to),
     a hue from the culture's number (`layers::culture_color`, spread round the wheel otherwise than
@@ -238,7 +253,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--projection oval|rect`.
 - `--view LON,LAT,ZOOM`: start view, in degrees; zoom 1 means the planet's height fits.
 - `--layer NAME=VALUE`, repeatable: `terrain`, `temperature`, `rainfall`, `population`, `famine`,
-  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest`, `cultures`, `techs` (0..1), and `coasts`,
+  `drought`, `provinces`, `prices`, `trade`, `balance`, `realms`, `unrest`, `cultures`, `techs`, `winter` (0..1), and `coasts`,
   `rivers`, `borders`, `graticule`, `roads`, `realm_borders`, `armies`, `battles` (0 or 1).
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
@@ -248,6 +263,8 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   order given, raise land along a short stroke, split half a province off (and select the new one),
   or take back the last change, as a player would (for scripted screenshots; `--split best --undo`
   checks that the window copes with provinces going away).
+- `--part KEY=0|1`: switch a part of a module off or on in the world made, before `--set` (keys as
+  `simrun --settings` lists the parts, e.g. `--part modules.warfare.seasons=1`).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
   runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|cultures`: open that

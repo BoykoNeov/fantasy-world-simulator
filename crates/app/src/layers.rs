@@ -31,7 +31,8 @@ pub const TABLE_OCCUPIER: usize = 7;
 pub const TABLE_UNREST: usize = 8;
 pub const TABLE_CULTURE: usize = 9;
 pub const TABLE_TECHS: usize = 10;
-pub const TABLE_LAYERS: usize = 11;
+pub const TABLE_WINTER: usize = 11;
+pub const TABLE_LAYERS: usize = 12;
 
 /// What the province layers show, per province, as plain numbers so two days can be blended.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -71,8 +72,8 @@ pub struct MarketView {
     pub balance: Vec<f32>,
 }
 
-/// Cultures and knowledge as the map shows them, per province (empty: nothing to show). Worked out
-/// once for each day shown, not blended: a culture's number can't be.
+/// Cultures, knowledge and winter as the map shows them, per province (empty: nothing to show).
+/// Worked out once for each day shown, not blended: a culture's number can't be.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SocietyView {
     /// The main culture (the one with the most people) and its share of the people, 0..1;
@@ -81,12 +82,15 @@ pub struct SocietyView {
     /// How many techs the owner knows, from the fewest any living realm knows (0) to the most (1);
     /// NaN where no realm owns it or nobody knows any.
     pub techs: Vec<f32>,
+    /// How deep the winter is, 0 (none) to 1 ([`sim::logistics::winter`]).
+    pub winter: Vec<f32>,
 }
 
 impl SocietyView {
     /// From the world shown: cultures where some module keeps them (`cultures`), knowledge where
-    /// some module keeps techs (`techs`).
-    pub fn of(w: &World, cultures: bool, techs: bool) -> Self {
+    /// some module keeps techs (`techs`), and winter by Warfare's own rule where its winter part
+    /// runs (`winter`: its settings, and the share of the year gone by on the day shown).
+    pub fn of(w: &World, cultures: bool, techs: bool, winter: Option<(&sim::logistics::SeasonParams, f64)>) -> Self {
         let culture = if cultures {
             sim::culture::mix(w)
                 .iter()
@@ -99,7 +103,11 @@ impl SocietyView {
             Vec::new()
         };
         let techs = if techs { techs_known(w) } else { Vec::new() };
-        SocietyView { culture, techs }
+        let winter = match winter {
+            Some((s, part)) => w.provinces.lat.iter().map(|&lat| sim::logistics::winter(s, lat.to_degrees(), part) as f32).collect(),
+            None => Vec::new(),
+        };
+        SocietyView { culture, techs, winter }
     }
 }
 
@@ -375,6 +383,11 @@ pub fn province_tables(world: &World, v: &ProvinceView, market: &MarketView, soc
             let [r, g, b] = ramp(&[[238, 228, 196], [120, 175, 160], [25, 85, 105]], t as f64);
             out[TABLE_TECHS * size + p] = [r, g, b, 255];
         }
+        // Frost: pale icy blue, stronger the deeper the winter; clear where there is none.
+        if let Some(&x) = society.winter.get(p).filter(|&&x| x > 0.0) {
+            let [r, g, b] = ramp(&[[215, 230, 240], [150, 185, 220]], x as f64);
+            out[TABLE_WINTER * size + p] = [r, g, b, (255.0 * (0.25 + 0.75 * x as f64)).round() as u8];
+        }
     }
     out
 }
@@ -424,7 +437,7 @@ pub fn realm_color(r: u32, seed: u64) -> [u8; 3] {
 /// The tables for the world as it stands.
 pub fn tables_now(sim: &Sim) -> Vec<Rgba> {
     let w = &sim.world;
-    province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, sim.config.modules.culture.is_some(), sim.config.modules.research.is_some()))
+    province_tables(w, &ProvinceView::now(sim), &MarketView::default(), &SocietyView::of(w, sim.config.modules.culture.is_some(), sim.config.modules.research.is_some(), None))
 }
 
 fn biome_color(b: Biome) -> [u8; 3] {

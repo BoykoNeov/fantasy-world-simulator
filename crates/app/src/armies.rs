@@ -45,6 +45,9 @@ pub struct Marker {
     pub total: f64,
     /// Soldiers by troop kind (node), in node order.
     pub kinds: Vec<(u16, u64)>,
+    /// How its worst-off company is fed (`army.supply`): 0 on its own land (or without supply
+    /// lines), 1 along a supply line, 2 foraging.
+    pub supply: u8,
 }
 
 impl Marker {
@@ -116,8 +119,10 @@ pub fn markers(w: &World, kinds: &[Kind]) -> Vec<Marker> {
             days_left,
             total,
             kinds: Vec::new(),
+            supply: 0,
         });
         m.soldiers += size;
+        m.supply = m.supply.max(arm.supply.get(a).copied().unwrap_or(0));
         m.total = m.total.max(total);
         match m.kinds.iter_mut().find(|k| k.0 == arm.kind[a]) {
             Some(k) => k.1 += size,
@@ -160,7 +165,29 @@ pub fn describe(m: &Marker, kinds: &[Kind], realm: &str) -> String {
     let name = |node: u16| kinds.iter().find(|k| k.0 == node).map_or(format!("kind {node}"), |k| k.1.replace('_', " "));
     let of: Vec<String> = m.kinds.iter().map(|&(k, n)| format!("{} {}", crate::inspector::group(n), name(k))).collect();
     let doing = if m.to == NONE { format!("in province {}", m.from) } else { format!("marching to province {}", m.dest) };
-    format!("{realm}: {}, {doing}", of.join(", "))
+    let fed = match m.supply {
+        1 => ", fed from home along a supply line",
+        2 => ", foraging",
+        _ => "",
+    };
+    format!("{realm}: {}, {doing}{fed}", of.join(", "))
+}
+
+/// The sides of a battle fought in province `p` on the day shown: each realm with land soldiers
+/// standing there (Warfare's rule: [`sim::warfare::battle_provinces`]), with its soldiers by kind
+/// (node, in node order); most soldiers first.
+pub fn battle_sides(w: &World, p: u32, kinds: &[Kind]) -> Vec<(u32, Vec<(u16, u64)>)> {
+    let arm = &w.armies;
+    let ship = |node: u16| kinds.iter().any(|k| k.0 == node && k.2);
+    let mut by: BTreeMap<u32, BTreeMap<u16, u64>> = BTreeMap::new();
+    for a in 0..arm.count() {
+        if arm.size[a] > 0 && arm.province[a] == p && !arm.moving(a) && !ship(arm.kind[a]) {
+            *by.entry(arm.realm[a]).or_default().entry(arm.kind[a]).or_insert(0) += arm.size[a];
+        }
+    }
+    let mut out: Vec<(u32, Vec<(u16, u64)>)> = by.into_iter().map(|(r, k)| (r, k.into_iter().collect())).collect();
+    out.sort_by_key(|(r, k)| (std::cmp::Reverse(k.iter().map(|x| x.1).sum::<u64>()), *r));
+    out
 }
 
 #[cfg(test)]
@@ -210,6 +237,13 @@ mod tests {
         let walking = all.iter().find(|m| m.realm == r && m.from == p && m.to == q).expect("the company on its way");
         assert_eq!(walking.soldiers, 100);
         assert!(!all.iter().any(|m| m.realm == r && m.from == p && m.to == NONE), "guards and idle recruits at home are not drawn");
+        // A marker says how its worst-off company is fed.
+        assert_eq!(standing.supply, 0);
+        let mut w2 = w.clone();
+        w2.armies.supply[other as usize] = 2;
+        let foraging = markers(&w2, &kinds).into_iter().find(|m| m.realm == r && m.from == q && m.to == NONE).unwrap();
+        assert_eq!(foraging.supply, 2);
+        assert!(describe(&foraging, &kinds, "Them").ends_with(", foraging"), "{}", describe(&foraging, &kinds, "Them"));
 
         // Along the way by the days left: the way's days at the levies' speed.
         let link = w.routes.between(p, q).unwrap();
@@ -248,6 +282,11 @@ mod tests {
         sim.poke(Event::DeclareWar { attacker: a, defender: b });
         sim.run_days(2);
         assert!(sim.world.wars.current(a, b).is_some());
-        assert!(battles(&with_b(&sim.world), &kinds).contains(&p), "at war: a battle");
+        let fought = with_b(&sim.world);
+        assert!(battles(&fought, &kinds).contains(&p), "at war: a battle");
+        // Its sides: both realms, b with the soldiers placed.
+        let sides = battle_sides(&fought, p, &kinds);
+        assert!(sides.iter().any(|s| s.0 == a));
+        assert_eq!(sides.iter().find(|s| s.0 == b).map(|s| s.1.clone()), Some(vec![(levies, 1000)]));
     }
 }

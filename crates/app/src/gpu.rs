@@ -25,6 +25,7 @@ pub struct MapUniforms {
     pub layers2: [f32; 4],
     pub layers3: [f32; 4],
     pub layers4: [f32; 4],
+    pub layers5: [f32; 4],
     pub ids: [u32; 4],
 }
 
@@ -52,6 +53,8 @@ pub struct LayerSettings {
     pub cultures: f32,
     /// How many techs each province's realm knows.
     pub techs: f32,
+    /// How deep the winter is, where armies feel it.
+    pub winter: f32,
     pub coasts: bool,
     pub rivers: bool,
     pub borders: bool,
@@ -82,6 +85,7 @@ impl Default for LayerSettings {
             unrest: 0.0,
             cultures: 0.0,
             techs: 0.0,
+            winter: 0.0,
             coasts: true,
             rivers: true,
             borders: true,
@@ -108,6 +112,7 @@ pub fn uniforms(cam: &Camera, n: usize, w: f64, h: f64, origin: (f64, f64), ppp:
         layers2: [border_alpha, on(l.graticule), l.drought, l.prices],
         layers3: [on(l.roads), l.trade, l.trade_balance, l.techs],
         layers4: [l.realms, l.unrest, on(l.realm_borders), l.cultures],
+        layers5: [l.winter, 0.0, 0.0, 0.0],
         ids: [hover_province, selected_province, 0, 0],
     }
 }

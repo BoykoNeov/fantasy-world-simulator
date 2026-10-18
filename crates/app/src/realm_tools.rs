@@ -223,8 +223,18 @@ impl RealmTools {
                 } else {
                     "standing here".into()
                 };
+                // How it is fed, where supply lines run, and how long it has besieged here.
+                let fed = match arm.supply.get(a).copied().unwrap_or(0) {
+                    1 => "; fed from home along a supply line",
+                    2 => "; foraging",
+                    _ => "",
+                };
+                let siege = match arm.siege_days.get(a).copied().unwrap_or(0) {
+                    0 => String::new(),
+                    d => format!("; besieging for {d} days"),
+                };
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(format!("company {a}: {} {}, {} ({role}) from province {}, {place}", group(arm.size[a]), kind_name(arm.kind[a]), names.realm(arm.realm[a]), arm.home[a]));
+                    ui.label(format!("company {a}: {} {}, {} ({role}) from province {}, {place}{fed}{siege}", group(arm.size[a]), kind_name(arm.kind[a]), names.realm(arm.realm[a]), arm.home[a]));
                     match &mut self.company {
                         Some((k, size, kind)) if *k == a as u32 => {
                             ui.add(egui::DragValue::new(size).range(0..=100_000_000u64).speed(10.0).suffix(" soldiers"));

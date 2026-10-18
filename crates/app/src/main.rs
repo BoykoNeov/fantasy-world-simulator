@@ -104,6 +104,9 @@ struct Options {
     remake: Option<String>,
     /// Settings changed in the world made (`--set KEY=VALUE`).
     set: Vec<(String, f64)>,
+    /// `--part KEY=0|1`: parts of modules (keys as `simrun --settings` lists the sections) switched
+    /// off or on, before `--set`.
+    parts: Vec<(String, bool)>,
     /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings", "change-realm" (the editor's controls on the selected province's realm page) and "wars".
     open_sections: Vec<String>,
     bench: bool,
@@ -136,6 +139,7 @@ impl Options {
             live_edits: Vec::new(),
             remake: None,
             set: Vec::new(),
+            parts: Vec::new(),
             open_sections: Vec::new(),
             bench: false,
             out_dir: "W:/temp/claude/fantasymap-mapview/bench".into(),
@@ -218,6 +222,7 @@ impl Options {
                         "unrest" => l.unrest = x,
                         "cultures" => l.cultures = x,
                         "techs" => l.techs = x,
+                        "winter" => l.winter = x,
                         "realm_borders" => l.realm_borders = x > 0.5,
                         "armies" => l.armies = x > 0.5,
                         "battles" => l.battles = x > 0.5,
@@ -248,6 +253,11 @@ impl Options {
                     } else {
                         o.live_edits.push(LiveEdit::Set(key.into(), x));
                     }
+                }
+                "--part" => {
+                    let kv = value(&mut i);
+                    let (key, on) = kv.split_once('=').unwrap_or_else(|| panic!("--part {kv}: expected KEY=0 or KEY=1"));
+                    o.parts.push((key.into(), on == "1"));
                 }
                 "--open-section" => o.open_sections.push(value(&mut i)),
                 "--split" => {
@@ -302,6 +312,9 @@ impl Options {
             o.params.provinces = p;
         }
         o.config.world = o.params.clone();
+        for (key, on) in &o.parts {
+            sim::settings::set_section(&mut o.config, key, *on).unwrap_or_else(|e| panic!("--part {key}: {e}"));
+        }
         for (key, x) in &o.set {
             sim::settings::set(&mut o.config, key, *x).unwrap_or_else(|e| panic!("--set {key}={x}: {e}"));
         }
@@ -521,7 +534,7 @@ struct MapApp {
     /// Cultures and knowledge for the day shown, for the layers that show them, and what they were
     /// worked out for (the day state, and which of the two layers were on).
     society: layers::SocietyView,
-    society_for: Option<(usize, bool, bool)>,
+    society_for: Option<(usize, bool, bool, bool)>,
     /// The Cultures section's lines, for the day state they were worked out for.
     culture_lines: Option<(usize, Vec<inspector::CultureLine>)>,
     /// Whether the world trades (markets with trade on): the trade layers are offered.
@@ -884,11 +897,14 @@ impl MapApp {
             self.market_for = Some(market_key);
             self.tables_for = None;
         }
-        // Cultures and knowledge: for each day state, only while their layers are shown.
+        // Cultures, knowledge and winter: for each day state, only while their layers are shown.
         let (cultures, techs) = (self.layers.cultures > 0.0 && self.cultures_on(), self.layers.techs > 0.0 && self.techs_on());
-        let society_key = (Arc::as_ptr(&self.shown_state) as usize, cultures, techs);
+        let seasons = self.shown_state.settings.clone();
+        let seasons = seasons.warfare.as_ref().and_then(|t| t.seasons.as_ref()).filter(|_| self.layers.winter > 0.0);
+        let society_key = (Arc::as_ptr(&self.shown_state) as usize, cultures, techs, seasons.is_some());
         if self.society_for != Some(society_key) {
-            self.society = layers::SocietyView::of(&self.geo, cultures, techs);
+            let winter = seasons.map(|s| (s, sim::logistics::year_part(&self.calendar, self.day())));
+            self.society = layers::SocietyView::of(&self.geo, cultures, techs, winter);
             self.society_for = Some(society_key);
             self.tables_for = None;
         }
@@ -1264,6 +1280,7 @@ impl MapApp {
         let realms = self.realms_on();
         let armies = self.kept().armies;
         let (cultures, techs) = (self.cultures_on(), self.techs_on());
+        let winter = self.shown_state.settings.warfare.as_ref().is_some_and(|t| t.seasons.is_some());
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
@@ -1306,6 +1323,10 @@ impl MapApp {
         if cultures {
             ui.add(egui::Slider::new(&mut l.cultures, 0.0..=1.0).text("cultures"))
                 .on_hover_text("each province in the colour of its main culture (the one most of its people belong to); the more mixed the province, the paler. The province page lists every culture there");
+        }
+        if winter {
+            ui.add(egui::Slider::new(&mut l.winter, 0.0..=1.0).text("winter"))
+                .on_hover_text("how deep the winter is today where armies feel it (Warfare's winter part): pale ice where it begins, deeper blue toward the deepest winter, when marches slow, soldiers away from home die of cold, foragers find less and no new attack begins");
         }
         if techs {
             ui.add(egui::Slider::new(&mut l.techs, 0.0..=1.0).text("techs known"))
@@ -1373,6 +1394,38 @@ impl MapApp {
         });
         if let Some(c) = go {
             (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
+        }
+    }
+
+    /// The battle fought in province `p` on the day shown, if any: each side's soldiers by kind;
+    /// and the battles fought here before, from the log, with each side's dead.
+    fn battle_section(&mut self, ui: &mut egui::Ui, p: u32) {
+        let fighting = self.army_view().battles.contains(&p);
+        let names = Names { world: &self.geo, realms: &self.realm_names };
+        let kind_name = |node: u16| self.troop_kinds.iter().find(|k| k.0 == node).map_or(format!("kind {node}"), |k| k.1.replace('_', " "));
+        if fighting {
+            ui.label(egui::RichText::new("A battle is being fought here").strong());
+            for (r, kinds) in app::armies::battle_sides(&self.geo, p, &self.troop_kinds) {
+                let total: u64 = kinds.iter().map(|k| k.1).sum();
+                let of: Vec<String> = kinds.iter().map(|&(k, n)| format!("{} {}", group(n), kind_name(k))).collect();
+                ui.label(format!("   {}: {} soldiers ({})", names.realm(r), group(total), of.join(", ")));
+            }
+            ui.small("A side breaks when it has lost too many; the log then says who held the field and what each side lost.");
+        }
+        let before: Vec<String> = self
+            .log
+            .iter()
+            .rev()
+            .filter(|e| e.day <= self.day() && matches!(&e.what, inspector::Logged::Event(Event::Battle { province, .. }) if *province == p))
+            .take(30)
+            .map(|e| format!("{} · {}", self.calendar.format(e.day), e.text(&self.calendar, &self.geo.goods, &names)))
+            .collect();
+        if !before.is_empty() {
+            egui::CollapsingHeader::new(format!("Battles fought here ({})", before.len())).id_salt(("battles here", p)).show(ui, |ui| {
+                for b in &before {
+                    ui.label(b);
+                }
+            });
         }
     }
 
@@ -1718,6 +1771,15 @@ impl MapApp {
                     ui.label(format!("unrest {} of {} toward an uprising", group(unrest), group(sim::realms::LINE)));
                 }
             }
+            if let Some(s) = self.shown_state.settings.warfare.as_ref().and_then(|t| t.seasons.as_ref()) {
+                let x = sim::logistics::winter(s, w.provinces.lat[p].to_degrees(), sim::logistics::year_part(&self.calendar, self.day()));
+                if x > 0.0 {
+                    ui.label(format!("winter: {:.0}% of the deepest", x * 100.0));
+                }
+            }
+            if let Some(r) = w.besieger.get(p).copied().filter(|&r| r != NONE) {
+                ui.label(format!("besieged by {}", self.names().realm(r)));
+            }
             if self.cultures_on() {
                 let names = self.names();
                 ui.label(format!("cultures: {}", inspector::cultures_in_words(&names, &inspector::province_cultures(w, p as u32))));
@@ -1956,6 +2018,7 @@ impl MapApp {
         }
         if self.kept().armies {
             ui.separator();
+            self.battle_section(ui, p);
             let names = Names { world: &self.geo, realms: &self.realm_names };
             let (action, march) = self.realm_tools.armies(ui, &self.geo, &names, p, &self.troop_kinds);
             if let Some(a) = action {
