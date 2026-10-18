@@ -268,6 +268,10 @@ static V1: Manifest = Manifest {
         "province.rain_shortfall",
         "pop.province",
         "pop.size",
+        // The wild gone (Natural world): it shrinks the woodland and the shores a good's land names.
+        // Nothing gone (0) where nobody keeps them.
+        "province.woods_lost",
+        "province.fish_lost",
     ],
     // Who owns, occupies and rises up in each province, which realms are dissolved, and the wars,
     // for trade across borders: as the day began, since Realms and Diplomacy read what this module
@@ -478,6 +482,25 @@ impl Inputs {
                     && !fields.iter().any(|f| f.0 == id)
                 {
                     fields.push((id, w.field(id)));
+                }
+            }
+        }
+        // Woodland cleared and fish gone (Natural world) take their share off the woodland and the
+        // shores the land formulas name. Skipped where nothing is gone, so worlds without it are
+        // the same to the bit.
+        let gone = |v: &[u64]| v.iter().any(|&x| x > 0);
+        if gone(&w.woods_lost) || gone(&w.fish_lost) {
+            let left = |v: &[u64], p: usize| 1.0 - v.get(p).copied().unwrap_or(0).min(1_000_000) as f64 / 1e6;
+            for (id, data) in &mut fields {
+                let lost = match id.def().name {
+                    "province.forest_km2" => &w.woods_lost,
+                    "province.coast_km" | "province.river_km" => &w.fish_lost,
+                    _ => continue,
+                };
+                if let FieldData::F64(v) = data {
+                    for (p, x) in v.iter_mut().enumerate() {
+                        *x *= left(lost, p);
+                    }
                 }
             }
         }

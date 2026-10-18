@@ -42,6 +42,9 @@ pub enum Tier {
     /// One entry per culture (Culture "assimilation"). Numbers are never reused: a culture with
     /// nobody left keeps its entry.
     Culture,
+    /// One entry per faith (Religion "conversion"). Numbers are never reused: a faith with nobody
+    /// left keeps its entry.
+    Religion,
 }
 
 impl Tier {
@@ -396,6 +399,23 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Zero, ..def("realm.lost_sickness", Tier::Realm, "soldiers dead of camp disease and cold, away from its land", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Zero, ..def("realm.lost_hunger", Tier::Realm, "soldiers starved for want of the food asked for them", 0.0, COUNT_MAX) },
     FieldDef { default: Default::Zero, ..def("realm.lost_deserted", Tier::Realm, "soldiers who deserted, unfed or unpaid", 0.0, COUNT_MAX) },
+    // The second wave of modules built side by side (Oct 18): each module's fields in a block of its
+    // own, in this order.
+    // Religion "conversion".
+    FieldDef { default: Default::Empty, ..def("religion.parent", Tier::Religion, "faith id it broke away from, none for a starting faith", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("religion.born", Tier::Religion, "day it began (0 for a starting faith)", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("religion.hearth", Tier::Religion, "province id where it began", -UNBOUNDED, UNBOUNDED) },
+    FieldDef { default: Default::Empty, ..def("religion.died", Tier::Religion, "day its last follower was gone, none while it lives", 0.0, UNBOUNDED) },
+    FieldDef { default: Default::NoOne, ..def("realm.religion", Tier::Realm, "faith id of the realm: its capital's main faith, none if none", -UNBOUNDED, UNBOUNDED) },
+    // Disease "plagues".
+    FieldDef { default: Default::Zero, ..def("province.sick", Tier::Province, "millionths of the people ill now", 0.0, 1_000_000.0) },
+    FieldDef { default: Default::Zero, ..def("province.immune", Tier::Province, "millionths of the people immune", 0.0, 1_000_000.0) },
+    FieldDef { default: Default::Zero, ..def("province.plague_dead", Tier::Province, "people dead of plague since the year began", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::NoOne, ..def("province.outbreak", Tier::Province, "outbreak id going on in it, none where there is none", -UNBOUNDED, UNBOUNDED) },
+    // Natural world "regrowth": the share of the wild that is gone, so 0 (the default) is untouched.
+    FieldDef { default: Default::Zero, ..def("province.woods_lost", Tier::Province, "millionths of its wild woodland cleared", 0.0, 1_000_000.0) },
+    FieldDef { default: Default::Zero, ..def("province.fish_lost", Tier::Province, "millionths of its fish gone", 0.0, 1_000_000.0) },
+    FieldDef { default: Default::Zero, ..def("province.game_lost", Tier::Province, "millionths of its wild game gone", 0.0, 1_000_000.0) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

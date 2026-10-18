@@ -104,11 +104,12 @@ pub struct Table {
 
 const SHIPPED: &str = include_str!("../data/speed.toml");
 
-/// The base mix: people, food and droughts, nothing that needs realms.
+/// The base mix: people, food and droughts, nothing that needs realms, and none of the modules that
+/// came after them.
 pub fn base_mix() -> Mix {
     let mut m = Mix::defaults();
     for (k, c) in CHOICES.iter().enumerate() {
-        if matches!(c.0, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare | Slot::Research | Slot::Culture) {
+        if matches!(c.0, Slot::Realms | Slot::Characters | Slot::Diplomacy | Slot::Warfare | Slot::Research | Slot::Culture | Slot::Religion | Slot::Disease | Slot::Nature) {
             m.0[k] = "off";
         }
     }

@@ -92,6 +92,35 @@ pub enum Event {
     CultureGone { culture: u32 },
     /// Province `province`'s main culture changed from `from` to `to`.
     Assimilated { province: u32, from: u32, to: u32 },
+    // The second wave of modules built side by side (Oct 18), a block each.
+    // Religion.
+    /// A new faith `religion` has broken away from `parent` (or began, with no parent:
+    /// [`crate::grid::NONE`]) in `provinces` provinces around `hearth`.
+    ReligionBorn { religion: u32, parent: u32, hearth: u32, provinces: u32 },
+    /// The last follower of faith `religion` is gone.
+    ReligionGone { religion: u32 },
+    /// Province `province`'s main faith changed from `from` to `to`.
+    Converted { province: u32, from: u32, to: u32 },
+    // Disease.
+    /// The player's poke: a plague breaks out in `province`.
+    Plague { province: u32 },
+    /// Outbreak `outbreak` of plague has begun in `province` (by the player's poke, or by chance).
+    Outbreak { outbreak: u32, province: u32 },
+    /// Outbreak `outbreak` has reached `province`, from `from`, by sea or over land.
+    PlagueArrived { outbreak: u32, province: u32, from: u32, by_sea: bool },
+    /// Outbreak `outbreak` is over: its last province is free of it. `dead` died of it, in
+    /// `provinces` provinces.
+    OutbreakOver { outbreak: u32, dead: u64, provinces: u32 },
+    // Natural world.
+    /// Province `province`'s woodland has been cleared below the warning line: `left` millionths
+    /// of its wild woodland still stand.
+    WoodsCleared { province: u32, left: u64 },
+    /// Province `province`'s woodland has grown back above the line where it counts as recovered.
+    WoodsRegrown { province: u32 },
+    /// Province `province`'s fish are fished out below the warning line.
+    FisheryCollapsed { province: u32 },
+    /// Province `province`'s fish are back above the line where they count as recovered.
+    FisheryRecovered { province: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -122,6 +151,17 @@ pub enum EventKind {
     CultureBorn,
     CultureGone,
     Assimilated,
+    ReligionBorn,
+    ReligionGone,
+    Converted,
+    Plague,
+    Outbreak,
+    PlagueArrived,
+    OutbreakOver,
+    WoodsCleared,
+    WoodsRegrown,
+    FisheryCollapsed,
+    FisheryRecovered,
 }
 
 impl EventKind {
@@ -130,9 +170,9 @@ impl EventKind {
     ///
     /// | class | value | kinds |
     /// | --- | --- | --- |
-    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle, KillRuler |
+    /// | destruction and death | 0 | Famine, Drought, Succession, Occupied, Battle, KillRuler, Plague, Outbreak |
     /// | agreements | 1 | DeclareWar, ForcePeace, WarDeclared, Peace, WarRefused, Rebellion, Breakaway |
-    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade, March, Refused, Discovery, CultureBorn, CultureGone, Assimilated |
+    /// | routine changes | 2 | Granted, Arrived, Uprising, Calmed, Trade, March, Refused, Discovery, CultureBorn, CultureGone, Assimilated, ReligionBorn, ReligionGone, Converted, PlagueArrived, OutbreakOver, WoodsCleared, WoodsRegrown, FisheryCollapsed, FisheryRecovered |
     /// | diagnostics | 3 | ContractViolated, ConservationBroken |
     pub fn priority(self) -> u8 {
         match self {
@@ -141,6 +181,10 @@ impl EventKind {
             EventKind::DeclareWar | EventKind::ForcePeace | EventKind::WarDeclared | EventKind::Peace | EventKind::WarRefused | EventKind::Rebellion | EventKind::Breakaway => 1,
             EventKind::Granted | EventKind::Arrived | EventKind::Uprising | EventKind::Calmed | EventKind::Trade | EventKind::March | EventKind::Refused => 2,
             EventKind::Discovery | EventKind::CultureBorn | EventKind::CultureGone | EventKind::Assimilated => 2,
+            EventKind::ReligionBorn | EventKind::ReligionGone | EventKind::Converted => 2,
+            EventKind::Plague | EventKind::Outbreak => 0,
+            EventKind::PlagueArrived | EventKind::OutbreakOver => 2,
+            EventKind::WoodsCleared | EventKind::WoodsRegrown | EventKind::FisheryCollapsed | EventKind::FisheryRecovered => 2,
             EventKind::ContractViolated | EventKind::ConservationBroken => 3,
         }
     }
@@ -175,6 +219,17 @@ impl Event {
             Event::CultureBorn { .. } => EventKind::CultureBorn,
             Event::CultureGone { .. } => EventKind::CultureGone,
             Event::Assimilated { .. } => EventKind::Assimilated,
+            Event::ReligionBorn { .. } => EventKind::ReligionBorn,
+            Event::ReligionGone { .. } => EventKind::ReligionGone,
+            Event::Converted { .. } => EventKind::Converted,
+            Event::Plague { .. } => EventKind::Plague,
+            Event::Outbreak { .. } => EventKind::Outbreak,
+            Event::PlagueArrived { .. } => EventKind::PlagueArrived,
+            Event::OutbreakOver { .. } => EventKind::OutbreakOver,
+            Event::WoodsCleared { .. } => EventKind::WoodsCleared,
+            Event::WoodsRegrown { .. } => EventKind::WoodsRegrown,
+            Event::FisheryCollapsed { .. } => EventKind::FisheryCollapsed,
+            Event::FisheryRecovered { .. } => EventKind::FisheryRecovered,
         }
     }
 
@@ -202,6 +257,10 @@ impl Event {
             Event::Discovery { realm, .. } => *realm as u64,
             Event::CultureBorn { culture, .. } | Event::CultureGone { culture } => *culture as u64,
             Event::Assimilated { province, .. } => *province as u64,
+            Event::ReligionBorn { religion, .. } | Event::ReligionGone { religion } => *religion as u64,
+            Event::Converted { province, .. } | Event::Plague { province } | Event::PlagueArrived { province, .. } => *province as u64,
+            Event::Outbreak { outbreak, .. } | Event::OutbreakOver { outbreak, .. } => *outbreak as u64,
+            Event::WoodsCleared { province, .. } | Event::WoodsRegrown { province } | Event::FisheryCollapsed { province } | Event::FisheryRecovered { province } => *province as u64,
         }
     }
 
@@ -219,6 +278,15 @@ impl Event {
             Event::Succession { capital, .. } | Event::Rebellion { capital, .. } | Event::Discovery { capital, .. } => Some(*capital),
             Event::CultureBorn { hearth, .. } => Some(*hearth),
             Event::Assimilated { province, .. } => Some(*province),
+            Event::ReligionBorn { hearth, .. } => Some(*hearth),
+            Event::Converted { province, .. }
+            | Event::Plague { province }
+            | Event::Outbreak { province, .. }
+            | Event::PlagueArrived { province, .. }
+            | Event::WoodsCleared { province, .. }
+            | Event::WoodsRegrown { province }
+            | Event::FisheryCollapsed { province }
+            | Event::FisheryRecovered { province } => Some(*province),
             _ => None,
         }
     }

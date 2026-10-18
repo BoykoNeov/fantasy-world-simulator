@@ -87,7 +87,10 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// began and each side's last day's losses and strength; the battle event says when it began and
 /// what each side brought; the realms' loss counters (`realm.lost_*`); and each year's soldiers
 /// lost in the years' summaries.
-pub const FORMAT_VERSION: u32 = 31;
+/// Format 32 (the second wave of modules built side by side, Oct 18): the fields, events, causes,
+/// edits and slots of religion, disease and the natural world, and the plague dead in each year's
+/// summary.
+pub const FORMAT_VERSION: u32 = 32;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

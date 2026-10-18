@@ -29,6 +29,10 @@ pub enum Module {
     Research = 11,
     /// Culture: where cultures start, people taking them up, splits, names.
     Culture = 12,
+    /// Religion: where faiths start, conversion, schisms, names.
+    Religion = 13,
+    /// Disease: where plagues begin and where they spread.
+    Disease = 14,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

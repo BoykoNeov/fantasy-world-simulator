@@ -36,11 +36,15 @@ pub struct Ledger {
     pub spoiled: u64,
     pub eaten: u64,
     pub births: u64,
-    /// All deaths, starvation, soldiers killed in war and soldiers lost on campaign included.
+    /// All deaths, starvation, soldiers killed in war, soldiers lost on campaign and plague included.
     pub deaths: u64,
     pub starved: u64,
     /// Soldiers killed in battle or lost at sea.
     pub killed: u64,
+    /// People dead of plague (Disease), counted in `deaths` too. Years summed before there was
+    /// plague have none.
+    #[serde(default)]
+    pub plague: u64,
     /// Net change from field contracts clamping a value back into bounds (normally 0). With it,
     /// each year balances exactly: food after = before + produced − spoiled − eaten + food_clamped,
     /// people after = before + births − deaths + people_clamped + people_edited +
@@ -65,6 +69,7 @@ impl Ledger {
         let starved = neg(Quantity::People, Cause::Starvation);
         let killed = neg(Quantity::People, Cause::Killed);
         let attrition = neg(Quantity::People, Cause::Attrition);
+        let plague = neg(Quantity::People, Cause::Plague);
         let food_in = |c| food.map_or(0, |q| pos(q, c));
         let food_out = |c| food.map_or(0, |q| neg(q, c));
         let food_net = |c| food.map_or(0, |q| f.get(q, c));
@@ -73,9 +78,10 @@ impl Ledger {
             spoiled: food_out(Cause::Spoilage),
             eaten: food_out(Cause::Eating) + food_out(Cause::Foraging),
             births: pos(Quantity::People, Cause::Births),
-            deaths: neg(Quantity::People, Cause::Deaths) + starved + killed + attrition,
+            deaths: neg(Quantity::People, Cause::Deaths) + starved + killed + attrition + plague,
             starved,
             killed,
+            plague,
             food_clamped: food_net(Cause::ContractClamp),
             people_clamped: f.get(Quantity::People, Cause::ContractClamp),
             food_edited: food_net(Cause::Edit),
@@ -1097,7 +1103,7 @@ impl Sim {
             Tier::Cell => self.world.provinces.of_cell.get(e as usize) == Some(&t.province),
             Tier::Army => self.world.armies.province.get(e as usize) == Some(&t.province),
             // A realm's, a character's or a war's own values are not a province's.
-            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => false,
+            Tier::Realm | Tier::RealmGood | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture | Tier::Religion => false,
         };
         // An edit is the player's doing, not the owner's.
         let module = if kind == Stage::Edit { None } else { self.plan.owner[id.0 as usize].map(|o| self.modules[o].manifest().slot) };

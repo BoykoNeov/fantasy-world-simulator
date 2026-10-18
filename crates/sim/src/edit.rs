@@ -130,6 +130,16 @@ pub enum Edit {
     /// A new culture is born in the provinces, and everyone there takes it. Carried out by the
     /// culture module.
     NewCulture { provinces: Vec<u32> },
+    // The second wave of modules built side by side (Oct 18), a block each.
+    /// Every person in the provinces takes faith `religion`, one that exists. Carried out by the
+    /// religion module.
+    SetReligion { provinces: Vec<u32>, religion: u32 },
+    /// A new faith is born in the provinces, and everyone there takes it. Carried out by the
+    /// religion module.
+    NewReligion { provinces: Vec<u32> },
+    /// Set how much of the provinces' wild is left, each a share from 0 (all gone) to 1 (untouched);
+    /// `None` leaves that one as it is. Carried out by the natural-world module.
+    SetNature { provinces: Vec<u32>, woods: Option<f64>, fish: Option<f64>, game: Option<f64> },
 }
 
 /// One setting changed, by its key in the configuration (see [`crate::settings`]).
@@ -314,6 +324,8 @@ impl Edit {
             // The shape here; the culture module checks the culture (with it off, the engine has
             // already refused: nobody keeps `culture.hearth`).
             Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => with_land(w, provinces),
+            // The shape here; the modules that carry them out check the rest.
+            Edit::SetReligion { ref provinces, .. } | Edit::NewReligion { ref provinces } | Edit::SetNature { ref provinces, .. } => with_land(w, provinces),
         }
     }
 
@@ -344,7 +356,10 @@ impl Edit {
             | Edit::SetArmy { .. }
             | Edit::SetTech { .. }
             | Edit::SetCulture { .. }
-            | Edit::NewCulture { .. } => return,
+            | Edit::NewCulture { .. }
+            | Edit::SetReligion { .. }
+            | Edit::NewReligion { .. }
+            | Edit::SetNature { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -457,6 +472,7 @@ impl Edit {
             // Carried out by the modules that keep them ([`crate::module::Module::carry_out`]).
             Edit::NewRuler { .. } | Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => {}
             Edit::SetTech { .. } | Edit::SetCulture { .. } | Edit::NewCulture { .. } => {}
+            Edit::SetReligion { .. } | Edit::NewReligion { .. } | Edit::SetNature { .. } => {}
         }
         flows
     }
@@ -491,6 +507,7 @@ impl Edit {
             Edit::SetArmy { army, .. } => w.armies.province.get(army as usize).copied().into_iter().collect(),
             Edit::SetTech { realm, .. } => w.realms.capital.get(realm as usize).copied().filter(|&c| c != NONE).into_iter().collect(),
             Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => provinces.clone(),
+            Edit::SetReligion { ref provinces, .. } | Edit::NewReligion { ref provinces } | Edit::SetNature { ref provinces, .. } => provinces.clone(),
             Edit::River { ref path, .. } => {
                 let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -555,6 +572,13 @@ impl Edit {
             Edit::SetTech { realm, tech, known: false } => format!("realm {realm} forgets {tech}"),
             Edit::SetCulture { provinces, culture } => format!("everyone in {} provinces takes culture {culture}", provinces.len()),
             Edit::NewCulture { provinces } => format!("a new culture born in {} provinces", provinces.len()),
+            Edit::SetReligion { provinces, religion } => format!("everyone in {} provinces takes faith {religion}", provinces.len()),
+            Edit::NewReligion { provinces } => format!("a new faith born in {} provinces", provinces.len()),
+            Edit::SetNature { provinces, woods, fish, game } => {
+                let part = |name: &str, x: &Option<f64>| x.map(|x| format!("{name} {:.0}%", x * 100.0));
+                let set: Vec<String> = [part("woodland", woods), part("fish", fish), part("game", game)].into_iter().flatten().collect();
+                format!("the wild of {} provinces set to {}", provinces.len(), if set.is_empty() { "what it was".to_string() } else { set.join(", ") })
+            }
         }
     }
 
@@ -573,6 +597,8 @@ impl Edit {
             Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => &["army.size"],
             Edit::SetTech { .. } => &["realm.tech"],
             Edit::SetCulture { .. } | Edit::NewCulture { .. } => &["culture.hearth"],
+            Edit::SetReligion { .. } | Edit::NewReligion { .. } => &["religion.hearth"],
+            Edit::SetNature { .. } => &["province.woods_lost"],
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } | Edit::Settings { .. } => &[],
         }
     }
@@ -1116,7 +1142,8 @@ impl MapChange {
                 | crate::fields::Tier::War
                 | crate::fields::Tier::Relation
                 | crate::fields::Tier::RealmTech
-                | crate::fields::Tier::Culture => {}
+                | crate::fields::Tier::Culture
+                | crate::fields::Tier::Religion => {}
             }
             if id.def().name == "cell.province"
                 && let (Some(FieldData::U32(o)), Some(FieldData::U32(n))) = (old, new)

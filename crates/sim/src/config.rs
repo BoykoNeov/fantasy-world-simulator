@@ -5,15 +5,18 @@ use crate::biome::{BiomeParams, Biomes};
 use crate::calendar::{Calendar, CalendarDef};
 use crate::characters::{RulerParams, Rulers};
 use crate::diplomacy::{TreatyParams, WarParams, WarState};
+use crate::disease::{DiseaseParams, Plagues};
 use crate::climate::{ClimateParams, LatitudeClimate, NullClimate};
 use crate::culture::{Assimilation, CultureParams};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::{RiverParams, Rivers};
 use crate::markets::{MarketParams, Markets};
 use crate::module::{Module, Slot};
+use crate::nature::{NatureParams, Regrowth};
 use crate::pops::{PopParams, Population};
 use crate::provinces::{ProvinceGrowth, ProvinceParams};
 use crate::realms::{Founding, RealmParams};
+use crate::religion::{Conversion, ReligionParams};
 use crate::research::{Research, ResearchParams};
 use crate::taxonomy::TreeDef;
 use crate::terrain::{NoiseTerrain, NullTerrain, TerrainParams};
@@ -109,6 +112,20 @@ pub struct ModuleConfig {
     /// don't name it.
     #[serde(default)]
     pub culture: Option<CultureParams>,
+    // The second wave of modules built side by side (Oct 18).
+    /// Religion v1, "conversion": faiths spread and people take up the faith that pulls hardest
+    /// (step 9). Needs Population. Off by default while it is built, and in files that don't name it.
+    #[serde(default)]
+    pub religion: Option<ReligionParams>,
+    /// Disease v1, "plagues": plagues break out, spread along the ways, kill and leave survivors
+    /// immune (step 10). Needs Population. Off by default while it is built, and in files that don't
+    /// name it.
+    #[serde(default)]
+    pub disease: Option<DiseaseParams>,
+    /// Natural world v1, "regrowth": woodland, fish and game used up and growing back (step 10).
+    /// Needs Population. Off by default while it is built, and in files that don't name it.
+    #[serde(default)]
+    pub nature: Option<NatureParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
     /// where an edit makes the map anew). Scenario files written before they were settings get the
     /// numbers the modules had then, so they make the same world.
@@ -141,6 +158,9 @@ impl Default for ModuleConfig {
             warfare: Some(campaigns(TroopParams::default())),
             research: Some(ResearchParams::default()),
             culture: Some(CultureParams::default()),
+            religion: None,
+            disease: None,
+            nature: None,
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -166,13 +186,14 @@ fn campaigns(mut t: TroopParams) -> TroopParams {
 }
 
 impl ModuleConfig {
-    /// Realms, rulers, diplomacy and armies switched off, and research and culture, which came after
-    /// them: the world as it was before step 7 (they are on by default since step 7's checks, and
+    /// Realms, rulers, diplomacy and armies switched off, and research, culture, religion, disease and
+    /// the natural world, which came after them: the world as it was before step 7 (they are on by default since step 7's checks, and
     /// the first wave's). For tests of what came before, and for worlds without people, which
     /// realms and culture need.
     pub fn without_realms(&mut self) -> &mut Self {
         (self.realms, self.characters, self.diplomacy, self.warfare) = (None, None, None, None);
         (self.research, self.culture) = (None, None);
+        (self.religion, self.disease, self.nature) = (None, None, None);
         self
     }
 
@@ -235,6 +256,15 @@ impl ModuleConfig {
         if let Some(params) = &self.culture {
             out.push(Box::new(Assimilation::new(params.clone())));
         }
+        if let Some(params) = &self.religion {
+            out.push(Box::new(Conversion::new(params.clone())));
+        }
+        if let Some(params) = &self.disease {
+            out.push(Box::new(Plagues::new(params.clone())));
+        }
+        if let Some(params) = &self.nature {
+            out.push(Box::new(Regrowth::new(params.clone())));
+        }
         out
     }
 }
@@ -289,6 +319,9 @@ impl ModuleConfig {
             },
             Slot::Research => on(self.research.is_some(), "tree"),
             Slot::Culture => on(self.culture.is_some(), "assimilation"),
+            Slot::Religion => on(self.religion.is_some(), "conversion"),
+            Slot::Disease => on(self.disease.is_some(), "plagues"),
+            Slot::Nature => on(self.nature.is_some(), "regrowth"),
             _ => return None,
         })
     }
@@ -340,6 +373,9 @@ impl ModuleConfig {
             }
             Slot::Research => self.research = if on { self.research.take().or_else(|| Some(ResearchParams::default())) } else { None },
             Slot::Culture => self.culture = if on { self.culture.take().or_else(|| Some(CultureParams::default())) } else { None },
+            Slot::Religion => self.religion = if on { self.religion.take().or_else(|| Some(ReligionParams::default())) } else { None },
+            Slot::Disease => self.disease = if on { self.disease.take().or_else(|| Some(DiseaseParams::default())) } else { None },
+            Slot::Nature => self.nature = if on { self.nature.take().or_else(|| Some(NatureParams::default())) } else { None },
             _ => unreachable!("checked against CHOICES"),
         }
         Ok(())

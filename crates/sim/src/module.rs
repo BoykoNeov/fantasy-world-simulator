@@ -46,6 +46,12 @@ pub enum Slot {
     Research,
     /// Peoples: cultures spreading and people taking them up (step 9).
     Culture,
+    /// Faiths: spreading, conversion and schisms (step 9).
+    Religion,
+    /// Plagues: outbreaks, spread along the ways, deaths and immunity (step 10).
+    Disease,
+    /// The wild: woodland, fish and game, used up and growing back (step 10).
+    Nature,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

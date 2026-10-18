@@ -97,8 +97,17 @@ pub enum Cause {
     Assimilated,
     /// People whose culture split off as a new one.
     SplitOff,
-    /// People given their culture when the world was made.
+    /// People given their culture or faith when the world was made.
     Placed,
+    // The second wave of modules built side by side (Oct 18), a block each.
+    // Religion (shifts: nobody is made or lost, so no flow).
+    /// People who took up another faith.
+    Converted,
+    /// People whose faith broke away as a new one.
+    Schism,
+    // Disease.
+    /// People dead of plague.
+    Plague,
 }
 
 /// Where a request's grant goes when it is moved rather than used up: one value of a field the

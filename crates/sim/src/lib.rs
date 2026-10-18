@@ -15,6 +15,9 @@ pub mod culture;
 #[cfg(test)]
 mod culture_tests;
 pub mod diplomacy;
+pub mod disease;
+#[cfg(test)]
+mod disease_tests;
 #[cfg(test)]
 mod border_trade_tests;
 pub mod economy;
@@ -31,6 +34,9 @@ pub mod hydrology;
 pub mod logistics;
 pub mod markets;
 pub mod module;
+pub mod nature;
+#[cfg(test)]
+mod nature_tests;
 pub mod pops;
 pub mod provinces;
 pub mod realms;
@@ -46,6 +52,9 @@ mod war_tests;
 mod troops_tests;
 #[cfg(test)]
 mod army_tests;
+pub mod religion;
+#[cfg(test)]
+mod religion_tests;
 pub mod requests;
 pub mod research;
 #[cfg(test)]

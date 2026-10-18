@@ -14,6 +14,9 @@ use crate::config::{Config, ModuleConfig};
 use crate::culture::CultureParams;
 use crate::research::ResearchParams;
 use crate::diplomacy::{TreatyParams, WarParams};
+use crate::disease::DiseaseParams;
+use crate::nature::NatureParams;
+use crate::religion::ReligionParams;
 use crate::economy::FoodParams;
 use crate::markets::MarketParams;
 use crate::pops::PopParams;
@@ -456,6 +459,14 @@ pub static GROUPS: &[Group] = &[
         ],
     },
     // --- end of culture ---
+    // The second wave of modules built side by side (Oct 18): a block of groups each. Whoever builds
+    // a module adds its settings inside its own block only.
+    // --- Religion ---
+    // --- end of religion ---
+    // --- Disease ---
+    // --- end of disease ---
+    // --- Natural world ---
+    // --- end of natural world ---
 ];
 
 /// Parts of modules that can be switched on or off when a world is made.
@@ -477,6 +488,13 @@ pub static SECTIONS: &[Section] = &[
     // --- Culture ---
     Section { key: "modules.culture.splits", label: "New cultures splitting off", help: "Groups cut off from the rest of their people for decades may become new cultures. Off: the world keeps the peoples it starts with (fewer as some fade)." },
     // --- end of culture ---
+    // The second wave of modules built side by side (Oct 18): a block each.
+    // --- Religion ---
+    // --- end of religion ---
+    // --- Disease ---
+    // --- end of disease ---
+    // --- Natural world ---
+    // --- end of natural world ---
 ];
 
 /// What in the configuration isn't a setting here, and why: a key, or the start of keys.
@@ -512,6 +530,13 @@ pub static LEFT_OUT: &[(&str, &str)] = &[
     // --- end of research ---
     // --- Culture ---
     // --- end of culture ---
+    // The second wave of modules built side by side (Oct 18): a block each.
+    // --- Religion ---
+    // --- end of religion ---
+    // --- Disease ---
+    // --- end of disease ---
+    // --- Natural world ---
+    // --- end of natural world ---
 ];
 
 /// One setting of a configuration, as it stands.
@@ -582,6 +607,9 @@ pub fn everything() -> ModuleConfig {
         }),
         research: Some(ResearchParams::default()),
         culture: Some(CultureParams::default()),
+        religion: Some(ReligionParams::default()),
+        disease: Some(DiseaseParams::default()),
+        nature: Some(NatureParams::default()),
         terrain_params: d.terrain_params,
         climate_params: d.climate_params,
         biome_params: d.biome_params,
@@ -634,6 +662,15 @@ pub fn defaults_for(c: &Config) -> Config {
         p.splits = p.splits.take().filter(|_| x.splits.is_some());
     }
     // --- end of culture ---
+    // --- Religion: its parts ---
+    let religion = on(m.religion.is_some(), all.religion);
+    // --- end of religion ---
+    // --- Disease: its parts ---
+    let disease = on(m.disease.is_some(), all.disease);
+    // --- end of disease ---
+    // --- Natural world: its parts ---
+    let nature = on(m.nature.is_some(), all.nature);
+    // --- end of natural world ---
     let world = WorldParams { n: c.world.n, provinces: c.world.provinces, seed: c.world.seed, ..WorldParams::preset(Size::Small, 0) };
     let modules = ModuleConfig {
         terrain: m.terrain,
@@ -648,6 +685,9 @@ pub fn defaults_for(c: &Config) -> Config {
         warfare,
         research,
         culture,
+        religion,
+        disease,
+        nature,
         ..ModuleConfig::default()
     };
     Config { world, modules, calendar: c.calendar.clone(), goods: c.goods.clone() }

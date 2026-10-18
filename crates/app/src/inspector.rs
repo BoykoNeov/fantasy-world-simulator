@@ -489,7 +489,7 @@ pub fn latest_change(last_change: &[Vec<u64>], fields: impl Iterator<Item = Fiel
                 Tier::ProvinceGood => (0..goods.stride()).map(|c| goods.index(province as usize, c)).collect(),
                 Tier::Pop => (0..pop_province.len()).filter(|&k| pop_province[k] == province).collect(),
                 // Realms', armies' and characters' values are not a province's.
-                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => Vec::new(),
+                Tier::Cell | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture | Tier::Religion => Vec::new(),
             };
             mine.into_iter().filter_map(move |i| stamps.get(i).copied())
         })
@@ -537,7 +537,7 @@ pub fn province_of(id: FieldId, entity: u32, goods: &Goods) -> Option<u32> {
     match id.def().tier {
         Tier::Province => Some(entity),
         Tier::ProvinceGood => Some(goods.split(entity as usize).0 as u32),
-        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture => None,
+        Tier::Cell | Tier::Pop | Tier::Realm | Tier::RealmGood | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::RealmTech | Tier::Culture | Tier::Religion => None,
     }
 }
 
@@ -611,6 +611,9 @@ pub fn slot_name(s: Slot) -> &'static str {
         Slot::Warfare => "Warfare",
         Slot::Research => "Research",
         Slot::Culture => "Culture",
+        Slot::Religion => "Religion",
+        Slot::Disease => "Disease",
+        Slot::Nature => "Natural world",
     }
 }
 
@@ -645,7 +648,10 @@ fn cause(c: Cause) -> &'static str {
         Cause::Scholars => "scholars' wages",
         Cause::Assimilated => "people taking up another culture",
         Cause::SplitOff => "a culture splitting off",
-        Cause::Placed => "the cultures people started with",
+        Cause::Placed => "the cultures and faiths people started with",
+        Cause::Converted => "people taking up another faith",
+        Cause::Schism => "a faith breaking away",
+        Cause::Plague => "dead of plague",
     }
 }
 
@@ -730,6 +736,19 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::CultureBorn { culture, parent, provinces, .. } => format!("the {} culture split off from the {} in {provinces} provinces", names.culture(*culture), names.culture(*parent)),
         Event::CultureGone { culture } => format!("the last of the {} culture is gone", names.culture(*culture)),
         Event::Assimilated { from, to, .. } => format!("the province's main culture changed from {} to {}", names.culture(*from), names.culture(*to)),
+        // Faiths are named by number until the window learns their names (after Religion merges).
+        Event::ReligionBorn { religion, parent: NONE, provinces, .. } => format!("faith {religion} began in {provinces} provinces"),
+        Event::ReligionBorn { religion, parent, provinces, .. } => format!("faith {religion} broke away from faith {parent} in {provinces} provinces"),
+        Event::ReligionGone { religion } => format!("the last follower of faith {religion} is gone"),
+        Event::Converted { from, to, .. } => format!("the province's main faith changed from faith {from} to faith {to}"),
+        Event::Plague { .. } => "a plague is to break out here".to_string(),
+        Event::Outbreak { outbreak, .. } => format!("plague {outbreak} broke out here"),
+        Event::PlagueArrived { outbreak, from, by_sea, .. } => format!("plague {outbreak} arrived {} from province {from}", if *by_sea { "by sea" } else { "over land" }),
+        Event::OutbreakOver { outbreak, dead, provinces } => format!("plague {outbreak} is over: {} dead in {provinces} provinces", group(*dead)),
+        Event::WoodsCleared { left, .. } => format!("the province's woods are mostly cleared: {:.0}% of the wild woodland is left", *left as f64 / 1e4),
+        Event::WoodsRegrown { .. } => "the province's woods have grown back".to_string(),
+        Event::FisheryCollapsed { .. } => "the province's waters are fished out".to_string(),
+        Event::FisheryRecovered { .. } => "the province's fish have come back".to_string(),
     }
 }
 

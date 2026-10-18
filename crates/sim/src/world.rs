@@ -234,6 +234,29 @@ pub struct World {
     pub realm_lost_sickness: Vec<u64>,
     pub realm_lost_hunger: Vec<u64>,
     pub realm_lost_deserted: Vec<u64>,
+    // The second wave of modules built side by side (Oct 18), a block each.
+    // Religion "conversion".
+    /// Every faith, living and gone.
+    pub religions: crate::religion::Religions,
+    /// Each realm's faith (field `realm.religion`), [`crate::grid::NONE`] for none.
+    pub realm_religion: Vec<u32>,
+    // Disease "plagues".
+    /// Millionths of each province's people ill now (field `province.sick`).
+    pub sick: Vec<u64>,
+    /// Millionths of each province's people immune (field `province.immune`).
+    pub immune: Vec<u64>,
+    /// People dead of plague in each province since the year began (field `province.plague_dead`).
+    pub plague_dead: Vec<u64>,
+    /// The outbreak going on in each province (field `province.outbreak`), [`crate::grid::NONE`]
+    /// where there is none.
+    pub outbreak: Vec<u32>,
+    // Natural world "regrowth": millionths of the wild gone, 0 where it is untouched.
+    /// Of each province's wild woodland, cleared (field `province.woods_lost`).
+    pub woods_lost: Vec<u64>,
+    /// Of each province's fish (field `province.fish_lost`).
+    pub fish_lost: Vec<u64>,
+    /// Of each province's wild game (field `province.game_lost`).
+    pub game_lost: Vec<u64>,
 }
 
 impl World {
@@ -286,6 +309,15 @@ impl World {
             realm_lost_sickness: Vec::new(),
             realm_lost_hunger: Vec::new(),
             realm_lost_deserted: Vec::new(),
+            religions: crate::religion::Religions::default(),
+            realm_religion: Vec::new(),
+            sick: Vec::new(),
+            immune: Vec::new(),
+            plague_dead: Vec::new(),
+            outbreak: Vec::new(),
+            woods_lost: Vec::new(),
+            fish_lost: Vec::new(),
+            game_lost: Vec::new(),
         }
     }
 
@@ -426,6 +458,18 @@ impl World {
             "realm.lost_sickness" => U64(self.realm_lost_sickness.clone()),
             "realm.lost_hunger" => U64(self.realm_lost_hunger.clone()),
             "realm.lost_deserted" => U64(self.realm_lost_deserted.clone()),
+            "religion.parent" => U32(self.religions.parent.clone()),
+            "religion.born" => U64(self.religions.born.clone()),
+            "religion.hearth" => U32(self.religions.hearth.clone()),
+            "religion.died" => U64(self.religions.died.clone()),
+            "realm.religion" => U32(self.realm_religion.clone()),
+            "province.sick" => U64(self.sick.clone()),
+            "province.immune" => U64(self.immune.clone()),
+            "province.plague_dead" => U64(self.plague_dead.clone()),
+            "province.outbreak" => U32(self.outbreak.clone()),
+            "province.woods_lost" => U64(self.woods_lost.clone()),
+            "province.fish_lost" => U64(self.fish_lost.clone()),
+            "province.game_lost" => U64(self.game_lost.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -438,7 +482,7 @@ impl World {
             Tier::Cell => Some(self.grid.cells()),
             // The province count is set by the province fields themselves; pops, realms, armies
             // and characters vary.
-            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::Culture => None,
+            Tier::Province | Tier::Pop | Tier::Realm | Tier::Army | Tier::Character | Tier::War | Tier::Relation | Tier::Culture | Tier::Religion => None,
             Tier::RealmTech => {
                 let k = self.techs.len();
                 if (k == 0 && !data.is_empty()) || (k > 0 && !data.len().is_multiple_of(k)) {
@@ -559,6 +603,18 @@ impl World {
             ("realm.lost_sickness", U64(v)) => self.realm_lost_sickness = v,
             ("realm.lost_hunger", U64(v)) => self.realm_lost_hunger = v,
             ("realm.lost_deserted", U64(v)) => self.realm_lost_deserted = v,
+            ("religion.parent", U32(v)) => self.religions.parent = v,
+            ("religion.born", U64(v)) => self.religions.born = v,
+            ("religion.hearth", U32(v)) => self.religions.hearth = v,
+            ("religion.died", U64(v)) => self.religions.died = v,
+            ("realm.religion", U32(v)) => self.realm_religion = v,
+            ("province.sick", U64(v)) => self.sick = v,
+            ("province.immune", U64(v)) => self.immune = v,
+            ("province.plague_dead", U64(v)) => self.plague_dead = v,
+            ("province.outbreak", U32(v)) => self.outbreak = v,
+            ("province.woods_lost", U64(v)) => self.woods_lost = v,
+            ("province.fish_lost", U64(v)) => self.fish_lost = v,
+            ("province.game_lost", U64(v)) => self.game_lost = v,
             _ => return wrong(),
         }
         Ok(())
@@ -678,6 +734,18 @@ impl World {
             ("realm.lost_sickness", U64(x)) => put(&mut self.realm_lost_sickness, at, x),
             ("realm.lost_hunger", U64(x)) => put(&mut self.realm_lost_hunger, at, x),
             ("realm.lost_deserted", U64(x)) => put(&mut self.realm_lost_deserted, at, x),
+            ("religion.parent", U32(x)) => put(&mut self.religions.parent, at, x),
+            ("religion.born", U64(x)) => put(&mut self.religions.born, at, x),
+            ("religion.hearth", U32(x)) => put(&mut self.religions.hearth, at, x),
+            ("religion.died", U64(x)) => put(&mut self.religions.died, at, x),
+            ("realm.religion", U32(x)) => put(&mut self.realm_religion, at, x),
+            ("province.sick", U64(x)) => put(&mut self.sick, at, x),
+            ("province.immune", U64(x)) => put(&mut self.immune, at, x),
+            ("province.plague_dead", U64(x)) => put(&mut self.plague_dead, at, x),
+            ("province.outbreak", U32(x)) => put(&mut self.outbreak, at, x),
+            ("province.woods_lost", U64(x)) => put(&mut self.woods_lost, at, x),
+            ("province.fish_lost", U64(x)) => put(&mut self.fish_lost, at, x),
+            ("province.game_lost", U64(x)) => put(&mut self.game_lost, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -687,7 +755,9 @@ impl World {
     /// here.)
     pub fn grow_province_fields(&mut self) {
         let n = self.provinces.count;
-        for v in [&mut self.starved_this_year, &mut self.rain_shortfall, &mut self.unrest] {
+        // A new province has nobody sick, immune or dead of plague, and its wild is untouched (Disease
+        // and Natural world may give it more, from the provinces its cells came from).
+        for v in [&mut self.starved_this_year, &mut self.rain_shortfall, &mut self.unrest, &mut self.sick, &mut self.immune, &mut self.plague_dead, &mut self.woods_lost, &mut self.fish_lost, &mut self.game_lost] {
             if v.len() < n {
                 v.resize(n, 0);
             }
@@ -700,7 +770,7 @@ impl World {
         }
         // A new province belongs to nobody, nobody occupies it and nobody rises up in it, until
         // whoever made it says otherwise.
-        for v in [&mut self.owner, &mut self.occupier, &mut self.uprising, &mut self.besieger] {
+        for v in [&mut self.owner, &mut self.occupier, &mut self.uprising, &mut self.besieger, &mut self.outbreak] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }
@@ -709,7 +779,7 @@ impl World {
 
     /// Give every realm the values other modules than the one that makes realms keep for it: a
     /// row of stores (empty), a ruler and an heir (nobody); and the realm it broke away from
-    /// (none), for realms made by hand; no study banked, nothing studied or known, no culture, no soldiers lost. The engine calls it after every stage and edit, so whoever
+    /// (none), for realms made by hand; no study banked, nothing studied or known, no culture, no faith, no soldiers lost. The engine calls it after every stage and edit, so whoever
     /// adds a realm needn't own those, and they are there with their owners off.
     pub fn fit_realm_rows(&mut self) {
         let n = self.realms.count();
@@ -717,7 +787,7 @@ impl World {
         if self.realm_stock.len() < want {
             self.realm_stock.resize(want, 0);
         }
-        for v in [&mut self.realms.ruler, &mut self.realms.heir, &mut self.realms.broke_from, &mut self.realm_studying, &mut self.realm_culture] {
+        for v in [&mut self.realms.ruler, &mut self.realms.heir, &mut self.realms.broke_from, &mut self.realm_studying, &mut self.realm_culture, &mut self.realm_religion] {
             if v.len() < n {
                 v.resize(n, crate::grid::NONE);
             }
@@ -752,7 +822,7 @@ impl World {
         self.goods.sum_under(row, self.goods.tree.find(name)?)
     }
 
-    /// Check that province, pop, realm, army, character, war, relation and culture fields agree on
+    /// Check that province, pop, realm, army, character, war, relation, culture and faith fields agree on
     /// their lengths (after a load).
     pub fn check_lengths(&self) -> Result<(), String> {
         let n = self.provinces.count;
@@ -771,6 +841,7 @@ impl World {
                 Tier::Relation => self.relations.count(),
                 Tier::RealmTech => self.realms.count() * self.techs.len(),
                 Tier::Culture => self.cultures.count(),
+                Tier::Religion => self.religions.count(),
                 Tier::Cell => continue,
             };
             if len != want {
