@@ -107,7 +107,7 @@ struct Options {
     /// `--part KEY=0|1`: parts of modules (keys as `simrun --settings` lists the sections) switched
     /// off or on, before `--set`.
     parts: Vec<(String, bool)>,
-    /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings", "change-realm" (the editor's controls on the selected province's realm page) and "wars".
+    /// Section headers to open (scripted runs): "settings", "new-world", "new-world-settings", "change-realm" (the editor's controls on the selected province's realm page), "wars", "battles" and "soldiers-lost" (the Wars section's list of battles and table of soldiers lost) and "battle" (scrolls the side panel to the battle going on in the selected province).
     open_sections: Vec<String>,
     bench: bool,
     out_dir: String,
@@ -1391,26 +1391,110 @@ impl MapApp {
                     }
                 });
             }
+            if self.kept().armies {
+                if let Some(p) = self.battle_list(ui, &names) {
+                    go = Some(p);
+                }
+                self.soldiers_lost(ui);
+            }
         });
         if let Some(c) = go {
             (self.selected, self.pop_edit, self.stock_edit) = (Some(c), None, None);
         }
     }
 
-    /// The battle fought in province `p` on the day shown, if any: each side's soldiers by kind;
+    /// The battles of the days the log keeps (the last three years), latest first, each with a
+    /// button to its province. Returns the province picked.
+    fn battle_list(&self, ui: &mut egui::Ui, names: &Names) -> Option<u32> {
+        let battles: Vec<&inspector::LogEntry> = self.log.iter().rev().filter(|e| e.day <= self.day() && matches!(e.what, inspector::Logged::Event(Event::Battle { .. }))).collect();
+        let mut go = None;
+        let open = self.opts.open_sections.iter().any(|s| s == "battles");
+        egui::CollapsingHeader::new(format!("Battles of the last three years ({})", battles.len())).id_salt("recent battles").default_open(open).show(ui, |ui| {
+            for e in battles.iter().take(80) {
+                let Some(p) = e.province else { continue };
+                ui.horizontal_wrapped(|ui| {
+                    if ui.small_button(format!("province {p}")).on_hover_text("select the province").clicked() {
+                        go = Some(p);
+                    }
+                    ui.small(format!("{} · {}", self.calendar.format(e.day), e.text(&self.calendar, &self.geo.goods, names)));
+                });
+            }
+            if battles.len() > 80 {
+                ui.small(format!("and {} earlier", battles.len() - 80));
+            }
+        });
+        go
+    }
+
+    /// Soldiers lost by every realm, by how: since the world began, this year so far, and each
+    /// year gone by.
+    fn soldiers_lost(&self, ui: &mut egui::Ui) {
+        let all = sim::sim::SoldiersLost::of_world(&self.geo);
+        let years = &self.shown_state.soldiers_by_year;
+        let gone = years.iter().fold(sim::sim::SoldiersLost::default(), |sum, y| sum.plus(&y.1));
+        let open = self.opts.open_sections.iter().any(|s| s == "soldiers-lost");
+        egui::CollapsingHeader::new(format!("Soldiers lost ({})", group(all.total()))).id_salt("soldiers lost").default_open(open).show(ui, |ui| {
+            ui.small(format!("Since the world began: {}.", inspector::soldiers_lost(&all)));
+            ui.small(format!("This year so far: {}.", inspector::soldiers_lost(&all.minus(&gone))));
+            ui.small("Camp disease and cold strike soldiers away from their own realm's land; soldiers starve when the food asked for them doesn't come, and desert when unfed or unpaid.");
+            if years.is_empty() {
+                return;
+            }
+            // Short headings: the side panel is narrow.
+            egui::Grid::new("soldiers lost by year").striped(true).min_col_width(0.0).spacing([10.0, 2.0]).show(ui, |ui| {
+                for h in ["year", "in battle", "disease, cold", "starved", "deserted"] {
+                    ui.small(h);
+                }
+                ui.end_row();
+                for (year, l) in years.iter().rev().take(60) {
+                    ui.small(year.to_string());
+                    for n in [l.battle, l.sickness, l.hunger, l.deserted] {
+                        ui.small(group(n));
+                    }
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    /// The battle fought in province `p` on the day shown, if any: when it began, and each side's
+    /// soldiers by kind, what it brought and lost, how near it is to breaking and its strength;
     /// and the battles fought here before, from the log, with each side's dead.
     fn battle_section(&mut self, ui: &mut egui::Ui, p: u32) {
         let fighting = self.army_view().battles.contains(&p);
         let names = Names { world: &self.geo, realms: &self.realm_names };
         let kind_name = |node: u16| self.troop_kinds.iter().find(|k| k.0 == node).map_or(format!("kind {node}"), |k| k.1.replace('_', " "));
+        // Warfare's own record of the battle, as the day shown began (none for a world just
+        // opened, until its next day of battle).
+        let record = self.shown_state.battles.battles.iter().find(|b| b.province == p).filter(|_| fighting);
         if fighting {
-            ui.label(egui::RichText::new("A battle is being fought here").strong());
+            if self.opts.open_sections.iter().any(|s| s == "battle") {
+                ui.scroll_to_cursor(Some(egui::Align::TOP));
+            }
+            let since = record.map_or(String::new(), |b| {
+                let days = self.day().saturating_sub(b.began);
+                format!(", since {} ({})", self.calendar.format(b.began), inspector::duration(days.max(1), &self.calendar))
+            });
+            ui.label(egui::RichText::new(format!("A battle is being fought here{since}")).strong());
+            let owner = self.geo.owner.get(p as usize).copied().unwrap_or(NONE);
+            let home_edge = self.shown_state.settings.warfare.as_ref().map_or(0.0, |t| t.home_edge);
             for (r, kinds) in app::armies::battle_sides(&self.geo, p, &self.troop_kinds) {
                 let total: u64 = kinds.iter().map(|k| k.1).sum();
                 let of: Vec<String> = kinds.iter().map(|&(k, n)| format!("{} {}", group(n), kind_name(k))).collect();
                 ui.label(format!("   {}: {} soldiers ({})", names.realm(r), group(total), of.join(", ")));
+                let Some(side) = record.and_then(|b| b.sides.iter().find(|s| s.realm == r)) else { continue };
+                let mut how = vec![format!("brought {}, lost {} ({} on its last day)", group(side.brought), group(side.killed), group(side.last_day))];
+                how.push(if side.broke {
+                    "it broke and falls back".into()
+                } else {
+                    format!("it breaks after losing {} more", group(side.breaks_at.saturating_sub(side.killed)))
+                });
+                let home = if owner == r && home_edge > 0.0 { format!(", +{:.0}% fighting on its own land", home_edge * 100.0) } else { String::new() };
+                how.push(format!("strength {}{home}", group(side.strength.round() as u64)));
+                ui.small(format!("      {}", how.join("; ")))
+                    .on_hover_text("Strength is its soldiers times what each counts for: their kind (heavy infantry most, then cavalry, then levies) and what their realm knows. Each day each side loses soldiers in proportion to the other's strength.");
             }
-            ui.small("A side breaks when it has lost too many; the log then says who held the field and what each side lost.");
+            ui.small("A side breaks when it has lost its breaking share of the soldiers it brought; the log then says who held the field and what each side lost.");
         }
         let before: Vec<String> = self
             .log

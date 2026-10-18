@@ -391,6 +391,11 @@ pub const FIELDS: &[FieldDef] = &[
     FieldDef { default: Default::Empty, ..def("culture.hearth", Tier::Culture, "province id where it began", -UNBOUNDED, UNBOUNDED) },
     FieldDef { default: Default::Empty, ..def("culture.died", Tier::Culture, "day its last person was gone, none while it lives", 0.0, UNBOUNDED) },
     FieldDef { default: Default::NoOne, ..def("realm.culture", Tier::Realm, "culture id of the realm: its capital's main culture, none if none", -UNBOUNDED, UNBOUNDED) },
+    // Warfare: the realm's soldiers lost since it began, by how (the battle inspector, Oct 18).
+    FieldDef { default: Default::Zero, ..def("realm.lost_battle", Tier::Realm, "soldiers killed in battle or lost at sea", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Zero, ..def("realm.lost_sickness", Tier::Realm, "soldiers dead of camp disease and cold, away from its land", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Zero, ..def("realm.lost_hunger", Tier::Realm, "soldiers starved for want of the food asked for them", 0.0, COUNT_MAX) },
+    FieldDef { default: Default::Zero, ..def("realm.lost_deserted", Tier::Realm, "soldiers who deserted, unfed or unpaid", 0.0, COUNT_MAX) },
 ];
 
 pub fn id(name: &str) -> Option<FieldId> {

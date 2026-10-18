@@ -85,6 +85,51 @@ impl Ledger {
     }
 }
 
+/// Soldiers lost, by how: the realms' loss counters (`realm.lost_*`, kept by Warfare).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SoldiersLost {
+    /// Killed in battle or lost at sea.
+    pub battle: u64,
+    /// Dead of camp disease and cold, away from their realm's land.
+    pub sickness: u64,
+    /// Starved for want of the food asked for them.
+    pub hunger: u64,
+    /// Deserted, unfed or unpaid.
+    pub deserted: u64,
+}
+
+impl SoldiersLost {
+    /// Realm `r`'s since it began (nothing where Warfare doesn't count them).
+    pub fn of_realm(w: &World, r: u32) -> SoldiersLost {
+        let at = |v: &[u64]| v.get(r as usize).copied().unwrap_or(0);
+        SoldiersLost { battle: at(&w.realm_lost_battle), sickness: at(&w.realm_lost_sickness), hunger: at(&w.realm_lost_hunger), deserted: at(&w.realm_lost_deserted) }
+    }
+
+    /// Every realm's, dissolved ones too: the world's since it began.
+    pub fn of_world(w: &World) -> SoldiersLost {
+        let sum = |v: &[u64]| v.iter().sum();
+        SoldiersLost { battle: sum(&w.realm_lost_battle), sickness: sum(&w.realm_lost_sickness), hunger: sum(&w.realm_lost_hunger), deserted: sum(&w.realm_lost_deserted) }
+    }
+
+    pub fn total(&self) -> u64 {
+        self.battle + self.sickness + self.hunger + self.deserted
+    }
+
+    pub fn plus(&self, o: &SoldiersLost) -> SoldiersLost {
+        SoldiersLost { battle: self.battle + o.battle, sickness: self.sickness + o.sickness, hunger: self.hunger + o.hunger, deserted: self.deserted + o.deserted }
+    }
+
+    /// What is left after taking `o` away (never below nothing).
+    pub fn minus(&self, o: &SoldiersLost) -> SoldiersLost {
+        SoldiersLost {
+            battle: self.battle.saturating_sub(o.battle),
+            sickness: self.sickness.saturating_sub(o.sickness),
+            hunger: self.hunger.saturating_sub(o.hunger),
+            deserted: self.deserted.saturating_sub(o.deserted),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct YearSummary {
     pub year: i64,
@@ -94,6 +139,8 @@ pub struct YearSummary {
     pub ledger: Ledger,
     /// Provinces where anyone starved during the year.
     pub famine_provinces: usize,
+    /// Soldiers the realms lost during the year.
+    pub soldiers: SoldiersLost,
 }
 
 /// Things that went wrong without stopping the world. Each also goes out as an event.
@@ -217,6 +264,8 @@ pub struct Checkpoint {
     last_change: Vec<Vec<u64>>,
     /// Last month's trade, for showing it (not saved: checkpoints live in memory).
     trade: Arc<crate::markets::TradeRecord>,
+    /// The battles going on, for showing them (not saved, like the trade).
+    battles: Arc<crate::warfare::BattleRecord>,
 }
 
 pub struct Sim {
@@ -576,6 +625,7 @@ impl Sim {
             applied_today: self.applied_today.clone(),
             last_change: self.last_change.clone(),
             trade: self.world.trade.clone(),
+            battles: self.world.battles.clone(),
         }
     }
 
@@ -611,6 +661,7 @@ impl Sim {
         self.applied_today = c.applied_today.clone();
         self.last_change = c.last_change.clone();
         self.world.trade = c.trade.clone();
+        self.world.battles = c.battles.clone();
         let day = c.day;
         self.event_log.entries.retain(|p| p.day + 1 < day);
         self.log_today = self.event_log.entries.partition_point(|p| p.day + 2 < day);
@@ -1130,6 +1181,7 @@ impl Sim {
             food_stock: food.map_or(0, |q| quantity_total(&self.world, q)),
             ledger: Ledger::from_flows(&self.year_flows, food),
             famine_provinces: self.world.starved_this_year.iter().filter(|&&s| s > 0).count(),
+            soldiers: SoldiersLost::of_world(&self.world).minus(&self.history.iter().fold(SoldiersLost::default(), |sum, y| sum.plus(&y.soldiers))),
         }
     }
 

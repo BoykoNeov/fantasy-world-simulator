@@ -83,7 +83,11 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Warfare's state); new worlds get Warfare "campaigns" (sieges in depth on).
 /// Format 30 (Research effects): each tech's effects and Research's "effects" part in the
 /// configuration.
-pub const FORMAT_VERSION: u32 = 30;
+/// Format 31 (the battle inspector): each battle in Warfare's state (`armies-3`) keeps the day it
+/// began and each side's last day's losses and strength; the battle event says when it began and
+/// what each side brought; the realms' loss counters (`realm.lost_*`); and each year's soldiers
+/// lost in the years' summaries.
+pub const FORMAT_VERSION: u32 = 31;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {

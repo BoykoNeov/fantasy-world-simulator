@@ -156,6 +156,8 @@ pub struct World {
     pub routes: Arc<Routes>,
     /// The last month's trade, for showing it ([`crate::markets::TradeRecord`]): not a field.
     pub trade: Arc<crate::markets::TradeRecord>,
+    /// The battles going on, for showing them ([`crate::warfare::BattleRecord`]): not a field.
+    pub battles: Arc<crate::warfare::BattleRecord>,
     /// Fields as they stood when today began, for the modules that read them so ([`Earlier`]).
     pub earlier: Arc<Earlier>,
     /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
@@ -225,6 +227,13 @@ pub struct World {
     pub cultures: crate::culture::Cultures,
     /// Each realm's culture (field `realm.culture`), [`crate::grid::NONE`] for none.
     pub realm_culture: Vec<u32>,
+    // Warfare's loss counters.
+    /// Each realm's soldiers lost since it began, by how (fields `realm.lost_battle`,
+    /// `realm.lost_sickness`, `realm.lost_hunger`, `realm.lost_deserted`).
+    pub realm_lost_battle: Vec<u64>,
+    pub realm_lost_sickness: Vec<u64>,
+    pub realm_lost_hunger: Vec<u64>,
+    pub realm_lost_deserted: Vec<u64>,
 }
 
 impl World {
@@ -243,6 +252,7 @@ impl World {
             provinces: Provinces::default(),
             routes: Arc::new(Routes::default()),
             trade: Arc::default(),
+            battles: Arc::default(),
             earlier: Arc::default(),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
@@ -272,6 +282,10 @@ impl World {
             realm_tech: Vec::new(),
             cultures: crate::culture::Cultures::default(),
             realm_culture: Vec::new(),
+            realm_lost_battle: Vec::new(),
+            realm_lost_sickness: Vec::new(),
+            realm_lost_hunger: Vec::new(),
+            realm_lost_deserted: Vec::new(),
         }
     }
 
@@ -408,6 +422,10 @@ impl World {
             "culture.hearth" => U32(self.cultures.hearth.clone()),
             "culture.died" => U64(self.cultures.died.clone()),
             "realm.culture" => U32(self.realm_culture.clone()),
+            "realm.lost_battle" => U64(self.realm_lost_battle.clone()),
+            "realm.lost_sickness" => U64(self.realm_lost_sickness.clone()),
+            "realm.lost_hunger" => U64(self.realm_lost_hunger.clone()),
+            "realm.lost_deserted" => U64(self.realm_lost_deserted.clone()),
             other => unreachable!("field {other} has no storage"),
         }
     }
@@ -537,6 +555,10 @@ impl World {
             ("culture.hearth", U32(v)) => self.cultures.hearth = v,
             ("culture.died", U64(v)) => self.cultures.died = v,
             ("realm.culture", U32(v)) => self.realm_culture = v,
+            ("realm.lost_battle", U64(v)) => self.realm_lost_battle = v,
+            ("realm.lost_sickness", U64(v)) => self.realm_lost_sickness = v,
+            ("realm.lost_hunger", U64(v)) => self.realm_lost_hunger = v,
+            ("realm.lost_deserted", U64(v)) => self.realm_lost_deserted = v,
             _ => return wrong(),
         }
         Ok(())
@@ -652,6 +674,10 @@ impl World {
             ("culture.hearth", U32(x)) => put(&mut self.cultures.hearth, at, x),
             ("culture.died", U64(x)) => put(&mut self.cultures.died, at, x),
             ("realm.culture", U32(x)) => put(&mut self.realm_culture, at, x),
+            ("realm.lost_battle", U64(x)) => put(&mut self.realm_lost_battle, at, x),
+            ("realm.lost_sickness", U64(x)) => put(&mut self.realm_lost_sickness, at, x),
+            ("realm.lost_hunger", U64(x)) => put(&mut self.realm_lost_hunger, at, x),
+            ("realm.lost_deserted", U64(x)) => put(&mut self.realm_lost_deserted, at, x),
             (name, _) => Err(format!("{name}: wrong value type")),
         }
     }
@@ -683,7 +709,7 @@ impl World {
 
     /// Give every realm the values other modules than the one that makes realms keep for it: a
     /// row of stores (empty), a ruler and an heir (nobody); and the realm it broke away from
-    /// (none), for realms made by hand; no study banked, nothing studied or known, no culture. The engine calls it after every stage and edit, so whoever
+    /// (none), for realms made by hand; no study banked, nothing studied or known, no culture, no soldiers lost. The engine calls it after every stage and edit, so whoever
     /// adds a realm needn't own those, and they are there with their owners off.
     pub fn fit_realm_rows(&mut self) {
         let n = self.realms.count();
@@ -696,8 +722,10 @@ impl World {
                 v.resize(n, crate::grid::NONE);
             }
         }
-        if self.realm_knowledge.len() < n {
-            self.realm_knowledge.resize(n, 0);
+        for v in [&mut self.realm_knowledge, &mut self.realm_lost_battle, &mut self.realm_lost_sickness, &mut self.realm_lost_hunger, &mut self.realm_lost_deserted] {
+            if v.len() < n {
+                v.resize(n, 0);
+            }
         }
         let techs = n * self.techs.len();
         if self.realm_tech.len() < techs {

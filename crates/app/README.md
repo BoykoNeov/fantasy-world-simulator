@@ -159,8 +159,23 @@ What exists:
   - Battles: where one is fought on the day shown, the province page lists each side with its
     soldiers by kind (`armies::battle_sides`, by Warfare's own rule); "Battles fought here" lists
     the earlier ones from the log. A battle's report now gives each side's dead ("Dreinmark beat
-    Tholia in battle here: 3,100 killed (Dreinmark lost 900, Tholia 2,200)"). There is no running
-    count of the dead while a battle goes on: that would need the simulation to keep one.
+    Tholia in battle here: 3,100 killed (Dreinmark lost 900, Tholia 2,200)").
+- **The battle inspector and soldiers lost** (Oct 18; only where armies are kept):
+  - A battle going on: the province page says since when it is fought, and for each side, besides
+    its soldiers by kind, what it brought (those there when it began and those who joined since),
+    what it has lost in all and on its last day, how many more it can lose before it breaks (or
+    that it broke and falls back), and its strength (soldiers times what each counts for, by kind
+    and by what its realm knows), with the edge for fighting on its own land. Read from Warfare's
+    record of the battles going on (`sim::warfare::BattleRecord`, sent with each day shown, so
+    going back shows the battles of that day); a world just opened has none until its next day of
+    battle, and then shows only the soldiers by kind.
+  - Earlier battles' reports also say how many soldiers each side brought and when the battle
+    began ("Dreinmark lost 900 of 4,000, Tholia 2,200 of 3,500; it began 12 Thaw 31").
+  - The Wars section lists the battles of the last three years (the days the log keeps), latest
+    first, each with a button to its province; and "Soldiers lost": every realm's soldiers killed
+    in battle (or lost at sea), dead of camp disease and cold, starved and deserted, since the
+    world began, this year so far, and year by year as a table (from the years' summaries).
+  - A realm's page says what it has lost since it began, by the same four.
 - **Cultures** (Oct 18; only where Culture runs):
   - "cultures" colours each province by its main culture (the one most of its people belong to),
     a hue from the culture's number (`layers::culture_color`, spread round the wheel otherwise than
@@ -267,7 +282,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
   `simrun --settings` lists the parts, e.g. `--part modules.warfare.seasons=1`).
 - `--set KEY=VALUE`: change a setting of the world made (repeatable; keys as `simrun --settings`
   lists them). `--live-set KEY=VALUE`: once the window is open, change a setting while the world
-  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|cultures`: open that
+  runs, as a player would. `--open-section settings|new-world|new-world-settings|change-realm|wars|battles|soldiers-lost|cultures|battle`: open that
   section (for scripted screenshots).
 - `--screenshot FILE.png`: open, save a screenshot (after any scripted edits and the redrawn map),
   close.

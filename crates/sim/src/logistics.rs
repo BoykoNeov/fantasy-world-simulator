@@ -364,6 +364,7 @@ impl Troops {
                 if dead > 0 {
                     w.armies.size[a] -= dead;
                     cx.flow(Quantity::People, Cause::Attrition, -(dead as i64));
+                    crate::warfare::count_lost(w, a as u32, dead, crate::warfare::Lost::Sickness);
                     size -= dead;
                     if cx.traced(at) || cx.traced(home) {
                         cx.note(format!("company {a}: {dead} soldiers died of camp disease and winter, away from their own land"));

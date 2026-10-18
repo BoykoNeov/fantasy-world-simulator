@@ -59,8 +59,11 @@ pub enum Event {
     /// A battle in `province` is over: `winner` held the field (or nobody, [`crate::grid::NONE`],
     /// when a peace ended it), `loser` broke first (or nobody), and `killed` soldiers died in it:
     /// `sides` gives each realm that fought and the soldiers it lost, which sum to `killed`. The
-    /// owner of provinces adds to the unrest where it was fought.
-    Battle { province: u32, winner: u32, loser: u32, killed: u64, sides: Vec<(u32, u64)> },
+    /// owner of provinces adds to the unrest where it was fought. It began on day `began`, and
+    /// `brought` gives each realm in `sides`, in the same order, the soldiers it fought with:
+    /// those there when it began and those who joined since. One `at_sea` is between ships, fought
+    /// out on the day a fleet arrives (it began that day), beside any battle on land there.
+    Battle { province: u32, winner: u32, loser: u32, killed: u64, sides: Vec<(u32, u64)>, began: u64, brought: Vec<(u32, u64)>, at_sea: bool },
     /// A month's trade across the border between realms `a` and `b` (`a` the lower number): what
     /// the goods each way were worth, in coins (the price and the carrying; tolls not included).
     /// Sent once a month for each pair of realms that traded; not kept in the event log.

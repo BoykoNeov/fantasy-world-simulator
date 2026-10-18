@@ -169,6 +169,10 @@ pub fn realm_page(n: &Names, r: u32, day: u64, cal: &Calendar, coin: Option<usiz
         let share = if all == 0 { 0.0 } else { foreign as f64 / all as f64 * 100.0 };
         facts.push(format!("culture: {} (its capital's); {share:.0}% of its people are of other cultures", n.culture(c)));
     }
+    let lost = sim::sim::SoldiersLost::of_realm(w, r);
+    if lost.total() > 0 {
+        facts.push(format!("soldiers lost since it began: {}", soldiers_lost(&lost)));
+    }
     let (knowledge, techs) = research(n, r, day, cal, settings);
 
     let ch = &w.characters;
@@ -457,6 +461,11 @@ pub fn realms_in(e: &Event) -> Vec<u32> {
 }
 
 /// 1234567 -> "1,234,567".
+/// "1,200 killed in battle, 300 dead of camp disease and cold, 0 starved, 45 deserted".
+pub fn soldiers_lost(l: &sim::sim::SoldiersLost) -> String {
+    format!("{} killed in battle, {} dead of camp disease and cold, {} starved, {} deserted", group(l.battle), group(l.sickness), group(l.hunger), group(l.deserted))
+}
+
 pub fn group(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
@@ -693,18 +702,21 @@ pub fn event(e: &Event, cal: &Calendar, goods: &Goods, names: &Names) -> String 
         Event::Uprising { realm: r, seat, .. } => format!("the province joined the uprising against {} begun in province {seat}", realm(r)),
         Event::Calmed { realm: r, .. } => format!("the uprising against {} died down", realm(r)),
         Event::Rebellion { realm: r, from, provinces, .. } => format!("{provinces} provinces broke away from {} as {}", realm(from), realm(r)),
-        Event::Battle { winner, loser, killed, sides, .. } => {
+        Event::Battle { winner, loser, killed, sides, began, brought, at_sea, .. } => {
+            let (battle, here) = if *at_sea { ("a battle at sea", "at sea here") } else { ("a battle", "in battle here") };
             let what = match (*winner, *loser) {
-                (NONE, NONE) => format!("a battle here ended with nobody holding the field: {} killed", group(*killed)),
-                (w, NONE) => format!("a battle here ended with {} holding the field: {} killed", realm(&w), group(*killed)),
-                (NONE, l) => format!("a battle here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
-                (w, l) => format!("{} beat {} in battle here: {} killed", realm(&w), realm(&l), group(*killed)),
+                (NONE, NONE) => format!("{battle} here ended with nobody holding the field: {} killed", group(*killed)),
+                (w, NONE) => format!("{battle} here ended with {} holding the field: {} killed", realm(&w), group(*killed)),
+                (NONE, l) => format!("{battle} here ended with {} broken and nobody holding the field: {} killed", realm(&l), group(*killed)),
+                (w, l) => format!("{} beat {} {here}: {} killed", realm(&w), realm(&l), group(*killed)),
             };
-            // Each side's dead, where more than one side fought.
-            match sides.len() {
+            // Each side's dead, and the soldiers it brought, where more than one side fought.
+            let brought = |r: u32| brought.iter().find(|b| b.0 == r).map_or(String::new(), |b| format!(" of {}", group(b.1)));
+            let what = match sides.len() {
                 0 | 1 => what,
-                _ => format!("{what} ({})", sides.iter().map(|(r, dead)| format!("{} lost {}", realm(r), group(*dead))).collect::<Vec<_>>().join(", ")),
-            }
+                _ => format!("{what} ({})", sides.iter().map(|&(r, dead)| format!("{} lost {}{}", realm(&r), group(dead), brought(r))).collect::<Vec<_>>().join(", ")),
+            };
+            if *at_sea { what } else { format!("{what}; it began {}", cal.format(*began)) }
         }
         Event::Trade { a, b, a_to_b, b_to_a } => {
             format!("{} sold {} coins' worth of goods to {} last month, and bought {} coins' worth", realm(a), group(*a_to_b), realm(b), group(*b_to_a))

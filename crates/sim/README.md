@@ -569,6 +569,22 @@ Loads refuse other format versions,
     provinces where a battle or siege may go on, the companies on the move, and those awaiting
     recruits or their goods. Where companies stand is worked out again from the army fields after a
     load. Tested: saving, loading and going back mid-march, mid-battle and mid-siege.
+  - **The battle inspector's record** (Oct 18, save format 31, private state `armies-3`): each
+    battle going on keeps the day it began, and each side its losses and strength on its last day.
+    At the end of each day of battle Warfare writes `World::battles` (`warfare::BattleRecord`, not a
+    field and not saved, like the trade record): for each battle, when it began and each side's
+    soldiers brought and lost (in all and on the last day), how many it may lose before it breaks,
+    its strength and whether it broke. Checkpoints in memory keep it, so going back shows the
+    battles of that day; a world just opened has none until its next day of battle. The `Battle`
+    event also says when the battle began, what each side brought, and whether it was fought at
+    sea. Realms keep loss counters, owned by Warfare: `realm.lost_battle` (killed in battle or lost
+    at sea), `realm.lost_sickness` (camp disease and cold), `realm.lost_hunger` (soldiers starved
+    for want of the food asked for them) and `realm.lost_deserted`, since the realm began; each
+    year's summary has the year's (`YearSummary::soldiers`, `sim::SoldiersLost`). Worlds are as
+    they were (every field but the new counters, and every battle, the same over 30 years on two
+    seeds and both economies). Tested (`tests/battle_record.rs`): the record follows every battle
+    and agrees with its report, comes back going back and after a load, and the counters agree with
+    the flows, the deserters' arrivals and the years' summaries.
   - **Measured** (Oct 16, `examples/war_check.rs`). Story 1 with armies (`examples/unrest_check.rs
     ECONOMICS SEED drought armies`) comes out as before: the drought region rises up on seeds 21 and
     3 (after 1.4 and 2.9 years on Economics v0, 1.4 and 2.0 under markets), not on 7, and the worlds

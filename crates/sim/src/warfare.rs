@@ -512,6 +512,49 @@ struct Group {
     sea: bool,
 }
 
+/// A battle going on.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct Battle {
+    /// The day it began.
+    began: u64,
+    fighters: Vec<Fighter>,
+}
+
+/// The battles going on, for showing them, as Warfare left them at the end of day `day`: not a
+/// field and not saved. Checkpoints in memory keep it, so going back shows the battles of that
+/// time; a world just opened has none until its next day of battle.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BattleRecord {
+    pub day: u64,
+    pub battles: Vec<BattleNow>,
+}
+
+/// A battle going on in `province` since day `began`, and each realm fighting in it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BattleNow {
+    pub province: u32,
+    pub began: u64,
+    pub sides: Vec<SideNow>,
+}
+
+/// A realm's side of a battle going on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SideNow {
+    pub realm: u32,
+    /// Soldiers it has fought with: those there when it began, and those who joined since.
+    pub brought: u64,
+    /// Soldiers it has lost in it, and on its last day of battle.
+    pub killed: u64,
+    pub last_day: u64,
+    /// It breaks once it has lost this many in all (the breaking share of those it brought).
+    pub breaks_at: u64,
+    /// Its strength on its last day of battle: soldiers times their kind's strength and their
+    /// realm's factor from what it knows (before luck and the home edge).
+    pub strength: f64,
+    /// It broke, and its soldiers fall back.
+    pub broke: bool,
+}
+
 /// A realm in a battle going on.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Fighter {
@@ -520,6 +563,9 @@ struct Fighter {
     engaged: u64,
     killed: u64,
     broke: bool,
+    /// Soldiers it lost on the last day of battle, and its strength that day (for showing it).
+    last: u64,
+    strength: f64,
 }
 
 /// What the module keeps between days (saved).
@@ -538,7 +584,7 @@ pub(crate) struct State {
     /// Companies that broke, and the day they may attack again.
     rest: BTreeMap<u32, u64>,
     /// Battles going on, by province.
-    battles: BTreeMap<u32, Vec<Fighter>>,
+    battles: BTreeMap<u32, Battle>,
     /// Provinces where a battle or a siege may go on: every province where one can is here, and
     /// some where none can (they leave when looked at).
     candidates: BTreeSet<u32>,
@@ -879,6 +925,10 @@ static V1: Manifest = Manifest {
         "army.siege_days",
         "army.supply",
         "province.besieger",
+        "realm.lost_battle",
+        "realm.lost_sickness",
+        "realm.lost_hunger",
+        "realm.lost_deserted",
     ],
     requests: &["pop.size", "province.stock"],
     asks: &["food"],
@@ -887,7 +937,7 @@ static V1: Manifest = Manifest {
     requires: &["realm.capital", "pop.size"],
     emits: &[EventKind::Arrived, EventKind::Occupied, EventKind::Battle, EventKind::Refused],
     handles: &[EventKind::Granted, EventKind::Peace, EventKind::WarDeclared, EventKind::Rebellion, EventKind::Occupied, EventKind::March],
-    state_schema: "armies-2",
+    state_schema: "armies-3",
     goods: &[],
 };
 
@@ -1234,6 +1284,9 @@ impl Troops {
         w.armies.size[a as usize] -= people;
         cx.flow(Quantity::People, cause, -(people as i64));
         cx.emit(Event::Arrived { province: w.armies.home[a as usize], people, cause });
+        if cause == Cause::Deserted {
+            count_lost(w, a, people, Lost::Deserted);
+        }
         self.settle(w, a);
     }
 
@@ -1244,6 +1297,7 @@ impl Troops {
         }
         w.armies.size[a as usize] -= killed;
         cx.flow(Quantity::People, Cause::Killed, -(killed as i64));
+        count_lost(w, a, killed, Lost::Battle);
         self.settle(w, a);
     }
 
@@ -1588,10 +1642,12 @@ impl Troops {
             cx.flow(Quantity::People, Cause::Deaths, -(natural as i64));
             w.armies.size[au] -= starved;
             cx.flow(Quantity::People, Cause::Starvation, -(starved as i64));
+            count_lost(w, a, starved, Lost::Hunger);
             let home = w.armies.home[au];
             if deserted > 0 {
                 cx.flow(Quantity::People, Cause::Deserted, -(deserted as i64));
                 cx.emit(Event::Arrived { province: home, people: deserted, cause: Cause::Deserted });
+                count_lost(w, a, deserted, Lost::Deserted);
             }
             self.settle(w, a);
             let at = w.armies.province[au];
@@ -1775,6 +1831,25 @@ impl Troops {
                 *b = NONE;
             }
         }
+        if !self.st.battles.is_empty() || !w.battles.battles.is_empty() {
+            w.battles = Arc::new(self.battle_record(cx.day));
+        }
+    }
+
+    /// The battles going on, for showing them.
+    fn battle_record(&self, day: u64) -> BattleRecord {
+        let share = self.params.break_share;
+        let side = |f: &Fighter| SideNow {
+            realm: f.realm,
+            brought: f.engaged,
+            killed: f.killed,
+            last_day: f.last,
+            breaks_at: (share * f.engaged as f64).ceil() as u64,
+            strength: f.strength,
+            broke: f.broke,
+        };
+        let battles = self.st.battles.iter().map(|(&province, b)| BattleNow { province, began: b.began, sides: b.fighters.iter().map(side).collect() }).collect();
+        BattleRecord { day, battles }
     }
 
     /// Province `p` is no longer besieged unless field companies of the realm besieging it stand
@@ -1867,28 +1942,33 @@ impl Troops {
     /// A day of battle on land in province `p`.
     fn battle_day(&mut self, w: &mut World, cx: &mut Ctx, res: &Resolved, p: u32, sides: BTreeMap<u32, Vec<u32>>) {
         let sides: Vec<(u32, Vec<u32>)> = sides.into_iter().collect();
-        let mut rec = self.st.battles.remove(&p).unwrap_or_default();
+        let mut battle = self.st.battles.remove(&p).unwrap_or(Battle { began: cx.day, fighters: Vec::new() });
+        let rec = &mut battle.fighters;
         let soldiers = |w: &World, c: &[u32]| -> u64 { c.iter().map(|&a| w.armies.size[a as usize]).sum() };
         for (x, c) in &sides {
             let now = soldiers(w, c);
+            let fresh = Fighter { realm: *x, engaged: now, ..Fighter::default() };
             match rec.iter_mut().find(|f| f.realm == *x) {
                 Some(f) => {
                     let left = f.engaged.saturating_sub(f.killed);
                     if f.broke {
                         // Back after breaking: a fight anew.
-                        *f = Fighter { realm: *x, engaged: now, killed: 0, broke: false };
+                        *f = fresh;
                     } else if now > left {
                         f.engaged += now - left;
                     }
                 }
-                None => rec.push(Fighter { realm: *x, engaged: now, killed: 0, broke: false }),
+                None => rec.push(fresh),
             }
         }
+        // Each side's strength as the day began, for showing it (the blows work it out again).
+        let strength: Vec<f64> = sides.iter().map(|(_, c)| self.strength(w, res, c)).collect();
         let lost = self.exchange(w, cx, res, p, &sides, 0);
         let mut broke = Vec::new();
         for (j, (x, c)) in sides.iter().enumerate() {
             let f = rec.iter_mut().find(|f| f.realm == *x).expect("just added");
             f.killed += lost[j];
+            (f.last, f.strength) = (lost[j], strength[j]);
             let left = soldiers(w, c);
             if lost[j] > 0 && (f.killed as f64 >= self.params.break_share * f.engaged as f64 || left == 0) {
                 f.broke = true;
@@ -1899,7 +1979,7 @@ impl Troops {
             let what: Vec<String> = sides.iter().zip(&lost).map(|((x, c), l)| format!("realm {x}: {} soldiers, lost {l}", soldiers(w, c))).collect();
             cx.note(format!("a day of battle: {}", what.join("; ")));
         }
-        self.st.battles.insert(p, rec);
+        self.st.battles.insert(p, battle);
         for (x, c) in broke {
             if cx.traced(p) {
                 cx.note(format!("realm {x}'s side breaks"));
@@ -1950,12 +2030,13 @@ impl Troops {
     /// The battle in province `p` is over: the realm whose land it is gains unrest (the realms
     /// module's), and the realms in it plan again.
     fn end_battle(&mut self, cx: &mut Ctx, p: u32) {
-        let Some(rec) = self.st.battles.remove(&p) else { return };
+        let Some(Battle { began, fighters: rec }) = self.st.battles.remove(&p) else { return };
         let winner = rec.iter().filter(|f| !f.broke).max_by_key(|f| (f.engaged.saturating_sub(f.killed), Reverse(f.realm))).map_or(NONE, |f| f.realm);
         let loser = rec.iter().find(|f| f.broke).map_or(NONE, |f| f.realm);
         let killed = rec.iter().map(|f| f.killed).sum();
         let sides = rec.iter().map(|f| (f.realm, f.killed)).collect();
-        cx.emit(Event::Battle { province: p, winner, loser, killed, sides });
+        let brought = rec.iter().map(|f| (f.realm, f.engaged)).collect();
+        cx.emit(Event::Battle { province: p, winner, loser, killed, sides, began, brought, at_sea: false });
         self.st.dirty.extend(rec.iter().map(|f| f.realm));
         if cx.traced(p) {
             cx.note(format!("the battle is over: realm {winner} holds the field, {killed} killed"));
@@ -2086,7 +2167,8 @@ impl Troops {
             let winner = if fleet_broke { foes[0].0 } else { r };
             let loser = if fleet_broke { r } else { foes[0].0 };
             let fought = sides.iter().zip(&killed).map(|((x, _), &k)| (*x, k)).collect();
-            cx.emit(Event::Battle { province: t, winner, loser, killed: killed.iter().sum(), sides: fought });
+            let brought = sides.iter().zip(&engaged).map(|((x, _), &n)| (*x, n)).collect();
+            cx.emit(Event::Battle { province: t, winner, loser, killed: killed.iter().sum(), sides: fought, began: cx.day, brought, at_sea: true });
             if cx.traced(t) {
                 cx.note(format!("realm {r}'s fleet fought at sea here: {}", if fleet_broke { "it broke" } else { "it won" }));
             }
@@ -2778,6 +2860,36 @@ pub struct GroupView {
     pub launched: bool,
     /// Crossing the sea.
     pub sea: bool,
+}
+
+/// How a realm loses soldiers, for its loss counters (`realm.lost_*`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Lost {
+    /// Killed in battle or lost at sea.
+    Battle,
+    /// Dead of camp disease and cold.
+    Sickness,
+    /// Starved for want of the food asked for them.
+    Hunger,
+    /// Deserted, unfed or unpaid.
+    Deserted,
+}
+
+/// Count `n` of company `a`'s soldiers lost, `how`, against its realm.
+pub(crate) fn count_lost(w: &mut World, a: u32, n: u64, how: Lost) {
+    if n == 0 {
+        return;
+    }
+    let r = w.armies.realm[a as usize] as usize;
+    let counts = match how {
+        Lost::Battle => &mut w.realm_lost_battle,
+        Lost::Sickness => &mut w.realm_lost_sickness,
+        Lost::Hunger => &mut w.realm_lost_hunger,
+        Lost::Deserted => &mut w.realm_lost_deserted,
+    };
+    if let Some(c) = counts.get_mut(r) {
+        *c += n;
+    }
 }
 
 /// The groups in Warfare's saved state (`Module::save_state`'s bytes, as a save file holds them).

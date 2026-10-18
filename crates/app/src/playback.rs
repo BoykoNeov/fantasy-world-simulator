@@ -60,6 +60,10 @@ pub struct DayState {
     pub money_levels: Option<Vec<f64>>,
     /// Last month's trade ([`sim::markets::TradeRecord`]).
     pub trade: Arc<sim::markets::TradeRecord>,
+    /// The battles going on ([`sim::warfare::BattleRecord`]).
+    pub battles: Arc<sim::warfare::BattleRecord>,
+    /// Soldiers lost in each year gone by, for the soldiers-lost table.
+    pub soldiers_by_year: Arc<Vec<(i64, sim::sim::SoldiersLost)>>,
     /// The modules' settings in force ([`Sim::settings`]).
     pub settings: Arc<sim::config::ModuleConfig>,
     pub map: Arc<MapState>,
@@ -73,6 +77,8 @@ impl DayState {
             view: ProvinceView::now(sim),
             money_levels: sim.settings.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
             trade: sim.world.trade.clone(),
+            battles: sim.world.battles.clone(),
+            soldiers_by_year: Arc::new(sim.history.iter().map(|y| (y.year, y.soldiers)).collect()),
             settings: sim.settings.clone(),
             map,
         }
