@@ -155,7 +155,7 @@ fn check(run: &Run) -> (String, String) {
     let above = |sh: &[f64], upto: usize| sh.iter().take(upto).filter(|&&x| x > 0.01).count();
     let first = shares(&s);
     writeln!(out, "at the start: {} faiths above 1% of the people; largest {:.1}%", above(&first, starting), 100.0 * first.iter().cloned().fold(0.0, f64::max)).unwrap();
-    writeln!(out, "year | alive | >1% (of starting) | largest | not main | rows/prov (with people) | main changed | converted | schisms | ms per month-start day").unwrap();
+    writeln!(out, "year | alive | >1% (of starting) | largest | not main | rows/prov (with people) | main changed | ruled by another faith | converted | schisms | ms per month-start day").unwrap();
 
     let (mut converted, mut schisms, mut month_ms, mut month_days) = (0u64, 0usize, 0.0f64, 0usize);
     let mut decades: Vec<Decade> = Vec::new();
@@ -190,6 +190,15 @@ fn check(run: &Run) -> (String, String) {
             let full = w.pops.size.iter().filter(|&&x| x > 0).count() as f64 / settled.len().max(1) as f64;
             let changed = settled.iter().filter(|&&p| start.get(p).is_some_and(|&f| f != NONE && f != main[p])).count() as f64 / settled.len().max(1) as f64;
             let alive = w.religions.died.iter().filter(|&&d| d == u64::MAX).count();
+            // Settled provinces held by a living realm whose faith is not their main faith.
+            let ruled = settled
+                .iter()
+                .filter(|&&p| {
+                    let r = w.owner[p];
+                    r != NONE && w.realms.alive(r) && w.realm_religion.get(r as usize).is_some_and(|&f| f != NONE && f != main[p])
+                })
+                .count() as f64
+                / settled.len().max(1) as f64;
             let d = Decade {
                 year: date.year,
                 largest: sh.iter().cloned().fold(0.0, f64::max),
@@ -202,7 +211,7 @@ fn check(run: &Run) -> (String, String) {
             };
             writeln!(
                 out,
-                "{:>4} | {:>5} | {:>3} ({:>3}) | {:>6.1}% | {:>7.2}% | {:>5.2} ({:>4.2}) | {:>11.1}% | {:>8.2}% | {:>7} | {:.3}",
+                "{:>4} | {:>5} | {:>3} ({:>3}) | {:>6.1}% | {:>7.2}% | {:>5.2} ({:>4.2}) | {:>11.1}% | {:>21.1}% | {:>8.2}% | {:>7} | {:.3}",
                 d.year,
                 alive,
                 d.above,
@@ -212,6 +221,7 @@ fn check(run: &Run) -> (String, String) {
                 rows,
                 full,
                 100.0 * changed,
+                100.0 * ruled,
                 100.0 * converted as f64 / total.max(1) as f64,
                 schisms,
                 month_ms / month_days.max(1) as f64,
