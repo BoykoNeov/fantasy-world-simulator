@@ -660,3 +660,27 @@ fn learning_techs_make_unrest_rise_more_slowly() {
     let (a, b) = (with.world.unrest[p as usize], without.world.unrest[p as usize]);
     assert!(b > 0 && (a as f64) < b as f64 * 0.9 && (a as f64) > b as f64 / 1.2 * 0.9, "{a} against {b}");
 }
+
+#[test]
+fn changing_the_effects_while_the_world_runs_reaches_every_module_that_uses_them() {
+    // The effects are Research's settings, used by the economy, Realms and Warfare: a live change
+    // makes them all again with the new sizes. Scaled to 0 from today, harvests are as without
+    // knowledge, against the same world kept at 1.
+    for economics in ["food", "markets"] {
+        let mut with = taught(economics, Some(1.0), &alive);
+        let mut cut = taught(economics, Some(1.0), &alive);
+        assert_eq!(with.fingerprint(), cut.fingerprint());
+        cut.edit(Edit::Settings { changes: vec![SettingChange { key: "modules.research.effects.scale".into(), value: 0.0 }] }).unwrap();
+        let before = (with.year_so_far().ledger.produced, cut.year_so_far().ledger.produced);
+        for _ in 0..3 {
+            with.run_days(1);
+            cut.run_days(1);
+            to_month_start(&mut with);
+            to_month_start(&mut cut);
+        }
+        let grown = |sim: &Sim, b: u64| (sim.year_so_far().ledger.produced - b) as f64;
+        let ratio = grown(&with, before.0) / grown(&cut, before.1);
+        assert!(ratio > 1.05, "{economics}: harvests {ratio}");
+        assert_eq!(cut.problems, Problems::default());
+    }
+}

@@ -812,8 +812,9 @@ Loads refuse other format versions,
   10% more people than without (6–10% under Economics v0, 11–13% under markets), and the realms'
   taxes are about the same (+0.6%), so scholars' wages (5% of taxes) are paid out of treasuries
   that are no richer. Speed (`examples/day_cost.rs`, large world, year 40, one thread): about the
-  same with Research as without (v0 2.08 against 1.82 ms a day with 26 against 23 wars going on,
-  one step of the processor clock apart; markets 3.65 both). Save format 30.
+  same with Research as without, within one step of the processor clock (v0 2.08 against 1.82 ms
+  a day, with 26 against 23 wars going on; markets 3.65 both); the worlds differ by then, so the
+  difference can't be told apart from their different wars. Save format 30.
 - **Culture** (step 9; Culture "assimilation", `culture.rs`, tests in `culture_tests.rs` and
   `tests/culture.rs`). 30 starting cultures spread by region across realm borders, with mixed
   borderlands. Each month the culture that pulls hardest on a province (its share of the people
