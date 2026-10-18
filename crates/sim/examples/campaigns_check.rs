@@ -12,7 +12,14 @@
 //! over the province that grows the most food after three years, then five years watched, with and
 //! without the drought, on seeds 21, 3 and 7 and both economies.
 //!
+//! `parts` runs today's default world (sieges in depth, Research and Culture on) under markets with
+//! the parts named on too, and prints one line of totals over the years: wars, provinces handed
+//! over, soldiers killed in battle, lost to camp disease and cold and deserted per 1,000
+//! soldier-years spent away from their realm's land, wages against taxes, and the processor time a
+//! day. `KEY=VALUE` changes a setting.
+//!
 //! cargo run --release -p sim --example campaigns_check -- long [years] [seed] [food|markets|both]
+//! cargo run --release -p sim --example campaigns_check -- parts [years] [seed] [sieges|supply|seasons|pay|massing|all ...] [KEY=VALUE ...]
 //! cargo run --release -p sim --example campaigns_check -- story1
 
 use sim::config::Config;
@@ -157,6 +164,110 @@ fn long(economics: &str, seed: u64, years: i64, campaigns: bool) {
     println!("  {:.3} ms of processor time a day; problems {:?}", (cpu_ms() - t) / days, sim.problems);
 }
 
+/// Today's default world (Warfare "campaigns": troops with sieges in depth; Research and Culture
+/// on) under markets, with the named parts of logistics on too ("supply", "seasons", "pay",
+/// "massing"; "all" for the four), and settings changed (`set`, keys as `simrun --settings` lists
+/// them).
+fn with_parts(seed: u64, parts: &[&str], set: &[(String, f64)]) -> Config {
+    let mut c = Config::new(WorldParams { n: 48, provinces: 200, seed, land_fraction: 0.36, radius_km: 6371.0 });
+    c.modules.set_choice(Slot::Economics, "markets").unwrap();
+    let t = c.modules.warfare.as_mut().expect("armies are on by default");
+    assert!(t.sieges.is_some(), "sieges in depth are on by default");
+    let on = |p: &str| parts.iter().any(|&x| x == p || x == "all");
+    if on("supply") {
+        t.supply = Some(Default::default());
+    }
+    if on("seasons") {
+        t.seasons = Some(Default::default());
+    }
+    if on("pay") {
+        t.pay = Some(Default::default());
+    }
+    if on("massing") {
+        t.massing = Some(Default::default());
+    }
+    for (k, v) in set {
+        sim::settings::set(&mut c, k, *v).unwrap_or_else(|e| panic!("{k}: {e}"));
+    }
+    c
+}
+
+/// What each part costs and does over `years`, against today's default (sieges only): one line of
+/// totals. Losses are counted against the soldier-years spent away from their realm's own land
+/// (standing or marching in a province their realm doesn't own), where camp disease, cold and
+/// foraging bite; wages against the taxes realms took in.
+fn parts(seed: u64, years: i64, parts: &[&str], set: &[(String, f64)]) {
+    let mut sim = Sim::new(&with_parts(seed, parts, set)).unwrap();
+    let start = sim.calendar.date(0).year;
+    let n = sim.world.provinces.count;
+    let stock = known("province.stock");
+    let (mut wars, mut handed, mut killed, mut starved, mut attrition, mut deserted, mut wages, mut taxes, mut foraged) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut away_days, mut soldier_days, mut besieged_days) = (0u64, 0u64, 0u64);
+    let mut last_attrition = 0i64;
+    let mut year_seen = start;
+    let end = sim.calendar.year_start(start + years);
+    let t = cpu_ms();
+    while sim.day < end {
+        let owners = sim.world.owner.clone();
+        sim.step_day();
+        let w = &sim.world;
+        for e in sim.delivered_today() {
+            match &e.event {
+                Event::WarDeclared { .. } => wars += 1,
+                Event::Battle { killed: k, .. } => killed += k,
+                Event::Famine { starved: s, .. } => starved += s,
+                Event::Arrived { people, cause: Cause::Deserted, .. } => deserted += people,
+                _ => {}
+            }
+        }
+        if sim.delivered_today().iter().any(|e| matches!(e.event, Event::Peace { .. })) {
+            handed += (0..n).filter(|&p| owners[p] != NONE && w.owner[p] != NONE && w.owner[p] != owners[p]).count() as u64;
+        }
+        for (r, granted) in &sim.applied_today {
+            match r.cause {
+                Cause::Wages => wages += granted,
+                // Taxed from provinces into treasuries, not spent back.
+                Cause::Taxes if r.field == stock => taxes += granted,
+                Cause::Foraging if r.field == stock => foraged += granted,
+                _ => {}
+            }
+        }
+        let arm = &w.armies;
+        for a in 0..arm.count() {
+            soldier_days += arm.size[a];
+            if w.owner.get(arm.province[a] as usize).copied() != Some(arm.realm[a]) {
+                away_days += arm.size[a];
+            }
+        }
+        besieged_days += w.besieger.iter().filter(|&&b| b != NONE).count() as u64;
+        // The year's flows start again each year.
+        let year = sim.calendar.date(sim.day).year;
+        if year != year_seen {
+            (last_attrition, year_seen) = (0, year);
+        }
+        let now = sim.year_flows.get(Quantity::People, Cause::Attrition);
+        if now < last_attrition {
+            attrition += (last_attrition - now) as u64;
+        }
+        last_attrition = now;
+    }
+    let dpy = sim.calendar.days_per_year() as f64;
+    let (away_years, soldier_years) = (away_days as f64 / dpy, soldier_days as f64 / dpy);
+    let per_1000 = |x: u64| 1000.0 * x as f64 / away_years.max(1.0);
+    println!(
+        "{seed:>3} {:<8} {:?} wars {wars:>4} handed {handed:>4} besieged_days {besieged_days:>6} | soldier-years {soldier_years:>9.0} away {:>4.1}% | per 1,000 soldier-years away: killed in battle {:>6.1}, disease+cold {:>6.1}, deserted {:>6.1} | wages {:>5.1}% of taxes | starved {starved:>9} foraged {foraged:>12} | {:.3} ms a day",
+        parts.join("+"),
+        set,
+        100.0 * away_years / soldier_years.max(1.0),
+        per_1000(killed),
+        per_1000(attrition),
+        per_1000(deserted),
+        100.0 * wages as f64 / taxes.max(1) as f64,
+        (cpu_ms() - t) / sim.day as f64,
+    );
+    assert_eq!(sim.problems, Default::default());
+}
+
 const DROUGHT_YEARS: u64 = 3;
 
 /// Story 1 in full, as `tests/stories.rs` checks it, with the four parts on: whether, with the
@@ -201,6 +312,13 @@ fn story1(economics: &str, seed: u64) -> (bool, bool) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(|s| s.as_str()) {
+        Some("parts") => {
+            let years: i64 = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(150);
+            let seed: u64 = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(21);
+            let named: Vec<&str> = args.iter().skip(3).filter(|a| !a.contains('=')).map(|s| s.as_str()).collect();
+            let set: Vec<(String, f64)> = args.iter().skip(3).filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
+            parts(seed, years, if named.is_empty() { &["sieges"] } else { &named }, &set);
+        }
         Some("story1") => {
             for economics in ["food", "markets"] {
                 let runs: Vec<(bool, bool)> = [21, 3, 7].into_iter().map(|seed| story1(economics, seed)).collect();
