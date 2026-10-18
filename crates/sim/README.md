@@ -796,14 +796,22 @@ Loads refuse other format versions,
   mild: disease and cold killed about a tenth as many soldiers as battle, where in pre-modern wars
   disease usually killed more; camp disease is now 8% a month (was 1%) and the deepest winter's
   deaths 10% (was 3%), so disease and cold kill about three-quarters as many as battle, and rich
-  cities still fall (7 of 18). Pay costs realms about 7% of their taxes over 150 years, peace and
+  cities still fall (12 of 18 worlds pass, 7 by a normal war). None of the first three worlds (21,
+  7, 1) passes then, the bar every check used before; with one run a world that bar is too noisy,
+  and story 2 is judged on the 18 worlds since (the user's choice; the bar, the old 1 in 3: at
+  least 6; `examples/story2.rs` runs the 18 by default and counts normal-war and rebellion-only
+  passes apart). A side effect: soldiers in their own province while an enemy holds it count as
+  away, so a garrison left there loses 8% a month. Pay costs realms about 7% of their taxes over 150 years, peace and
   war together; few soldiers go unpaid. **"campaigns" is now all five parts** for new worlds (the
   user's choice); files that don't name a part keep it off, and files that switch supply or winter
-  on without naming those two numbers keep 1% and 3%. Story 1 passes. Speed (`examples/day_cost.rs`,
-  large world, seed 7, year 40, one thread, processor time; `SIEGES_ONLY` for the old default):
-  Economics v0 2.08 ms a day (22 wars going on) against 2.60 (26 wars), no slower; markets 5.60
-  against 4.43 (18 wars against 20, 120 days), about a quarter slower, not yet looked into. On the
-  small world, stronger disease alone made a day about 40% slower than the shipped 1%. The tester's
+  on without naming those two numbers keep 1% and 3%. Story 1 passes (with the strong disease too).
+  Speed (`examples/day_cost.rs`, large world, seed 7, year 40, one thread, processor time;
+  `SIEGES_ONLY` for the old default), same-session comparisons on a busier machine than earlier
+  measures (sieges alone under markets 4.43 here against 3.65 before): Economics v0 2.08 ms a day
+  (22 wars going on) against 2.60 (26 wars), no slower; markets 5.60 against 4.43 (18 wars against
+  20, 120 days), about a quarter slower. On the small world the four parts at the shipped 1% and 3%
+  cost 5–8% and the strong disease about 40% more, so the strong disease is the likely cause; the
+  user kept it, the slowdown to be looked into. The tester's
   check that the default world is clean now allows known quirks: in its world (seed 11) a province
   held by an enemy for years keeps its unrest at the line, since occupied provinces don't rise up
   (added to the quirk's note).

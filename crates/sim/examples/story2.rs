@@ -18,9 +18,15 @@
 //! cargo run --release -p sim --example story2 -- [years] [seed ...] [KEY=VALUE ...] [campaigns]
 //!
 //! `KEY=VALUE` changes a setting (keys as `simrun --settings` lists them), to try other worlds.
-//! `campaigns` switches on Warfare "campaigns" (sieges in depth, the default for new worlds);
-//! `supply`, `seasons`, `pay`, `sieges` and `massing` switch on one part each. With none, armies
-//! are plain "troops". `culture` and `research` switch those modules on (both off without them).
+//! `campaigns` switches on Warfare "campaigns" (every part of logistics, the default for new worlds
+//! since Oct 18; sieges in depth alone before); `supply`, `seasons`, `pay`, `sieges` and `massing`
+//! switch on one part each. With none, armies are plain "troops". `culture` and `research` switch
+//! those modules on (both off without them).
+//!
+//! Without seeds it runs the 18 worlds story 2 is judged on since Oct 18 (21, 7, 1–6, 8–17; the
+//! bar, the old 1 in 3: at least 6). Each pass says whether a passing city was taken in a normal
+//! war or only at a rebellion's peace (the peace between its old owner and its new one), and the
+//! last line counts both.
 //!
 //! The probe (logistics piece 1, reads only, so the world is the same): for every rich river city,
 //! month by month while a realm is at war with its owner, what stands in the way of that realm
@@ -62,7 +68,7 @@ fn config(seed: u64, set: &[(String, f64)], parts: &[String]) -> Config {
     c.modules.diplomacy = Some(WarParams { treaties: Some(TreatyParams::default()), ..WarParams::default() });
     c.modules.warfare = Some(Default::default());
     let t = c.modules.warfare.as_mut().unwrap();
-    let on = |p: &str| parts.iter().any(|x| x == p || (x == "campaigns" && p == "sieges"));
+    let on = |p: &str| parts.iter().any(|x| x == p || x == "campaigns");
     if on("supply") {
         t.supply = Some(Default::default());
     }
@@ -127,6 +133,8 @@ struct Track {
     targeted: u32,
     /// Years it changed hands at a peace.
     handed: Vec<i64>,
+    /// For each of those, whether the peace that handed it over ended a rebellion's war.
+    by_rebellion: Vec<bool>,
     /// The first year after a hand-over that its coins were under half the peak, and its trade
     /// under half the trade at the peak.
     poorer: Option<i64>,
@@ -470,7 +478,9 @@ fn groups_report(what: &str, lives: &BTreeMap<u32, Life>, end: u64, targets: Opt
     );
 }
 
-fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
+/// Whether story 2 passes on `seed`, and whether a passing city was taken in a normal war (not at a
+/// rebellion's peace).
+fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> (bool, bool) {
     let mut sim = Sim::new(&config(seed, set, parts)).unwrap();
     let kit = Kit::new(sim.settings.warfare.as_ref().expect("armies are on"));
     let start = sim.calendar.date(0).year;
@@ -565,7 +575,13 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
                         }
                         // Taken in the war whose peace hands it over: the new owner occupied it.
                         if t[p].longest >= 10 && occupiers[p] == w.owner[p] {
+                            // The peace between the old owner and the new one: a rebellion's or not.
+                            let (a, b) = (owners[p], w.owner[p]);
+                            let rebellion = sim.delivered_today().iter().any(|e| {
+                                matches!(e.event, Event::Peace { attacker, defender, rebellion: true, .. } if (attacker, defender) == (a, b) || (attacker, defender) == (b, a))
+                            });
                             t[p].handed.push(year);
+                            t[p].by_rebellion.push(rebellion);
                         }
                         if t[p].longest >= 10 && is_mouth[p] {
                             let peaces: Vec<String> = sim.delivered_today().iter().filter_map(|e| match e.event {
@@ -607,7 +623,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
         year_trade.iter_mut().for_each(|x| *x = 0.0);
     }
     println!("seed {seed}: {} river-mouth provinces on the coast", mouth.len());
-    let mut passed = false;
+    let (mut passed, mut normal) = (false, false);
     let mut totals: BTreeMap<&str, u64> = BTreeMap::new();
     let mut target_totals: BTreeMap<&str, u64> = BTreeMap::new();
     for &(p, flow) in &mouth {
@@ -617,14 +633,16 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
         }
         let pass = !k.handed.is_empty() && k.poorer.is_some() && k.less_trade.is_some();
         passed |= pass;
+        normal |= pass && k.by_rebellion.iter().any(|&r| !r);
         println!(
-            "  province {p} (river {flow:.1}× a big river's water): {} years in a row among the richest 2%, peak {} coins, a capital {} years, a war's target {} times, occupied {} days, changed hands at a peace in years {:?}, coins under half the peak from year {:?}, trade under half from year {:?}{}",
+            "  province {p} (river {flow:.1}× a big river's water): {} years in a row among the richest 2%, peak {} coins, a capital {} years, a war's target {} times, occupied {} days, changed hands at a peace in years {:?} (at a rebellion's peace: {:?}), coins under half the peak from year {:?}, trade under half from year {:?}{}",
             k.longest,
             k.peak,
             k.capital_years,
             k.targeted,
             k.occupied_days,
             k.handed,
+            k.by_rebellion,
             k.poorer,
             k.less_trade,
             if pass { ": PASSES" } else { "" }
@@ -660,20 +678,34 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> bool {
     groups_report("aimed at rich river cities", &lives, sim.day, Some(&rich_cities));
     groups_report("aimed anywhere", &lives, sim.day, None);
     let cities = mouth.iter().filter(|m| t[m.0].longest >= 10).count();
-    println!("  {cities} rich river cities; story 2 {}", if passed { "passes" } else { "does not pass" });
+    println!("  {cities} rich river cities; story 2 {}", match (passed, normal) {
+        (false, _) => "does not pass",
+        (true, true) => "passes (a city taken in a normal war)",
+        (true, false) => "passes (only at a rebellion's peace)",
+    });
     println!("  for comparison: {handed_all} provinces changed hands at a peace, {rich_handed} of them among the richest 2% at the time");
     let p = sim.problems;
     println!("  problems: {} contract violations, {} conservation breaks", p.contract_violations, p.conservation_breaks);
-    passed
+    (passed, normal)
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let years: i64 = args.first().and_then(|a| a.parse().ok()).unwrap_or(150);
     let seeds: Vec<u64> = args.iter().skip(1).filter_map(|a| a.parse().ok()).collect();
-    let seeds = if seeds.is_empty() { vec![21, 7, 1] } else { seeds };
+    // The 18 worlds story 2 is judged on since Oct 18 (the user's choice: one run on each of the
+    // first three was too noisy to judge by).
+    let seeds = if seeds.is_empty() { vec![21, 7, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] } else { seeds };
     let set: Vec<(String, f64)> = args.iter().filter_map(|a| a.split_once('=')).map(|(k, v)| (k.to_string(), v.parse().expect("a number"))).collect();
     let parts: Vec<String> = args.iter().filter(|a| ["campaigns", "supply", "seasons", "pay", "sieges", "massing", "culture", "research"].contains(&a.as_str())).cloned().collect();
-    let passed = seeds.iter().filter(|&&s| run(s, years, &set, &parts)).count();
-    println!("story 2 passes on {passed} of {} seeds", seeds.len());
+    let runs: Vec<(u64, (bool, bool))> = seeds.iter().map(|&s| (s, run(s, years, &set, &parts))).collect();
+    let normal: Vec<u64> = runs.iter().filter(|r| r.1.1).map(|r| r.0).collect();
+    let rebels: Vec<u64> = runs.iter().filter(|r| r.1.0 && !r.1.1).map(|r| r.0).collect();
+    println!(
+        "story 2 passes on {} of {} seeds: a city taken in a normal war on {} {normal:?}, only at a rebellion's peace on {} {rebels:?}",
+        normal.len() + rebels.len(),
+        seeds.len(),
+        normal.len(),
+        rebels.len()
+    );
 }
