@@ -112,7 +112,7 @@ fn main() {
         let per_day = |d: std::time::Duration| d.as_secs_f64() * 1000.0 / t.days.max(1) as f64;
         println!("Where the cheapest round's time went, ms a day by the clock (own work + checks):");
         let mut rows = t.by_module();
-        rows.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1 + r.2));
         for (slot, w, c) in rows {
             println!("  {slot:?}: {:.3} + {:.3}", per_day(w), per_day(c));
         }
