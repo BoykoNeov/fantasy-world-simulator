@@ -10,10 +10,10 @@
 //! `NO_RESEARCH` (set in the environment) runs without Research, which is on by default since
 //! techs have effects.
 //!
-//! `CAMPAIGNS` (set in the environment) switches on the four parts of logistics (supply, winter,
-//! pay and sieges). Warfare's work is counted and printed for the measured days, a round's worth:
-//! route searches, generals' plans and the like; `TIMING` adds how long each part of its day took
-//! (a little slower).
+//! Every part of logistics is on by default since Oct 18; `SIEGES_ONLY` (set in the environment)
+//! keeps only sieges in depth, the default before. Warfare's work is counted and printed for the
+//! measured days, a round's worth: route searches, generals' plans and the like; `TIMING` adds how
+//! long each part of its day took (a little slower).
 //!
 //! cargo run --release -p sim --example day_cost -- [seed] [warm] [days] [rounds] [food|markets]
 
@@ -62,10 +62,10 @@ fn main() {
             c.modules.set_choice(slot, "off").unwrap();
         }
     }
-    if std::env::var("CAMPAIGNS").is_ok()
+    if std::env::var("SIEGES_ONLY").is_ok()
         && let Some(t) = c.modules.warfare.as_mut()
     {
-        (t.supply, t.seasons, t.pay, t.sieges) = (Some(Default::default()), Some(Default::default()), Some(Default::default()), Some(Default::default()));
+        (t.supply, t.seasons, t.pay, t.massing) = (None, None, None, None);
     }
     sim::warfare::work::time(std::env::var("TIMING").is_ok());
     let mut sim = Sim::new(&c).unwrap();

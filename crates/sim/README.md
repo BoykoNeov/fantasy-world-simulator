@@ -85,7 +85,7 @@ Loads refuse other format versions,
   | Realms | `basic`: makes the starting realms and claims unowned settled land, taxes, unrest and rebellion (see below), the default since step 7's checks; or off | monthly |
   | Characters | `rulers`: every realm's ruler and heir, who are born, age and die (see below); needs realms; the default since step 7's checks; or off | monthly |
   | Diplomacy | `wars`: wars, peace and truces between realms, by pokes; a rebellion's war ends when the old realm takes the rebels' capital (see below); needs realms; `treaties`: the same, and realms choose war and make peace themselves, with opinions of each other (see below); needs realms and armies; the default since step 7's checks; or off | monthly, and on pokes |
-  | Warfare | `campaigns` (the default since the first wave's checks): `troops` with sieges in depth (see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Supply lines, winter, pay and armies acting together are parts switched on alone | daily (raising and eating monthly) |
+  | Warfare | `campaigns` (the default since the first wave's checks): `troops` with every part of logistics on: sieges in depth, supply lines, winter, pay and armies acting together (sieges alone until Oct 18; see "Logistics and support" below); `troops`: provinces raise soldiers, who eat where they stand and desert when hungry, march under their realm's general, fight battles and take provinces by siege (see below); needs realms; or off. Each part can be switched off alone | daily (raising and eating monthly) |
   | Research | `tree`: realms study and learn techs (see below); needs realms; on by default (techs have effects: its "effects" part); or off | monthly |
   | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
 
@@ -786,8 +786,27 @@ Loads refuse other format versions,
   defence, leaving stragglers free; a group still gathering after 60 days is broken up, and none
   takes more than 60% of its realm's free soldiers. Story 2 (a rich river city taken in war, then
   declining) over 9 seeds, counting cities taken in a normal war: sieges alone 6, sieges with
-  armies acting together 3, the first four parts 3, all five 2, plain troops 0; so "campaigns" is
-  sieges alone, and the others wait to be tuned.
+  armies acting together 3, the first four parts 3, all five 2, plain troops 0; so "campaigns" was
+  sieges alone until the four were measured again (below).
+- **The four other parts measured again and switched on** (Oct 18; `examples/campaigns_check.rs
+  parts`, `examples/story2.rs`). Against today's world (Research and Culture on, sieges in depth),
+  none of supply lines, winter, pay or armies acting together keeps rich cities from falling: story
+  2 over 18 worlds (seeds 21, 7, 1–6, 8–17), counting worlds whose passing city was taken in a
+  normal war (its own peace, not a rebellion's): sieges alone 4, all five parts 8. Losses were
+  mild: disease and cold killed about a tenth as many soldiers as battle, where in pre-modern wars
+  disease usually killed more; camp disease is now 8% a month (was 1%) and the deepest winter's
+  deaths 10% (was 3%), so disease and cold kill about three-quarters as many as battle, and rich
+  cities still fall (7 of 18). Pay costs realms about 7% of their taxes over 150 years, peace and
+  war together; few soldiers go unpaid. **"campaigns" is now all five parts** for new worlds (the
+  user's choice); files that don't name a part keep it off, and files that switch supply or winter
+  on without naming those two numbers keep 1% and 3%. Story 1 passes. Speed (`examples/day_cost.rs`,
+  large world, seed 7, year 40, one thread, processor time; `SIEGES_ONLY` for the old default):
+  Economics v0 2.08 ms a day (22 wars going on) against 2.60 (26 wars), no slower; markets 5.60
+  against 4.43 (18 wars against 20, 120 days), about a quarter slower, not yet looked into. On the
+  small world, stronger disease alone made a day about 40% slower than the shipped 1%. The tester's
+  check that the default world is clean now allows known quirks: in its world (seed 11) a province
+  held by an enemy for years keeps its unrest at the line, since occupied provinces don't rise up
+  (added to the quirk's note).
 - **Research** (step 9; Research "tree", `research.rs`, `data/research.toml`, tests in
   `research_tests.rs` and `tests/research.rs`). 24 techs in six fields (farming, crafts, trade, war,
   sea, learning), 5–25 years of study each, 313 in all. Each month every realm banks study (0.6

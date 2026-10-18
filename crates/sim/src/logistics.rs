@@ -62,13 +62,21 @@ pub struct SupplyParams {
     pub carry_loss: f64,
     /// Foragers take this many times what they eat from the land they stand in.
     pub forage_take: f64,
-    /// Share of a company's soldiers outside its own land who die of camp disease a month.
+    /// Share of a company's soldiers outside its own land who die of camp disease a month. 8% for
+    /// new worlds (Oct 18, the user's choice: disease and cold then kill about three-quarters as
+    /// many soldiers as battle, nearer history than 1%, and rich cities still fall); files that
+    /// switch supply on without naming it keep the 1% it was.
+    #[serde(default = "old_camp_disease")]
     pub camp_disease: f64,
+}
+
+fn old_camp_disease() -> f64 {
+    0.01
 }
 
 impl Default for SupplyParams {
     fn default() -> Self {
-        SupplyParams { reach_ways: 2, carry_loss: 0.02, forage_take: 2.0, camp_disease: 0.01 }
+        SupplyParams { reach_ways: 2, carry_loss: 0.02, forage_take: 2.0, camp_disease: 0.08 }
     }
 }
 
@@ -85,7 +93,10 @@ pub struct SeasonParams {
     pub deepest: f64,
     /// In the deepest winter, marches take this many times as long.
     pub road_slow: f64,
-    /// In the deepest winter, the share of soldiers outside their own land who die a month.
+    /// In the deepest winter, the share of soldiers outside their own land who die a month. 10%
+    /// for new worlds (Oct 18, with camp disease); files that switch winter on without naming it
+    /// keep the 3% it was.
+    #[serde(default = "old_winter_deaths")]
     pub deaths: f64,
     /// In the deepest winter, foragers find this share less.
     pub forage_loss: f64,
@@ -93,9 +104,13 @@ pub struct SeasonParams {
     pub no_attack: f64,
 }
 
+fn old_winter_deaths() -> f64 {
+    0.03
+}
+
 impl Default for SeasonParams {
     fn default() -> Self {
-        SeasonParams { start_lat: 25.0, full_span: 30.0, deepest: 0.05, road_slow: 2.0, deaths: 0.03, forage_loss: 0.75, no_attack: 0.6 }
+        SeasonParams { start_lat: 25.0, full_span: 30.0, deepest: 0.05, road_slow: 2.0, deaths: 0.10, forage_loss: 0.75, no_attack: 0.6 }
     }
 }
 

@@ -336,5 +336,9 @@ results are in `bench/results/`.
   (14 wars going on), realm colours at 0.45. Armies and battles off: pan 10.2 ms, zoom 12.6 ms
   (median); on: pan 9.7 ms, zoom 12.3 ms. No measurable cost. Raw results:
   `bench/results/step7_armies_*.json`.
+- **After the first wave's window (Oct 18): not yet measured.** The culture, techs and winter
+  layers add three table reads per pixel whenever a province layer is on. The bench run that day
+  was disturbed by other work on the machine (25–130 ms a frame even for the default layers, about
+  9 ms before), so it waits for a quiet machine.
 - **The RTX 5090 numbers are not informative.** That day it showed a flat 15.6 ms (about 64 frames a
   second) for this app *and* for the renderer trial's program, so something capped it.

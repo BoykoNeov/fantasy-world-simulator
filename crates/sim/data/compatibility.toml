@@ -22,21 +22,15 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 300
+day = 1362
 what = "province.unrest of 201 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 2514
-what = "province.unrest of 254 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 4458
-what = "province.unrest of 195 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 3820
+what = "province.unrest of 123 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -46,25 +40,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 106 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 6064
-what = "province.unrest of 210 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6458
 what = "province.unrest of 194 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=assimilation"
@@ -83,7 +71,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 2484
 what = "province.unrest of 254 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -93,19 +81,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 106 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6094
 what = "province.unrest of 210 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=campaigns research=tree culture=assimilation"
@@ -122,9 +110,9 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4578
+day = 4548
 what = "province.unrest of 154 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -134,25 +122,25 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 106 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 6092
+day = 6094
 what = "province.unrest of 210 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6458
 what = "province.unrest of 194 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=food population=basic weather=off realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation"
@@ -169,21 +157,15 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 300
+day = 1362
 what = "province.unrest of 201 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 2514
-what = "province.unrest of 254 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 4458
-what = "province.unrest of 195 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 3820
+what = "province.unrest of 123 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -193,13 +175,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 106 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 6064
-what = "province.unrest of 210 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 6458
+what = "province.unrest of 194 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=food population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off culture=off"
@@ -232,13 +214,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 758
 what = "province.unrest of 82 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2908
 what = "province.unrest of 143 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -246,21 +228,21 @@ verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 484
-what = "province.unrest of 103 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 514
+what = "province.unrest of 1 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 2484
-what = "province.unrest of 254 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 2638
+what = "province.unrest of 201 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 3790
-what = "province.unrest of 159 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 5974
+what = "province.unrest of 83 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -270,19 +252,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 818
 what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 4064
 what = "province.unrest of 119 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 5790
-what = "province.unrest of 51 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=latitude economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=assimilation"
@@ -296,7 +272,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 758
 what = "province.unrest of 82 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -306,19 +282,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 484
 what = "province.unrest of 103 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2484
 what = "province.unrest of 254 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3820
 what = "province.unrest of 167 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -328,19 +304,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 818
 what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 4064
 what = "province.unrest of 119 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5884
 what = "province.unrest of 51 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation"
@@ -348,18 +324,18 @@ verdict = "yellow"
 
 [[mix.run]]
 seed = 1
-verdict = "green"
-finding = []
-
-[[mix.run]]
-seed = 2
 verdict = "yellow"
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4548
-what = "province.unrest of 59 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 4942
+what = "province.unrest of 105 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
+
+[[mix.run]]
+seed = 2
+verdict = "green"
+finding = []
 
 [[mix.run]]
 seed = 3
@@ -369,13 +345,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 41 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6612
 what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=troops research=tree culture=assimilation"
@@ -399,19 +375,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 41 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6064
 what = "province.unrest of 129 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6582
 what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=food population=basic weather=off realms=basic characters=rulers diplomacy=off warfare=campaigns research=tree culture=off"
@@ -435,13 +411,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 41 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6612
 what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=markets population=basic weather=droughts realms=basic characters=rulers diplomacy=wars warfare=troops research=off culture=off"
@@ -455,7 +431,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 4762
 what = "province.unrest of 72 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -465,19 +441,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 1058
 what = "province.unrest of 140 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2972
 what = "province.unrest of 3 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3730
 what = "province.unrest of 21 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -487,25 +463,25 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 878
 what = "province.unrest of 15 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2728
 what = "province.unrest of 111 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 47 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6582
 what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=markets population=basic weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=assimilation"
@@ -557,7 +533,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 4608
 what = "province.unrest of 62 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -567,7 +543,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 3700
 what = "province.unrest of 21 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -577,19 +553,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 908
 what = "province.unrest of 41 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2698
 what = "province.unrest of 111 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6582
 what = "province.unrest of 33 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=noise climate=null economics=off population=off weather=droughts realms=off characters=off diplomacy=off warfare=off research=off culture=off"
@@ -622,13 +598,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 300
 what = "province.unrest of 76 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 1970
 what = "province.unrest of 24 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -638,7 +614,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 12 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -648,13 +624,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 968
 what = "province.unrest of 68 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 5760
 what = "province.unrest of 61 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 6582
+what = "province.unrest of 184 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=null climate=latitude economics=food population=basic weather=off realms=basic characters=off diplomacy=treaties warfare=troops research=tree culture=off"
@@ -668,7 +650,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 300
 what = "province.unrest of 76 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -692,7 +674,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 300
 what = "province.unrest of 76 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -702,7 +684,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 3790
 what = "province.unrest of 82 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -712,7 +694,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 5790
 what = "province.unrest of 141 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=null climate=latitude economics=off population=off weather=off realms=off characters=off diplomacy=off warfare=off research=off culture=off"
@@ -745,19 +727,13 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 394
 what = "province.unrest of 91 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 878
-what = "province.unrest of 11 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 2698
 what = "province.unrest of 60 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -766,26 +742,38 @@ verdict = "yellow"
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 908
-what = "province.unrest of 120 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+what = "province.unrest of 91 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 1850
 what = "province.unrest of 139 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 2788
+what = "province.unrest of 45 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3092
-what = "province.unrest of 194 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+what = "province.unrest of 1 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
-day = 4154
-what = "province.unrest of 45 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+day = 3790
+what = "province.unrest of 43 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
+
+[[mix.run.finding]]
+problem = "stuck_at_top"
+day = 4398
+what = "province.unrest of 15 held at its bound 1000 for 180 days"
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -795,13 +783,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 848
 what = "province.unrest of 38 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
-
-[[mix.run.finding]]
-problem = "stuck_at_top"
-day = 1880
-what = "province.unrest of 156 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=null climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=off warfare=troops research=off culture=assimilation"
@@ -815,7 +797,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 2698
 what = "province.unrest of 60 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -825,19 +807,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 1850
 what = "province.unrest of 139 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3092
 what = "province.unrest of 194 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 4398
 what = "province.unrest of 15 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -847,19 +829,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 878
 what = "province.unrest of 38 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 1880
 what = "province.unrest of 156 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6582
 what = "province.unrest of 92 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix]]
 versions = "terrain=null climate=null economics=markets population=basic weather=off realms=basic characters=off diplomacy=wars warfare=off research=off culture=assimilation"
@@ -873,7 +855,7 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 2698
 what = "province.unrest of 60 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 2
@@ -883,19 +865,19 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 1850
 what = "province.unrest of 139 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 3092
 what = "province.unrest of 194 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 4398
 what = "province.unrest of 15 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run]]
 seed = 3
@@ -905,25 +887,25 @@ verdict = "yellow"
 problem = "stuck_at_top"
 day = 878
 what = "province.unrest of 38 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 1880
 what = "province.unrest of 156 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6338
 what = "province.unrest of 11 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[mix.run.finding]]
 problem = "stuck_at_top"
 day = 6582
 what = "province.unrest of 86 held at its bound 1000 for 180 days"
-known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years."
+known = "Unrest stays at the line (1,000) while a province starves on: it reaches the line, rises up, and stays there while the hunger lasts (the uprising lasts as long as the famine). Seen in the flagged runs (Oct 17, when realms first joined the tester): ordinary provinces, neither capitals nor occupied, of about a million people losing 4 to 15% of them a month, in the test drought (seed 3, from day 848) and in the world's own famine (seed 2, year 12). The rule as designed: unrest halves in two quiet years. Also (Oct 18, once every part of logistics was on by default): a province held by an enemy for years, its unrest at the line, can't rise up (an occupied province doesn't), so its unrest stays there until the occupation ends (tester world seed 11, province 14, from day 1816)."
 
 [[pair]]
 a = "terrain=noise"
@@ -935,7 +917,7 @@ example = "terrain=noise climate=latitude economics=food population=basic weathe
 a = "terrain=noise"
 b = "climate=null"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "terrain=null"
@@ -1216,7 +1198,7 @@ verdict = "green"
 a = "climate=null"
 b = "economics=food"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1244,7 +1226,7 @@ verdict = "green"
 a = "climate=null"
 b = "population=basic"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1267,7 +1249,7 @@ example = "terrain=noise climate=latitude economics=food population=basic weathe
 a = "climate=null"
 b = "weather=droughts"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1290,7 +1272,7 @@ verdict = "green"
 a = "climate=null"
 b = "realms=basic"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1313,7 +1295,7 @@ example = "terrain=null climate=latitude economics=food population=basic weather
 a = "climate=null"
 b = "characters=rulers"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1342,7 +1324,7 @@ verdict = "green"
 a = "climate=null"
 b = "diplomacy=treaties"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1378,7 +1360,7 @@ example = "terrain=null climate=latitude economics=food population=basic weather
 a = "climate=null"
 b = "warfare=campaigns"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1408,7 +1390,7 @@ example = "terrain=null climate=latitude economics=food population=basic weather
 a = "climate=null"
 b = "research=tree"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"
@@ -1432,7 +1414,7 @@ example = "terrain=null climate=latitude economics=food population=basic weather
 a = "climate=null"
 b = "culture=assimilation"
 verdict = "yellow"
-example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 2"
+example = "terrain=noise climate=null economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation seed 1"
 
 [[pair]]
 a = "climate=null"

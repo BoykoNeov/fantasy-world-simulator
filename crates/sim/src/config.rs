@@ -92,7 +92,8 @@ pub struct ModuleConfig {
     #[serde(default)]
     pub diplomacy: Option<WarParams>,
     /// Warfare v1, "troops": provinces raise soldiers, and armies and fleets move and fight (step
-    /// 7); "campaigns" (the default since step 8's wave) is "troops" with sieges in depth on. Needs
+    /// 7); "campaigns" (the default since step 8's wave) is "troops" with every part of logistics on
+    /// (sieges in depth alone until Oct 18). Needs
     /// realms. Off in files that don't name it, as realms are, and its parts off in files that don't
     /// name them.
     #[serde(default)]
@@ -150,12 +151,17 @@ impl Default for ModuleConfig {
     }
 }
 
-/// Warfare "campaigns": `t` with sieges in depth on (kept with its numbers if on already). The other
-/// parts stay as they are: they are switched on alone (story 2 over 9 worlds: sieges alone took a
-/// rich city in a normal war on 6, with armies acting together or all four parts 3, with all five
-/// 2).
+/// Warfare "campaigns": `t` with every part of logistics on: sieges in depth, supply lines, winter,
+/// pay and armies acting together (each kept with its numbers if on already). Sieges alone until
+/// Oct 18, when the other four were measured against today's world (Research and Culture on): on
+/// 18 worlds a rich river city fell in a normal war on 8 with all five against 4 with sieges alone,
+/// and the user chose all five.
 fn campaigns(mut t: TroopParams) -> TroopParams {
     t.sieges = t.sieges.take().or_else(|| Some(Default::default()));
+    t.supply = t.supply.take().or_else(|| Some(Default::default()));
+    t.seasons = t.seasons.take().or_else(|| Some(Default::default()));
+    t.pay = t.pay.take().or_else(|| Some(Default::default()));
+    t.massing = t.massing.take().or_else(|| Some(Default::default()));
     t
 }
 

@@ -876,9 +876,12 @@ mod tests {
         assert_eq!(problems(&f), vec![Problem::Stagnant], "{f:?}");
         assert_eq!(worst(&f), Verdict::Yellow);
 
-        // The same world with its real modules is clean.
-        let r = run(&Mix::defaults(), 11, &Settings { n: 24, provinces: 40, years: 7, seeds: vec![11] });
-        assert_eq!(r.findings, Vec::new());
+        // The same world with its real modules is clean, but for known quirks (since Oct 18, with
+        // every part of logistics on, a province held by an enemy for years keeps its unrest at
+        // the line: occupied provinces don't rise up).
+        let mut r = run(&Mix::defaults(), 11, &Settings { n: 24, provinces: 40, years: 7, seeds: vec![11] });
+        Quirks::parse(include_str!("../data/known_quirks.toml")).unwrap().apply(&mut r);
+        assert!(r.findings.iter().all(|f| f.known.is_some()), "{:?}", r.findings);
     }
 
     #[test]
