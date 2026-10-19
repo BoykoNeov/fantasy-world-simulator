@@ -993,6 +993,70 @@ faiths|wild|sick|plague_dead`, `--open-section faiths`. Each new layer reads its
 is shown. Frame times with the new layers are not measured yet (with the other layers, in the
 quiet-machine speed session).
 
+### Lives v1: followed people (step 9, planned Oct 19)
+
+The last unbuilt piece of step 9 (see "Lives" above). A few named people are followed through their
+lives; each is a *sample* of their province's people, so following them changes nothing in the world.
+
+- **The rule that makes it safe:** Lives sends no requests, owns no counted field, and emits only its
+  own events (nobody else handles them). Its people are its own state (saved), shown to the window as a
+  record beside the world, like battles and trade (not a field tier, so the world's fingerprint can't
+  include them). Its dice are its own random stream (`rng::Module::Lives`, added at the end). **Test:**
+  the same worlds (both economies, several seeds, decades, every module on) come out with the same
+  fingerprint day for day with Lives on and off. With that holding, stories 1 to 3 and the story 2
+  counts can't have moved.
+- **A person:** name (from their culture's names where Culture runs, else the world's), born, died
+  (and of what), province, culture and faith (their pop's when picked), job, three traits
+  (0–100: hardiness, skill, boldness), spouse and children as names in their story (not
+  followed people themselves), and a wealth *factor* (their coins = factor × their province's coins a
+  head, worked out when shown, never stored as coins; none under Economics v0, which has no coins). A
+  life story: a list of dated lines ("1043: taken for the levy of Arn", "1044: wounded at Tessa").
+- **Jobs come from the modules that are on** (where the list is kept is question 4). Today's world
+  gives: farmer (always); under markets, the goods a province's workers make, weighted by how many work
+  at each (herder, fisher, woodcutter, miner, smith, weaver and so on, a job name per good in the goods
+  tree, content left out of settings); merchant where the province trades (markets); scholar where
+  Research pays scholars (its `scholar_share`); priest (a new setting, share of people, since Religion
+  keeps no priests); hunter/forester where Natural world runs and the land has game or woods. Soldier is
+  not picked but *happens*: when the province's companies grow, a man or woman of fighting age is taken
+  with the chance new soldiers / fighting-age people there. Jobs change at a yearly roll (a setting) or
+  when the old one goes away (a module off, the woods gone, the war over).
+- **What happens to them, by the world's own odds** (each a roll, on the day the event arrives): a
+  battle their company fought, dying with the chance their side's dead over those it brought, wounded
+  by a setting's share of that; camp disease and desertion by the same shares the realm's companies
+  suffered that month; famine in their province (starved over people); plague (the province's plague
+  dead and sick over people, survivors immune); uprising, occupation, a war's peace, a new ruler,
+  conversion and assimilation of their province (a chance to take up the new faith or culture, the
+  province's own share that changed); a tech learned by their realm (scholars note it); woods cleared
+  (a forester loses work). Ordinary death by an age curve (settings: a child's and an old person's
+  death chance a year) so that a life is about as long as the province's deaths per year imply. A
+  yearly line on how the year went: harvest, prices, wealth up or down (under markets, the province's
+  coins a head this year against last).
+- **Skills and ties:** skill in their job grows with years in it (a setting); marriage (a yearly
+  chance between ages, a setting) and children (by the province's births per year) give names in their
+  story.
+- **Who is followed** and **what happens when they die**: questions 1 and 2. Following someone is a
+  logged edit (`Edit::Follow { province }`), so replays and branches keep the same people.
+- **Out of v1 (v2 as the Lives section says):** choices from wants (moving, changing job on purpose),
+  rising to be a ruler or general (handed to Characters), people moving between provinces (nobody does
+  today except soldiers, so a follower can't), lives changing the world.
+- **Window:** a "People" side panel listing the followed (name, age, job, where), their story; a
+  marker on the map where each is (the province, or their company); "follow someone here" on the
+  province page; their lines also in the log. `simrun --follow N` prints the stories at the end.
+- **Engine detail:** Lives reads fields only of the modules that are on, so its manifest is made for
+  the configuration (one per mix of slots, kept for the program's life); it reads as the day began
+  (`reads_earlier`), adding no run-order edge, and runs monthly plus on the events it handles.
+- **Project rules:** `ModuleConfig.lives` off by default (serde default), Slot `Lives` and its random
+  stream at the end; every number in `settings.rs` with a plain explanation (how many to follow, death
+  chances, marriage, skill, wounds, job-change roll, priests' share); the job-name table in `LEFT_OUT`;
+  on in `settings::everything()`; a save format bump; the tester's choices get "off" first; the speed
+  table gets a Lives row (following a few hundred should cost next to nothing).
+- **Checks:** the fingerprint test above; a soldier followed through a war dies about as often as the
+  realm's soldiers did (many followed soldiers, several seeds); deaths by age give a life length close
+  to what the province's death rate implies; every story line's date and place matches an event in the
+  world's log; a save mid-life resumes the same stories; Lives on with each other module off.
+- **Questions for the user (Oct 19):** (1) who is followed; (2) what happens when they die; (3) the
+  simple "yearly diary only" version as well, or v1 only; (4) where the list of jobs is kept.
+
 ## Decisions
 
 - **Time:** the base step is one day; modules run their main logic on their own cadence. An event on day N takes effect on day N+1, with a documented priority order for same-day conflicts.
