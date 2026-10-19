@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn mixes_name_and_parse_their_versions() {
         let d = Mix::defaults();
-        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation religion=conversion disease=off nature=regrowth");
+        assert_eq!(d.label(), "terrain=noise climate=latitude economics=food population=basic weather=droughts realms=basic characters=rulers diplomacy=treaties warfare=campaigns research=tree culture=assimilation religion=conversion disease=plagues nature=regrowth");
         assert_eq!(Mix::of(&ModuleConfig::default()), d);
         let m = Mix::parse("economics=off, population=off").unwrap();
         assert_eq!(Mix::of(&m.modules()), m);
@@ -776,7 +776,7 @@ mod tests {
         assert!(markets.modules().markets.is_some() && markets.modules().economics.is_none());
         assert_eq!(Mix::of(&markets.modules()), markets);
         // Markets needs people to do the work.
-        let bare = "realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,nature=off";
+        let bare = "realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,disease=off,nature=off";
         assert!(Mix::parse(&format!("economics=markets,population=off,{bare}")).unwrap().check().unwrap_err().contains("requires pop.size"));
         // Realms need people; rulers and wars need realms; realms choosing wars need armies.
         assert!(Mix::parse("population=off").unwrap().check().unwrap_err().contains("requires pop.size"));
@@ -848,7 +848,7 @@ mod tests {
     fn the_scorer_catches_planted_faults() {
         quiet_panics();
         // Food from nowhere, on the first day (a month start): blamed on the economy.
-        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,nature=off", Slot::Economics, 1, |w, _| w.stock[0] += 1);
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,disease=off,nature=off", Slot::Economics, 1, |w, _| w.stock[0] += 1);
         assert_eq!(problems(&f), vec![Problem::ConservationBroken]);
         assert_eq!(f[0].day, 0);
         assert!(f[0].what.contains("food was") && f[0].what.contains("Economics"), "{}", f[0].what);
@@ -864,7 +864,7 @@ mod tests {
         assert!(f[0].what.contains("which it does not own"), "{}", f[0].what);
 
         // All the food thrown away every month, declared: nothing is broken, but nothing is left.
-        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,nature=off", Slot::Economics, 1, |w, cx| {
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,disease=off,nature=off", Slot::Economics, 1, |w, cx| {
             let all: u64 = w.stock.iter().sum();
             w.stock.iter_mut().for_each(|s| *s = 0);
             cx.flow(Quantity::Goods(0), Cause::Spoilage, -(all as i64));
@@ -872,7 +872,7 @@ mod tests {
         assert_eq!(problems(&f), vec![Problem::AllGone], "{f:?}");
 
         // An economy that does nothing: the food store never changes.
-        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,nature=off", Slot::Economics, 7, |_, _| {});
+        let f = rogue_run("population=off,realms=off,characters=off,diplomacy=off,warfare=off,research=off,culture=off,religion=off,disease=off,nature=off", Slot::Economics, 7, |_, _| {});
         assert_eq!(problems(&f), vec![Problem::Stagnant], "{f:?}");
         assert_eq!(worst(&f), Verdict::Yellow);
 

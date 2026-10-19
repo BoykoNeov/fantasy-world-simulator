@@ -218,7 +218,7 @@ What exists:
   to bare brown where it is all gone; clear where a province has none of it (no woodland, or no
   coast or river for fish). Hovering says what is left of each; the province page gives each as
   "36% of its wild woodland cleared" (it read in millionths).
-- **Plagues** (Oct 18; only where Disease runs, off by default):
+- **Plagues** (Oct 18; only where Disease runs, on by default since Oct 19):
   - "ill with plague": pale rose where the first few fall ill (1 in 10,000) to deep red where a
     tenth are, on a log scale, since a plague starts at about 1 in 2,000; watch it play to see a
     plague spread. "plague dead": each province's plague dead since the world began against its
@@ -301,7 +301,7 @@ Drag to pan, scroll to zoom, click a province to inspect it. Options:
 - `--good NAME`: the good the price map shows (default: the first, grain).
 - `--wild woods|fish|game`: what the wild land map shows (default woods).
 - `--plague best|P`: a plague poked after the first years, with `--drought` (`best`: the province
-  with the most people); it needs Disease, e.g. `--modules disease=plagues`.
+  with the most people); it needs Disease (on by default since Oct 19).
 - `--open FILE`: show a saved world (a scenario `.toml`, or a save) instead of making one.
 - `--remake SIZE,SEED,YEARS[,SLOT=VERSION,...]`: once the window is open, make a new world through
   the New world section, as a player would (versions not given stay as they are).

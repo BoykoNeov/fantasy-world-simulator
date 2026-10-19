@@ -119,9 +119,8 @@ pub struct ModuleConfig {
     #[serde(default)]
     pub religion: Option<ReligionParams>,
     /// Disease v1, "plagues": plagues break out, spread along the ways, kill and leave survivors
-    /// immune (step 10). Needs Population. Off by default: with it on, story 2's rich ports fell in
-    /// a normal war on 4 of 18 worlds against 7 without (the second wave's checks, Oct 18), so it
-    /// waits for tuning; off in files that don't name it.
+    /// immune (step 10). Needs Population. On by default since Oct 19 (the user's choice: story 2
+    /// passes on as many of its 18 worlds with it as without), off in files that don't name it.
     #[serde(default)]
     pub disease: Option<DiseaseParams>,
     /// Natural world v1, "regrowth": woodland, fish and game used up and growing back (step 10).
@@ -162,7 +161,7 @@ impl Default for ModuleConfig {
             research: Some(ResearchParams::default()),
             culture: Some(CultureParams::default()),
             religion: Some(ReligionParams::default()),
-            disease: None,
+            disease: Some(DiseaseParams::default()),
             nature: Some(NatureParams::default()),
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
@@ -287,7 +286,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Research, &["tree", "off"]),
     (Slot::Culture, &["assimilation", "off"]),
     (Slot::Religion, &["conversion", "off"]),
-    (Slot::Disease, &["off", "plagues"]),
+    (Slot::Disease, &["plagues", "off"]),
     (Slot::Nature, &["regrowth", "off"]),
 ];
 

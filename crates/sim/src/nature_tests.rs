@@ -381,15 +381,15 @@ fn nature_runs_before_markets_and_last_under_economics_v0() {
     assert!(at(&markets, Slot::Population) < at(&markets, Slot::Nature));
     let food = order(&config("food", 1));
     assert_eq!(*food.last().unwrap(), Slot::Nature, "{food:?}");
-    // The others keep their order with it on.
+    // The others keep their order with it on. Disease (on by default) needs only Population, so
+    // the order may put it anywhere after Population and moves it when Nature comes or goes.
+    let others = |o: &[Slot]| -> Vec<Slot> { o.iter().copied().filter(|&s| s != Slot::Nature && s != Slot::Disease).collect() };
     let mut c = config("markets", 1);
     c.modules.nature = None;
-    let without = order(&c);
-    let with: Vec<Slot> = markets.iter().copied().filter(|&s| s != Slot::Nature).collect();
-    assert_eq!(with, without);
+    assert_eq!(others(&markets), others(&order(&c)));
     let mut c = config("food", 1);
     c.modules.nature = None;
-    assert_eq!(food[..food.len() - 1], order(&c)[..]);
+    assert_eq!(others(&food), others(&order(&c)));
 }
 
 #[test]

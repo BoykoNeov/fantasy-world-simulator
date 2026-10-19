@@ -6,7 +6,8 @@
 //!
 //! cargo run --release -p sim --example story1 -- [religion] [disease] [nature] [KEY=VALUE ...]
 //!
-//! `religion`, `disease` and `nature` switch those modules on (the second wave, off by default);
+//! `religion`, `disease` and `nature` switch those modules on (the second wave; all three on by
+//! default since Oct 19, so naming them changes nothing);
 //! `KEY=VALUE` changes a setting.
 
 use sim::config::Config;

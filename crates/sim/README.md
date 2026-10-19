@@ -89,7 +89,7 @@ Loads refuse other format versions,
   | Research | `tree`: realms study and learn techs (see below); needs realms; on by default (techs have effects: its "effects" part); or off | monthly |
   | Culture | `assimilation` (the default since the first wave's checks): peoples spread, and people take up the culture that pulls hardest (see below); needs Population; or off | monthly |
   | Religion | `conversion`: faiths spread, and people take up the faith that pulls hardest (see below); needs Population; the default since the second wave's checks; or off | monthly |
-  | Disease | `plagues`: plagues break out, spread along the ways (far faster by sea) and kill (see below); needs Population; off by default (with it, story 2's rich ports fall in a normal war on 4 of 18 worlds against 7 without: it waits for tuning) | weekly (quiet weeks skipped) |
+  | Disease | `plagues`: plagues break out, spread along the ways (far faster by sea) and kill (see below); needs Population; on by default since Oct 19 (story 2 passes as often with it as without) | weekly (quiet weeks skipped) |
   | Nature | `regrowth`: each province's woodland, fish and game, used up and growing back (see below); needs Population; the default since the second wave's checks; or off | monthly |
 
   Harvests shrink in proportion to the missing rain, so a drought cuts the crop. Markets needs
@@ -933,7 +933,10 @@ Loads refuse other format versions,
   with each and with all three; story 2's normal-war passes on its 18 worlds: today's defaults 7,
   with Religion 6, Natural world 6, Disease 4, all three 5), Religion and Natural world are on for
   new worlds and Disease is off until it is tuned (the user, Oct 18; `examples/story1.rs`,
-  `examples/story2.rs`).
+  `examples/story2.rs`). Oct 19: step by step, story 2 came out the same with Disease as without
+  (rich river cities taken in a normal war 7 against 9 over the 18 worlds; passes 5 and 5), so
+  nothing was tuned and Disease is on for new worlds too (the user); story 3, the 150-year check
+  and story 1 pass with today's defaults.
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),
