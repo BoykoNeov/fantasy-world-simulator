@@ -197,11 +197,25 @@ pub struct Slower {
     pub ms: Option<(f64, f64)>,
 }
 
+impl Row {
+    /// The mix it was measured for, read back from its versions: a slot a row written before it
+    /// existed doesn't name is at its default (a module added later is off), so old rows still
+    /// match. `None` if it names a slot or version this build doesn't know.
+    pub fn mix(&self) -> Option<Mix> {
+        Mix::parse(&self.versions).ok()
+    }
+
+    /// Whether it was measured for `mix`.
+    pub fn is(&self, mix: &Mix) -> bool {
+        self.mix().is_some_and(|m| m == *mix)
+    }
+}
+
 impl Table {
     /// The table for rows measured in one run; the base mix's row must be among them.
     pub fn new(about: About, settings: Settings, mut rows: Vec<Row>) -> Table {
         let base = base_mix().label();
-        let of_base = rows.iter().find(|r| r.versions == base).map(|r| (r.young.as_ref().map(|m| m.ms), r.busy.as_ref().map(|m| m.ms)));
+        let of_base = rows.iter().find(|r| r.is(&base_mix())).map(|r| (r.young.as_ref().map(|m| m.ms), r.busy.as_ref().map(|m| m.ms)));
         let (young, busy) = of_base.unwrap_or((None, None));
         for r in &mut rows {
             for (m, b) in [(&mut r.young, young), (&mut r.busy, busy)] {
@@ -233,8 +247,7 @@ impl Table {
 
     /// The row for a mix of versions, if it was measured.
     pub fn row(&self, mix: &Mix) -> Option<&Row> {
-        let label = mix.label();
-        self.mix.iter().find(|r| r.versions == label && r.refused.is_none())
+        self.mix.iter().find(|r| r.is(mix) && r.refused.is_none())
     }
 
     /// Mixes whose time grew more than `factor` times the middle growth of every mix measured in
@@ -249,7 +262,8 @@ impl Table {
                 .mix
                 .iter()
                 .filter_map(|r| {
-                    let o = old.mix.iter().find(|o| o.versions == r.versions)?;
+                    let mix = r.mix()?;
+                    let o = old.mix.iter().find(|o| o.is(&mix))?;
                     Some((r, pick(r)?, pick(o)?)).filter(|(_, n, w)| n.ms > 0.0 && w.ms > 0.0)
                 })
                 .collect();
@@ -338,6 +352,17 @@ mod tests {
         assert_eq!(alike.slower_than(&t, 1.2)[0].ms, Some((8.0, 12.0)));
         // With fewer than three mixes in common there is no middle to go by.
         assert!(alike.slower_than(&Table { mix: t.mix[..2].to_vec(), ..t.clone() }, 1.2).is_empty());
+    }
+
+    #[test]
+    fn a_row_written_before_a_module_existed_still_matches() {
+        let d = Mix::defaults();
+        let before = d.label().replace(" lives=off", "");
+        assert_ne!(before, d.label());
+        let about = About { machine: "test".into(), threads: 1, commit: "abc".into(), date: "2026-10-19".into() };
+        let t = Table { about, settings: Settings::default(), base: String::new(), mix: vec![Row { versions: before, refused: None, young: Some(moment(1.0)), busy: None }] };
+        assert!(t.row(&d).is_some());
+        assert!(t.row(&base_mix()).is_none());
     }
 
     #[test]

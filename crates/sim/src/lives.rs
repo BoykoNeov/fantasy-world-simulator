@@ -580,6 +580,10 @@ impl Module for Lives {
 
     fn handle(&mut self, w: &mut World, e: &Event, cx: &mut Ctx) {
         let Some(roles) = self.params.roles.clone() else { return };
+        // Most of the world's events touch nobody followed: the people aren't copied for them.
+        if !touches(&self.people, w, e) {
+            return;
+        }
         let params = self.params.clone();
         self.change(w, |st, watch, _, w| event(st, watch, w, cx, e, &params, &roles));
     }
@@ -952,6 +956,26 @@ fn share_following(w: &World, p: u32, to: u32, faith: bool) -> f64 {
         }
     }
     share(of, all)
+}
+
+/// Whether an event of the world touches anyone followed (alive): a battle their company fought, a
+/// change in the province they live in, or news of their realm.
+fn touches(st: &People, w: &World, e: &Event) -> bool {
+    let mut living = st.people.iter().filter(|x| x.followed && x.alive());
+    match e {
+        Event::Battle { province, .. } => living.any(|x| x.army != NONE && w.armies.province.get(x.army as usize) == Some(province)),
+        Event::Uprising { province, .. }
+        | Event::Occupied { province, .. }
+        | Event::Converted { province, .. }
+        | Event::Assimilated { province, .. }
+        | Event::Outbreak { province, .. }
+        | Event::PlagueArrived { province, .. }
+        | Event::WoodsCleared { province, .. }
+        | Event::FisheryCollapsed { province } => living.any(|x| x.army == NONE && x.province == *province),
+        Event::WarDeclared { attacker, defender, .. } | Event::Peace { attacker, defender, .. } => living.any(|x| [*attacker, *defender].contains(&realm_of(w, x))),
+        Event::Succession { realm, .. } | Event::Discovery { realm, .. } => living.any(|x| realm_of(w, x) == *realm),
+        _ => false,
+    }
 }
 
 /// What an event of the world does to the followed it touches.
