@@ -7,8 +7,9 @@
 //! Story 1's world (200 provinces) with every step-7 module on: realms with unrest, rulers,
 //! armies and Diplomacy "treaties". Prints, for each river-mouth province that was a rich river
 //! city: its years among the richest 2%, its peak, the days occupied, the peaces at which it
-//! changed hands, and when its coins and trade fell to half; then, for comparison, how many of the
-//! richest 2% (any province) changed hands at a peace.
+//! changed hands, when its coins and trade fell to half, its most people at a year's end and the
+//! people plague killed there; then, for comparison, how many of the richest 2% (any province)
+//! changed hands at a peace.
 //!
 //! A "big river" is one the map draws ([`RIVER_MIN_FLOW`], the line `province.river_km` counts
 //! too): the project's own meaning of the words, not tuned for the story. The city counts as taken
@@ -150,6 +151,8 @@ struct Track {
     /// under half the trade at the peak.
     poorer: Option<i64>,
     less_trade: Option<i64>,
+    /// The most people at a year's end.
+    most_people: u64,
 }
 
 /// What stood in the way of a realm at war with a river city's owner taking it, month by month
@@ -610,7 +613,9 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> (bool,
         let mut sorted = worth.clone();
         sorted.sort_unstable();
         let line = sorted[n - n.div_ceil(50)];
+        let people = w.province_population();
         for p in 0..n {
+            t[p].most_people = t[p].most_people.max(people[p]);
             rich[p] = worth[p] > 0 && worth[p] >= line;
             let k = &mut t[p];
             k.run = if rich[p] { k.run + 1 } else { 0 };
@@ -646,7 +651,7 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> (bool,
         passed |= pass;
         normal |= pass && k.by_rebellion.iter().any(|&r| !r);
         println!(
-            "  province {p} (river {flow:.1}× a big river's water): {} years in a row among the richest 2%, peak {} coins, a capital {} years, a war's target {} times, occupied {} days, changed hands at a peace in years {:?} (at a rebellion's peace: {:?}), coins under half the peak from year {:?}, trade under half from year {:?}{}",
+            "  province {p} (river {flow:.1}× a big river's water): {} years in a row among the richest 2%, peak {} coins, a capital {} years, a war's target {} times, occupied {} days, changed hands at a peace in years {:?} (at a rebellion's peace: {:?}), coins under half the peak from year {:?}, trade under half from year {:?}, most people {}, plague dead {}{}",
             k.longest,
             k.peak,
             k.capital_years,
@@ -656,6 +661,8 @@ fn run(seed: u64, years: i64, set: &[(String, f64)], parts: &[String]) -> (bool,
             k.by_rebellion,
             k.poorer,
             k.less_trade,
+            k.most_people,
+            sim.world.plague_dead_total.get(p).copied().unwrap_or(0),
             if pass { ": PASSES" } else { "" }
         );
         let b = &probe[p];
