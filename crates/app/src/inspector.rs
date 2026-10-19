@@ -727,6 +727,7 @@ pub fn slot_name(s: Slot) -> &'static str {
         Slot::Religion => "Religion",
         Slot::Disease => "Disease",
         Slot::Nature => "Natural world",
+        Slot::Lives => "Lives",
     }
 }
 

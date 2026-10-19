@@ -140,6 +140,9 @@ pub enum Edit {
     /// Set how much of the provinces' wild is left, each a share from 0 (all gone) to 1 (untouched);
     /// `None` leaves that one as it is. Carried out by the natural-world module.
     SetNature { provinces: Vec<u32>, woods: Option<f64>, fish: Option<f64>, game: Option<f64> },
+    /// Follow someone of the province from today: a grown person of any age up to middle age.
+    /// Carried out by Lives; it changes nothing in the world.
+    Follow { province: u32 },
 }
 
 /// One setting changed, by its key in the configuration (see [`crate::settings`]).
@@ -326,6 +329,7 @@ impl Edit {
             Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => with_land(w, provinces),
             // The shape here; the modules that carry them out check the rest.
             Edit::SetReligion { ref provinces, .. } | Edit::NewReligion { ref provinces } | Edit::SetNature { ref provinces, .. } => with_land(w, provinces),
+            Edit::Follow { province } => with_land(w, &[province]),
         }
     }
 
@@ -359,7 +363,8 @@ impl Edit {
             | Edit::NewCulture { .. }
             | Edit::SetReligion { .. }
             | Edit::NewReligion { .. }
-            | Edit::SetNature { .. } => return,
+            | Edit::SetNature { .. }
+            | Edit::Follow { .. } => return,
             Edit::Paint { ref path, radius_km, brush } => {
                 paint(w, path, radius_km, brush);
                 return reshape_after_height(w, regenerate);
@@ -472,7 +477,7 @@ impl Edit {
             // Carried out by the modules that keep them ([`crate::module::Module::carry_out`]).
             Edit::NewRuler { .. } | Edit::PlaceArmy { .. } | Edit::SetArmy { .. } => {}
             Edit::SetTech { .. } | Edit::SetCulture { .. } | Edit::NewCulture { .. } => {}
-            Edit::SetReligion { .. } | Edit::NewReligion { .. } | Edit::SetNature { .. } => {}
+            Edit::SetReligion { .. } | Edit::NewReligion { .. } | Edit::SetNature { .. } | Edit::Follow { .. } => {}
         }
         flows
     }
@@ -508,6 +513,7 @@ impl Edit {
             Edit::SetTech { realm, .. } => w.realms.capital.get(realm as usize).copied().filter(|&c| c != NONE).into_iter().collect(),
             Edit::SetCulture { ref provinces, .. } | Edit::NewCulture { ref provinces } => provinces.clone(),
             Edit::SetReligion { ref provinces, .. } | Edit::NewReligion { ref provinces } | Edit::SetNature { ref provinces, .. } => provinces.clone(),
+            Edit::Follow { province } => vec![province],
             Edit::River { ref path, .. } => {
                 let mut v: Vec<u32> = river_cells(&w.grid, path).into_iter().map(|c| w.provinces.of_cell[c]).filter(|&p| p != NONE).collect();
                 v.sort_unstable();
@@ -579,6 +585,7 @@ impl Edit {
                 let set: Vec<String> = [part("woodland", woods), part("fish", fish), part("game", game)].into_iter().flatten().collect();
                 format!("the wild of {} provinces set to {}", provinces.len(), if set.is_empty() { "what it was".to_string() } else { set.join(", ") })
             }
+            Edit::Follow { province } => format!("someone of province {province} followed from today"),
         }
     }
 
@@ -600,6 +607,8 @@ impl Edit {
             Edit::SetReligion { .. } | Edit::NewReligion { .. } => &["religion.hearth"],
             Edit::SetNature { .. } => &["province.woods_lost"],
             Edit::MoveCells { .. } | Edit::Split { .. } | Edit::Merge { .. } | Edit::Paint { .. } | Edit::SeaLevel { .. } | Edit::Override { .. } | Edit::River { .. } | Edit::Settings { .. } => &[],
+            // Lives takes it as its own; it sets nothing.
+            Edit::Follow { .. } => &[],
         }
     }
 }

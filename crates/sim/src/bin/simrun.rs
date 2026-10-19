@@ -6,6 +6,7 @@
 //!        [--save FILE] [--load FILE] [--scenario FILE] [--write-scenario FILE]
 //!        [--economics food|markets|off] [--realms settled=W,city=W,frontier=W] [--rulers] [--wars]
 //!        [--armies] [--treaties] [--modules SLOT=VERSION,...] [--set KEY=VALUE ...] [--settings]
+//!        [--stories]
 //!
 //! The world gets the default modules: since step 7's checks, realms, rulers, realms choosing war
 //! and peace, and armies too. `--modules realms=off,diplomacy=wars` picks any versions, as the
@@ -29,6 +30,9 @@
 //! `--set KEY=VALUE` changes one setting of the world to be made (any number of times; after the
 //! modules are switched on, so their settings are there). `--settings` lists every setting of the
 //! world the other options pick, with its key, value, range and explanation, and stops.
+//!
+//! `--stories` prints, at the end, the story of everyone followed (Lives on: `--modules
+//! lives=lives`, or `lives=diary`; `--set modules.lives.at_start=N` follows N from the start).
 
 use sim::branch::Timelines;
 use sim::config::Config;
@@ -223,6 +227,18 @@ fn main() {
     }
 
     print_realms(&sim);
+    if args.iter().any(|a| a == "--stories") {
+        let st = sim.world.lives.clone();
+        let names = sim::lives::Names::new(&sim.world);
+        for k in st.followed() {
+            let who = st.name(sim.world.params.seed, k);
+            println!("
+{who}: {}", st.summary(&sim.world, &names, k, sim.day, sim.calendar.days_per_year()));
+            for l in &st.people[k].lines {
+                println!("  {}", st.tell(&sim.world, &names, k, l, &sim.calendar));
+            }
+        }
+    }
     if let Some(dir) = &out {
         let files = sim::export::write_all(&sim, dir, "end_", width).expect("write PNGs");
         println!("wrote {} maps to {}", files.len(), dir.display());

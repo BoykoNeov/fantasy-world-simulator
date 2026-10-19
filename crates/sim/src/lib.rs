@@ -37,6 +37,9 @@ pub mod module;
 pub mod nature;
 #[cfg(test)]
 mod nature_tests;
+pub mod lives;
+#[cfg(test)]
+mod lives_tests;
 pub mod pops;
 pub mod provinces;
 pub mod realms;

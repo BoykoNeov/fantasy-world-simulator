@@ -78,6 +78,17 @@ impl Module for Food {
         if self.know.is_some() { &V0_KNOW } else { &V0 }
     }
 
+    /// Followed people farm: the food economy knows no other work.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        Some(crate::lives::Jobs {
+            reads: &["pop.province", "pop.size"],
+            offer: std::sync::Arc::new(|w: &World, p: usize, out: &mut Vec<crate::lives::Job>| {
+                let people: u64 = (0..w.pops.size.len()).filter(|&j| w.pops.province[j] as usize == p).map(|j| w.pops.size[j]).sum();
+                out.push(crate::lives::Job { name: "farmer".into(), holders: people as f64 });
+            }),
+        })
+    }
+
     fn init(&mut self, w: &mut World, cx: &mut Ctx) {
         let per_day = |cap: u64| cap as f64 / cx.calendar.days_per_year() as f64;
         let (k, food, _) = food_column(&w.goods);

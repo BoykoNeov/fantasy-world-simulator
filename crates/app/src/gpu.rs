@@ -75,6 +75,8 @@ pub struct LayerSettings {
     /// Field armies on the map, and battles (drawn by the window over the map, not here).
     pub armies: bool,
     pub battles: bool,
+    /// Where each followed person is (drawn by the window over the map).
+    pub people: bool,
 }
 
 impl Default for LayerSettings {
@@ -107,6 +109,7 @@ impl Default for LayerSettings {
             realm_borders: true,
             armies: true,
             battles: true,
+            people: true,
         }
     }
 }

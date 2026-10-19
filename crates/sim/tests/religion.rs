@@ -43,7 +43,7 @@ fn religion_keeps_its_state_across_a_change() {
     b.run_days(800);
     let changes: Vec<SettingChange> =
         religion_settings(&c).into_iter().filter(|i| i.spec.when == sim::settings::When::Live).map(|i| SettingChange { key: i.key, value: i.value }).collect();
-    assert_eq!(changes.len(), 12);
+    assert_eq!(changes.len(), 13);
     b.edit(Edit::Settings { changes }).unwrap();
     a.run_days(5 * 365);
     b.run_days(5 * 365);

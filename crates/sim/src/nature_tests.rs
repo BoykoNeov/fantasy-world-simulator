@@ -66,7 +66,7 @@ fn every_step_stays_between_nothing_and_untouched_at_every_end_of_its_settings()
         for &b in &ends {
             let f = ForestParams { most_cleared: a.min(1.0), clearing: b.min(1.0), regrow_years: a.max(1.0), felled_km2: b };
             let fish = FishParams { breeding: a, inflow: b.min(1.0), catch: a, fishers_per_km: b.max(0.01), river_share: a };
-            let game = WildlifeParams { breeding: a, inflow: b.min(1.0), hunting: b };
+            let game = WildlifeParams { breeding: a, inflow: b.min(1.0), hunting: b, ..WildlifeParams::default() };
             for &x in &states {
                 for &y in &states {
                     for out in [woods_step(&f, x, y, a, y, DT), fish_step(&fish, x, b, DT), game_step(&game, x, y, y, x, DT), fish_step(&fish, x, 1e9, 1.0)] {

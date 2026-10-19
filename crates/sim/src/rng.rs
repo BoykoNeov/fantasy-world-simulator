@@ -33,6 +33,8 @@ pub enum Module {
     Religion = 13,
     /// Disease: where plagues begin and where they spread.
     Disease = 14,
+    /// Lives: followed people's births, deaths, marriages, jobs and fortunes.
+    Lives = 15,
 }
 
 /// SplitMix64 finaliser: a good 64-bit mixer.

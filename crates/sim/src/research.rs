@@ -70,6 +70,9 @@ pub struct TechParams {
 }
 
 /// The effects a tech can have, by their names in [`TechParams::effects`], in [`Effect`]'s order.
+/// A followed person's job studying for their realm.
+pub const SCHOLAR: &str = "scholar";
+
 pub const EFFECTS: [&str; 6] = ["harvest", "made", "strength", "siege", "ships", "calm"];
 
 /// What a tech can do.
@@ -543,6 +546,22 @@ impl Research {
 impl Module for Research {
     fn manifest(&self) -> &'static Manifest {
         if self.coins { &V1_COINS } else { &V1 }
+    }
+
+    /// Followed people may be scholars where their realm studies: its scholars' share of the people.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        let scholars = self.params.scholar_share;
+        Some(crate::lives::Jobs {
+            reads: &["pop.province", "pop.size", "province.owner", "realm.studying"],
+            offer: Arc::new(move |w: &World, p: usize, out: &mut Vec<crate::lives::Job>| {
+                let r = w.owner.get(p).copied().unwrap_or(NONE);
+                if w.realm_studying.get(r as usize).is_none_or(|&t| t == NONE) {
+                    return;
+                }
+                let people: u64 = (0..w.pops.size.len()).filter(|&j| w.pops.province[j] as usize == p).map(|j| w.pops.size[j]).sum();
+                out.push(crate::lives::Job { name: SCHOLAR.into(), holders: people as f64 * scholars });
+            }),
+        })
     }
 
     fn check(&self, goods: &Goods) -> Result<(), String> {

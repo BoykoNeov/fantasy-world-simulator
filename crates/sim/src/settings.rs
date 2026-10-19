@@ -15,6 +15,7 @@ use crate::culture::CultureParams;
 use crate::research::ResearchParams;
 use crate::diplomacy::{TreatyParams, WarParams};
 use crate::disease::DiseaseParams;
+use crate::lives::LifeParams;
 use crate::nature::NatureParams;
 use crate::religion::ReligionParams;
 use crate::economy::FoodParams;
@@ -479,6 +480,7 @@ pub static GROUPS: &[Group] = &[
             live("modules.religion.small_people", "Small groups: people", "A group of fewer people than this in a province takes up the leading faith at once, so provinces don't keep many tiny groups.", 0.0, 1_000_000.0, "people"),
             live("modules.religion.small_share", "Small groups: share", "A group less than this share of its province's people takes up the leading faith at once.", 0.0, 1.0, "share"),
             live("modules.religion.most", "Most faiths in a province", "A province keeps at most this many faiths, the leading one counted: the followers of smaller faiths there take up the leading faith at once. Lower: fewer mixed provinces (and a faster world); 1: every province holds one faith, the one that pulls hardest.", 1.0, 1000.0, "faiths"),
+            live("modules.religion.priests", "Priests", "Share of a province's people who are priests: only the jobs of followed people use it. 0: no followed person becomes a priest.", 0.0, 1.0, "share"),
         ],
     },
     Group {
@@ -570,10 +572,42 @@ pub static GROUPS: &[Group] = &[
         specs: &[
             live("modules.nature.wildlife.breeding", "Game breeds", "How fast game breeds back toward the room the land has for it, a year, fastest at half the room. Higher: game comes back sooner where people have left.", 0.0, 5.0, "a year"),
             live("modules.nature.wildlife.inflow", "Game from the wilds around", "Share of the missing game a year that comes in from the wilds around, so game hunted out comes back. 0: game hunted to nothing is gone.", 0.0, 1.0, "share a year"),
+            live("modules.nature.wildlife.hunters", "Hunters", "Share of a province's people who live by hunting where its game is untouched, and in proportion for less: only the jobs of followed people use it (hunting itself goes by crowding, above). 0: no followed person hunts.", 0.0, 1.0, "share"),
             live("modules.nature.wildlife.hunting", "Hunting when crowded", "Share of the game a year hunted in a fully crowded province, and in proportion for less. Higher: crowded land is hunted empty; 0: nobody hunts.", 0.0, 5.0, "a year"),
         ],
     },
     // --- end of natural world ---
+    // --- Lives ---
+    Group {
+        title: "Followed people",
+        at: "modules.lives",
+        help: "A few named people followed through their lives, each one of their province's people: they age, marry, have children, live through what their province lives through and die of what its people die of. They change nothing in the world. When one dies, their story goes on with their eldest grown child, if they have one.",
+        specs: &[
+            made("modules.lives.at_start", "Followed from the start", "How many people are followed from the world's first day, picked across the world where people live (more from crowded provinces). You can follow more on any day from a province's page.", 0.0, 1000.0, "people"),
+            live("modules.lives.mortality", "Mortality", "Multiplies everyone's chance of dying of age and illness (about 2% a year at 40, 6% at 60, a third at 80, the same table as rulers'). Famine, plague and battle come on top, by what the world does. 0: nobody dies of age.", 0.0, 10.0, "times"),
+            live("modules.lives.grown", "Grown at", "The age at which a child is grown: they take up a job, may marry and be taken for a soldier, and may carry their parent's story on.", 5.0, 30.0, "years"),
+            live("modules.lives.marriage", "Marrying", "Chance a year that a grown, unmarried person marries, until the age below. 0.15: most marry within a few years of growing up.", 0.0, 1.0, "chance a year"),
+            live("modules.lives.marry_until", "Marry until", "Nobody marries for the first time (or again) from this age on.", 5.0, 100.0, "years"),
+            live("modules.lives.children", "Children", "Chance a year that a married couple has a child, while the mother is younger than the age below. 0.2: about five children over a marriage, before some die young. 0: nobody has children, so stories end with the person.", 0.0, 1.0, "chance a year"),
+            live("modules.lives.last_child", "Last child at", "A woman has no more children from this age on.", 5.0, 100.0, "years"),
+        ],
+    },
+    Group {
+        title: "Jobs and fortunes",
+        at: "modules.lives.roles",
+        help: "Followed people take up the jobs the world has where they live (farmer, fisher, smith, scholar, priest, hunter and more, from the modules that are on), may be taken for soldiers when their province raises them, and live through what their realm and province go through: battles, uprisings, wars and peace, new rulers, plagues, faiths and cultures changing.",
+        specs: &[
+            live("modules.lives.roles.job_change", "Changing jobs", "Chance a year that a grown person takes up another of the jobs open where they live. They also change when their job goes (the woods cleared, the realm no longer studying). 0: they keep their first job while it lasts.", 0.0, 1.0, "chance a year"),
+            live("modules.lives.roles.master_years", "Years to master", "Years in one job for someone of middling talent to master it; the most talented take two-thirds as long, the least twice as long.", 0.5, 100.0, "years"),
+            live("modules.lives.roles.soldier_from", "Soldiers from", "Youngest age at which a person may be taken for a soldier (never before they are grown).", 0.0, 100.0, "years"),
+            live("modules.lives.roles.soldier_until", "Soldiers until", "From this age on nobody is taken for a soldier.", 0.0, 100.0, "years"),
+            live("modules.lives.roles.soldier_share", "Of fighting age", "Share of a province's people who are of those ages. When a province sends a tenth of its people to its companies, a person of fighting age is taken with a chance of a tenth over this. Lower: followed people of fighting age are taken more readily.", 0.01, 1.0, "share"),
+            live("modules.lives.roles.wounded", "Wounded for each killed", "In a battle, soldiers wounded for each one killed: the chance of a wound is this times the chance of dying (more for the bold). 0: nobody is wounded.", 0.0, 20.0, "soldiers"),
+            live("modules.lives.roles.praised", "Praised for bravery", "Chance that the boldest soldier on the winning side of a battle is praised for it; the less bold in proportion.", 0.0, 1.0, "chance"),
+            live("modules.lives.roles.swayed", "Swayed by neighbours", "When a new faith or culture takes over their province, a person takes it up with the chance of its share of the province's people, times this. 0: people keep the faith and ways they grew up with.", 0.0, 10.0, "times"),
+        ],
+    },
+    // --- end of lives ---
 ];
 
 /// Parts of modules that can be switched on or off when a world is made.
@@ -607,6 +641,9 @@ pub static SECTIONS: &[Section] = &[
     Section { key: "modules.nature.fish", label: "Fish", help: "Fishers take fish and the stock breeds back; under markets, the fish left set the fish the shore gives. Off: fish stay untouched." },
     Section { key: "modules.nature.wildlife", label: "Wild game", help: "Game is pushed out by clearing and hunted where people crowd, and comes back where they leave (tracked and shown only). Off: game stays untouched." },
     // --- end of natural world ---
+    // --- Lives ---
+    Section { key: "modules.lives.roles", label: "Jobs and fortunes", help: "Followed people take up jobs, may be taken for soldiers, and live through the world's events (Lives \"lives\"). Off: a yearly diary of how their province fared, with births, marriages and deaths (Lives \"diary\")." },
+    // --- end of lives ---
 ];
 
 /// What in the configuration isn't a setting here, and why: a key, or the start of keys.
@@ -724,6 +761,7 @@ pub fn everything() -> ModuleConfig {
         religion: Some(ReligionParams::default()),
         disease: Some(DiseaseParams::default()),
         nature: Some(NatureParams::default()),
+        lives: Some(LifeParams::default()),
         terrain_params: d.terrain_params,
         climate_params: d.climate_params,
         biome_params: d.biome_params,
@@ -796,6 +834,12 @@ pub fn defaults_for(c: &Config) -> Config {
         p.wildlife = p.wildlife.take().filter(|_| x.wildlife.is_some());
     }
     // --- end of natural world ---
+    // --- Lives: its parts ---
+    let mut lives = on(m.lives.is_some(), all.lives);
+    if let (Some(p), Some(x)) = (&mut lives, &m.lives) {
+        p.roles = p.roles.take().filter(|_| x.roles.is_some());
+    }
+    // --- end of lives ---
     let world = WorldParams { n: c.world.n, provinces: c.world.provinces, seed: c.world.seed, ..WorldParams::preset(Size::Small, 0) };
     let modules = ModuleConfig {
         terrain: m.terrain,
@@ -813,6 +857,7 @@ pub fn defaults_for(c: &Config) -> Config {
         religion,
         disease,
         nature,
+        lives,
         ..ModuleConfig::default()
     };
     Config { world, modules, calendar: c.calendar.clone(), goods: c.goods.clone() }

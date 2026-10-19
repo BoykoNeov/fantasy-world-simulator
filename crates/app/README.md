@@ -229,6 +229,13 @@ What exists:
     on hover; the province page opens with the plague going on there, if any, and the share ill,
     and a "start a plague here" button (a poke; refused where nobody lives). Sick and immune read
     as percentages.
+- **Followed people** (Oct 19; only where Lives runs, off by default): a "People followed"
+  section lists everyone followed, what they are now ("a master smith, 34", "a soldier of
+  Tholia, 22", "died of plague aged 51") and their story, latest first, with a button to where
+  they are. A small gold diamond marks each living one on the map (at home, or with their company);
+  hover it for who it is (layer "followed people", `--layer people=0`). The province page names
+  those followed there and has a "follow someone here" button (an edit, `Edit::Follow`; refused
+  where nobody lives). `--open-section people` opens the section.
 - **Editing realms, rulers and armies** (step 7's editor; `editor.rs`, `realm_tools.rs`; only
   what the world keeps is offered):
   - The "realms" tool in the Edit section: click provinces to pick them (again to put one back;

@@ -10,6 +10,7 @@ use crate::climate::{ClimateParams, LatitudeClimate, NullClimate};
 use crate::culture::{Assimilation, CultureParams};
 use crate::economy::{Food, FoodParams};
 use crate::hydrology::{RiverParams, Rivers};
+use crate::lives::{LifeParams, Lives};
 use crate::markets::{MarketParams, Markets};
 use crate::module::{Module, Slot};
 use crate::nature::{NatureParams, Regrowth};
@@ -128,6 +129,12 @@ pub struct ModuleConfig {
     /// files that don't name it.
     #[serde(default)]
     pub nature: Option<NatureParams>,
+    /// Lives v0 "diary" and v1 "lives" (when its parameters hold [`crate::lives::RoleParams`]): a
+    /// few named people followed through their lives, samples of their provinces who change
+    /// nothing in the world (step 9). Needs Population. Off by default, and in files that don't
+    /// name it.
+    #[serde(default)]
+    pub lives: Option<LifeParams>,
     /// The settings of the slots that make the map, used once, when the world is made (and again
     /// where an edit makes the map anew). Scenario files written before they were settings get the
     /// numbers the modules had then, so they make the same world.
@@ -163,6 +170,7 @@ impl Default for ModuleConfig {
             religion: Some(ReligionParams::default()),
             disease: Some(DiseaseParams::default()),
             nature: Some(NatureParams::default()),
+            lives: None,
             terrain_params: TerrainParams::default(),
             climate_params: ClimateParams::default(),
             biome_params: BiomeParams::default(),
@@ -267,6 +275,11 @@ impl ModuleConfig {
         if let Some(params) = &self.nature {
             out.push(Box::new(Regrowth::new(params.clone())));
         }
+        if let Some(params) = &self.lives {
+            // The jobs open to followed people: those the modules that are on offer.
+            let jobs = out.iter().filter_map(|m| m.jobs()).collect();
+            out.push(Box::new(Lives::new(params.clone(), jobs)));
+        }
         out
     }
 }
@@ -288,6 +301,7 @@ pub const CHOICES: &[(Slot, &[&str])] = &[
     (Slot::Religion, &["conversion", "off"]),
     (Slot::Disease, &["plagues", "off"]),
     (Slot::Nature, &["regrowth", "off"]),
+    (Slot::Lives, &["off", "lives", "diary"]),
 ];
 
 impl ModuleConfig {
@@ -327,6 +341,11 @@ impl ModuleConfig {
             Slot::Religion => on(self.religion.is_some(), "conversion"),
             Slot::Disease => on(self.disease.is_some(), "plagues"),
             Slot::Nature => on(self.nature.is_some(), "regrowth"),
+            Slot::Lives => match &self.lives {
+                None => "off",
+                Some(l) if l.roles.is_some() => "lives",
+                Some(_) => "diary",
+            },
             _ => return None,
         })
     }
@@ -381,6 +400,17 @@ impl ModuleConfig {
             Slot::Religion => self.religion = if on { self.religion.take().or_else(|| Some(ReligionParams::default())) } else { None },
             Slot::Disease => self.disease = if on { self.disease.take().or_else(|| Some(DiseaseParams::default())) } else { None },
             Slot::Nature => self.nature = if on { self.nature.take().or_else(|| Some(NatureParams::default())) } else { None },
+            Slot::Lives => {
+                self.lives = match version {
+                    "off" => None,
+                    _ => {
+                        // "lives" is the diary with jobs and what befalls people.
+                        let mut l = self.lives.take().unwrap_or_default();
+                        l.roles = if version == "lives" { l.roles.take().or_else(|| Some(Default::default())) } else { None };
+                        Some(l)
+                    }
+                }
+            }
             _ => unreachable!("checked against CHOICES"),
         }
         Ok(())

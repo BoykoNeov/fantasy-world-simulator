@@ -937,6 +937,25 @@ Loads refuse other format versions,
   (rich river cities taken in a normal war 7 against 9 over the 18 worlds; passes 5 and 5), so
   nothing was tuned and Disease is on for new worlds too (the user); story 3, the 150-year check
   and story 1 pass with today's defaults.
+- **Lives** (step 9; Lives "diary" and "lives", `lives.rs`, tests in `lives_tests.rs`). A few named
+  people followed through their lives, each a sample of their province's people: they are not
+  counted among the people, and nothing they do changes the world (Lives sends no requests, owns no
+  field and emits no events; a test runs the same worlds with Lives on and off and finds every
+  field and every other module's state equal year by year). They age, marry, have children and die
+  of age (the rulers' table), and at home of famine and plague by the share of their province that
+  starved or died of plague that month; each year a line of how their province fared. "lives"
+  adds jobs, offered by the modules that are on, each in its own file (`Module::jobs`): farmers
+  under the food economy, under markets the goods the province's workers make (names in
+  `markets::JOB_NAMES`), scholars where a realm studies (Research's scholars' share), priests
+  (`religion.priests`), hunters where game is kept (`nature.wildlife.hunters`). People of fighting
+  age may be taken for soldiers by the share of their province its companies took; soldiers fight
+  their company's battles (dying by the share of their side that died), fall to camp disease or
+  hunger, desert by their realm's shares, or are sent home. At home they see uprisings,
+  occupations, wars and peaces, new rulers, plagues arriving, faiths and cultures changing, the
+  woods cleared and the fish gone. People are followed from the start (`at_start`, 8) and by the
+  edit `Edit::Follow { province }`; when one dies the story goes on with their eldest grown child.
+  The people are Lives' saved state, shown beside the world as `World::lives`
+  (`Module::publish` puts them back after a load). Off by default; save format 37.
 
 - **Painting the land** (`edit.rs`): a brush stroke raises, lowers, smooths, roughens or flattens
   the land along a path (full strength in the brush's middle half, fading to nothing at its edge),

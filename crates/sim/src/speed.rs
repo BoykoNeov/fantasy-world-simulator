@@ -117,13 +117,22 @@ pub fn base_mix() -> Mix {
 }
 
 /// The mixes to measure: every accepted mix, the map's versions (terrain, climate) at their
-/// defaults unless `map` (they shape the world once, not its days). The base mix first.
+/// defaults unless `map` (they shape the world once, not its days), and Lives off but for the
+/// default mix with each of its versions (it follows a few people, which costs next to nothing,
+/// and would otherwise make three times as many mixes). The base mix first.
 pub fn mixes(map: bool) -> Vec<Mix> {
     let defaults = Mix::defaults();
     let base = base_mix();
+    let lives = CHOICES.iter().position(|c| c.0 == Slot::Lives).expect("Lives has a choice");
+    let without_lives = |m: &Mix| {
+        let mut m = m.clone();
+        m.0[lives] = "off";
+        m
+    };
     let mut out: Vec<Mix> = all_mixes()
         .into_iter()
         .filter(|m| map || CHOICES.iter().enumerate().all(|(k, c)| !matches!(c.0, Slot::Terrain | Slot::Climate) || m.0[k] == defaults.0[k]))
+        .filter(|m| m.0[lives] == "off" || without_lives(m) == defaults)
         .filter(|m| m.check().is_ok() && *m != base)
         .collect();
     out.insert(0, base);

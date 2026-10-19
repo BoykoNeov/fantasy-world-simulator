@@ -656,6 +656,7 @@ impl Sim {
         }
         for (m, bytes) in self.modules.iter_mut().zip(&c.modules) {
             m.load_state(bytes).expect("a checkpoint of this world");
+            m.publish(&mut self.world);
         }
         self.day = c.day;
         self.pending = c.pending.clone();
@@ -781,7 +782,14 @@ impl Sim {
         edit.check(&self.world)?;
         // An edit that needs what only the module keeping its fields knows is that module's to check
         // and carry out.
-        let carrier = edit.sets().first().and_then(|f| self.plan.owner[known(f).0 as usize]).filter(|&i| self.modules[i].check_edit(&self.world, edit).is_some());
+        // An edit that sets no field (following someone) is for whichever module takes it as its own.
+        let carrier = match edit.sets().first() {
+            Some(f) => self.plan.owner[known(f).0 as usize].filter(|&i| self.modules[i].check_edit(&self.world, edit).is_some()),
+            None => (0..self.modules.len()).find(|&i| self.modules[i].check_edit(&self.world, edit).is_some()),
+        };
+        if carrier.is_none() && matches!(edit, Edit::Follow { .. }) {
+            return Err("nobody is followed in this world: Lives is off".into());
+        }
         if let Some(i) = carrier {
             self.modules[i].check_edit(&self.world, edit).expect("claimed above")?;
         }
@@ -873,6 +881,7 @@ impl Sim {
         }
         for (new, old) in modules.iter_mut().zip(&self.modules) {
             new.load_state(&old.save_state())?;
+            new.publish(&mut self.world);
         }
         self.modules = modules;
         self.settings = Arc::new(c.modules);

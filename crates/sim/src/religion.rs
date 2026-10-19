@@ -86,6 +86,8 @@ pub struct ReligionParams {
     /// The most faiths a province keeps, the leading one counted: the groups of smaller faiths
     /// take up the leading faith at once.
     pub most: u32,
+    /// Share of the people who are priests: only followed people's jobs read it.
+    pub priests: f64,
     /// New faiths from groups cut off from their own; none for no schisms. A missing key in a file
     /// means none (not the default), so switching it off survives a settings change.
     #[serde(default)]
@@ -106,6 +108,7 @@ impl Default for ReligionParams {
             small_people: 100,
             small_share: 0.01,
             most: 3,
+            priests: 0.01,
             schisms: Some(SchismParams::default()),
         }
     }
@@ -211,10 +214,25 @@ impl Module for Conversion {
         &V1
     }
 
+    /// Followed people may be priests: the priests' share of the people.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        let priests = self.params.priests;
+        Some(crate::lives::Jobs {
+            reads: &["pop.province", "pop.size"],
+            offer: std::sync::Arc::new(move |w: &World, p: usize, out: &mut Vec<crate::lives::Job>| {
+                let people: u64 = (0..w.pops.size.len()).filter(|&j| w.pops.province[j] as usize == p).map(|j| w.pops.size[j]).sum();
+                out.push(crate::lives::Job { name: "priest".into(), holders: people as f64 * priests });
+            }),
+        })
+    }
+
     fn check(&self, _goods: &crate::fields::Goods) -> Result<(), String> {
         let p = &self.params;
         if p.starting < 1 || p.starting as usize > MOST {
             return Err(format!("the world starts with 1 to {MOST} faiths"));
+        }
+        if !(0.0..=1.0).contains(&p.priests) {
+            return Err("the priests' share goes from 0 to 1".into());
         }
         if !(0.0..=0.5).contains(&p.borderland) {
             return Err("the mixed share of a borderland goes from 0 to a half".into());

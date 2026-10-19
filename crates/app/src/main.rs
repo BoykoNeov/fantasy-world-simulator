@@ -240,6 +240,7 @@ impl Options {
                         "realm_borders" => l.realm_borders = x > 0.5,
                         "armies" => l.armies = x > 0.5,
                         "battles" => l.battles = x > 0.5,
+                        "people" => l.people = x > 0.5,
                         "roads" => l.roads = x > 0.5,
                         "provinces" => l.provinces = x,
                         "coasts" => l.coasts = x > 0.5,
@@ -896,6 +897,7 @@ impl MapApp {
             for (id, data) in &front.state.fields {
                 self.geo.set_field(*id, data.clone()).expect("the worker's world has the same shape");
             }
+            self.geo.lives = front.state.lives.clone();
             self.shown_state = front.state.clone();
             // Fewer provinces now (an undone split, going back past one, another timeline): a
             // selected province past the end is gone.
@@ -1273,6 +1275,10 @@ impl MapApp {
             self.faiths_section(ui);
             ui.separator();
         }
+        if self.lives_on() {
+            self.people_section(ui);
+            ui.separator();
+        }
 
         ui.label("Edit");
         let edge = self.at_the_edge();
@@ -1326,6 +1332,7 @@ impl MapApp {
         let wild_parts = self.wild_parts();
         let disease = self.disease_on();
         let winter = self.shown_state.settings.warfare.as_ref().is_some_and(|t| t.seasons.is_some());
+        let people = self.lives_on();
         let l = &mut self.layers;
         ui.add(egui::Slider::new(&mut l.terrain, 0.0..=1.0).text("terrain"));
         ui.add(egui::Slider::new(&mut l.temperature, 0.0..=1.0).text("temperature"));
@@ -1412,6 +1419,9 @@ impl MapApp {
         if armies {
             ui.checkbox(&mut l.armies, "armies").on_hover_text("field armies marching, gathering, besieging or fighting, in their realm's colour, sized by soldiers; ships as hulls. Guards and recruits idle at home aren't drawn (the province page lists them)");
             ui.checkbox(&mut l.battles, "battles").on_hover_text("crossed swords where a battle is fought today; a fading mark where one ended in the last month");
+        }
+        if people {
+            ui.checkbox(&mut l.people, "followed people").on_hover_text("a small gold mark where each person you follow is: at home, or with their company while a soldier. Hover one for who it is");
         }
         ui.separator();
 
@@ -1601,6 +1611,40 @@ impl MapApp {
         let go = self.groups_section(ui, "faiths", &format!("Faiths ({alive} living)"), &mut lines, inspector::faiths, layers::faith_color);
         self.faith_lines = lines;
         self.go_to(go);
+    }
+
+    /// The people followed (`--open-section people`): each with what they are now, a button to where
+    /// they are, and their story, latest first.
+    fn people_section(&mut self, ui: &mut egui::Ui) {
+        let open = self.opts.open_sections.iter().any(|s| s == "people");
+        let st = self.geo.lives.clone();
+        let living = st.followed().filter(|&k| st.people[k].alive()).count();
+        let mut go = None;
+        egui::CollapsingHeader::new(format!("People followed ({living} living)")).default_open(open).show(ui, |ui| {
+            if st.followed().next().is_none() {
+                ui.small("Nobody yet: pick a province and press \"follow someone here\".");
+            }
+            let names = sim::lives::Names::new(&self.geo);
+            let (day, year) = (self.day(), self.calendar.days_per_year());
+            for k in st.followed() {
+                let name = st.name(self.geo.params.seed, k);
+                let now = st.summary(&self.geo, &names, k, day, year);
+                egui::CollapsingHeader::new(format!("{name}: {now}")).id_salt(("person", k)).default_open(open && k == 0).show(ui, |ui| {
+                    if st.people[k].alive() && ui.small_button("where they are").on_hover_text("select the province where they are now").clicked() {
+                        go = Some(st.place(&self.geo, k));
+                    }
+                    for l in st.people[k].lines.iter().rev().take(200) {
+                        ui.small(st.tell(&self.geo, &names, k, l, &self.calendar));
+                    }
+                });
+            }
+        });
+        self.go_to(go);
+    }
+
+    /// Whether people are followed in this world (Lives is on).
+    fn lives_on(&self) -> bool {
+        self.shown_state.settings.lives.is_some()
     }
 
     /// A Cultures or Faiths section (`id`, as `--open-section` names it): its lines from `make`,
@@ -2108,6 +2152,25 @@ impl MapApp {
                 self.selected = None;
             }
         });
+        if self.lives_on() {
+            let st = self.geo.lives.clone();
+            let here: Vec<usize> = st.followed().filter(|&k| st.people[k].alive() && st.place(&self.geo, k) == p).collect();
+            let mut follow = false;
+            ui.horizontal_wrapped(|ui| {
+                if !here.is_empty() {
+                    let seed = self.geo.params.seed;
+                    let who: Vec<String> = here.iter().map(|&k| st.name(seed, k)).collect();
+                    ui.label(format!("Followed here: {}.", who.join(", ")));
+                }
+                follow = ui
+                    .small_button("follow someone here")
+                    .on_hover_text("an edit: from today a grown person of this province is followed through their life (People section); it changes nothing in the world (refused where nobody lives)")
+                    .clicked();
+            });
+            if follow {
+                self.change(Change::Edit(sim::edit::Edit::Follow { province: p }));
+            }
+        }
         if self.disease_on() {
             let mut start = false;
             ui.horizontal_wrapped(|ui| {
@@ -2859,6 +2922,26 @@ impl eframe::App for MapApp {
                             {
                                 let names = Names { world: geo, realms: &self.realm_names };
                                 label = Some((c, app::armies::describe(m, &self.troop_kinds, &names.realm(m.realm))));
+                            }
+                        }
+                    }
+                    if layers.people {
+                        let st = &geo.lives;
+                        let mut at_seat: HashMap<u32, usize> = HashMap::new();
+                        for k in st.followed().filter(|&k| st.people[k].alive()) {
+                            let q = st.place(geo, k);
+                            let Some(&d) = geo.provinces.center.get(q as usize) else { continue };
+                            let n = at_seat.entry(q).or_default();
+                            let c = at(d) + egui::vec2(*n as f32 * 9.0 - 6.0, 9.0);
+                            *n += 1;
+                            let diamond = vec![c + egui::vec2(0.0, -5.0), c + egui::vec2(4.0, 0.0), c + egui::vec2(0.0, 5.0), c + egui::vec2(-4.0, 0.0)];
+                            ui.painter().add(egui::Shape::convex_polygon(diamond, egui::Color32::from_rgb(230, 180, 40), egui::Stroke::new(1.0, ink_c)));
+                            if let Some(h) = hover
+                                && h.distance(c) <= 6.0
+                            {
+                                let names = sim::lives::Names::new(geo);
+                                let now = st.summary(geo, &names, k, self.day(), self.calendar.days_per_year());
+                                label = Some((c, format!("{}: {now}", st.name(geo.params.seed, k))));
                             }
                         }
                     }

@@ -771,7 +771,7 @@ Start with a thin slice you can watch, and pull the framework out of real module
        - **Speed** (the user chose to make armies faster now, worlds unchanged): with everything on, a large world's day had cost 2–4 ms under Economics v0 (wars go on somewhere every day, so armies never rest), against the 1.5 ms budget. Profiling found most of it in the engine around the armies, not in the armies: delivering a day's events watched every module's fields, and the engine copied and compared every army entry (numbers never reused: 43,000 entries at year 10, 71,000 at 60, about 17,000 with soldiers) twice a day. Changed, each checked against the world's fingerprint (identical at year 5 and year 40, and under markets, against the code before the changes): only the modules receiving events are watched when they're delivered; armies' values aren't stamped with the day they last changed (nothing reads those stamps) unless a day is explained; changes are found block by block; limits that a field's number type can't break aren't checked, and army sizes and roles are checked in place; route searches stop once the provinces asked about are settled; a general looks only at its own and its enemies' land, and finds a target's group without going through every group. Processor time a day, one worker thread, the large world (`examples/day_cost.rs`), same hour, before → after: Economics v0 year 5 (12 wars) 1.98 → 0.77 ms, year 40 (24 wars) 3.86 → 1.46 ms; markets year 5 3.43 ms (5.07 before; markets alone 1.89, already over budget since step 6). The machine was busy with another project's tests throughout, so these are processor time, not the clock. **With the final defaults** (capitals counted once and besieged like any province, set after those measurements, which change the worlds), timed again on a quieter machine: year 40 (25 wars going on) 2.15 ms, **over the budget**; year 100 (13 wars) 1.46 ms; year 40 on all cores 1.63 ms of processor time summed over the threads. The cost follows how many wars go on, and with capitals falling there is more fighting and planning; the generals' planning is now the largest part. No day is idle in such a world: some war goes on every day. Told to the user; more speed work is theirs to ask for.
        - **The window**: the Modules section and New world give the tester's verdict for every mix (no "not in the table yet"); New world lists realms, characters, diplomacy and warfare with the other slots, and picking a version switches on what it needs and off what needs what is switched off (realms off without people). `simrun --modules SLOT=VERSION,...` picks any versions.
 8. **Logistics and support.** Supply lines and depots, pay, foraging, seasons, sieges in depth, attrition. Battle inspector (done Oct 18, with soldiers lost by realm and year; see the note before Decisions). (Armies, fleets and battles themselves moved into step 7.) Story 2 (the rich river city taken in a war) moved here from step 7 (the user's choice, Oct 17): it doesn't pass at step 7's end, and taking cities is this step's work.
-9. **Research, culture, religion.** Spread, drift, conversion, tech diffusion. Lives v1: followed individuals riding on the roles the existing modules offer.
+9. **Research, culture, religion.** Spread, drift, conversion, tech diffusion. Lives v1: followed individuals riding on the roles the existing modules offer. (Research, Culture and Religion done Oct 18; Lives v0 "diary" and v1 "lives" done Oct 19, see "Lives v1: followed people" before Decisions.)
 10. **Natural world and disease.** Wildlife, forests, plagues over trade routes. Target story 3 passes.
 11. **Magic and the fantastical.** Mana field, ley lines, spells as events, monsters, cataclysms, all as optional modules.
 12. **Polish and version changes.** Module version changes via save → convert → reload; chronicle; module panel UX; replay scrubbing; save compatibility across releases; data-only mod loading.
@@ -1056,6 +1056,37 @@ lives; each is a *sample* of their province's people, so following them changes 
   world's log; a save mid-life resumes the same stories; Lives on with each other module off.
 - **Questions for the user (Oct 19):** (1) who is followed; (2) what happens when they die; (3) the
   simple "yearly diary only" version as well, or v1 only; (4) where the list of jobs is kept.
+- **The user's choices (Oct 19):** (1) both: a few picked across the world when it is made (a
+  setting) and a "follow someone here" button; (2) the story carries on with their eldest grown child
+  living (so their children are kept as quiet kin who age and may die, without story lines), and ends
+  when there is none; (3) **both versions**: "diary" (v0, a yearly line from the province's year and
+  death by the year's shares, no jobs or event rolls) beside "lives" (v1); (4) jobs are declared in
+  each module's own file (a list beside its manifest, gathered by slot), not in the manifest and not
+  in one table in Lives.
+- **Built (Oct 19, save format 37; `lives.rs`, tests in `lives_tests.rs`).** As planned, with: jobs
+  are a `Module::jobs` hook each module answers (Food: farmer; Markets: the goods its workers make,
+  names in `markets::JOB_NAMES`; Research: scholar, its scholars' share; Religion: priest, a new
+  setting `priests`, 1%; Natural world: hunter, a new setting `wildlife.hunters`, 2%, fewer where
+  game is hunted out), gathered when the modules are built, so Lives never names another module's
+  jobs; soldiering is Lives' own (it reads the army fields), not a job. Merchants are left out: the
+  sim keeps no merchants (trade has no workers). The engine routes an edit that sets no field to
+  whichever module takes it (`Edit::Follow`), and a new hook `Module::publish` puts the people
+  back on the world after a load, a going back or a settings change. Traits: hardiness (the hardy
+  die half as readily, the frail half again), talent (mastering a job), boldness (wounds, praise).
+  Names are a first name and a family name, a child taking the followed parent's family. The
+  speed table measures Lives only beside the default mix (each of its versions), as it would
+  otherwise triple the mixes. `simrun --stories` prints every story; the window has a People
+  section, gold marks on the map, and "follow someone here" on the province page.
+  - **Checks:** the world runs the same with Lives on and off (both economies, seeds 3 and 7, 30
+    years, 150 followed: every field, the engine's totals and every other module's state equal
+    year by year); with 150 followed over 40 years under markets: 297 jobs taken, 130 marriages,
+    281 children, 124 deaths, 31 stories carried on by a child, 34 people taken for soldiers, 11
+    different jobs; 3.7% of the followed die a year (300 followed, 60 years, food economy); a save
+    mid-life and going back give the same people; the diary has no jobs or soldiers; without
+    realms everyone farms; every module's jobs read only fields Lives' manifest lists.
+  - **Not checked as planned:** that followed soldiers die about as often as their realm's do
+    (their odds are their side's share by construction, but few were taken in the test worlds),
+    and that every story line matches an event in the world's log.
 
 ## Decisions
 

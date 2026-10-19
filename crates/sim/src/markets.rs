@@ -575,9 +575,37 @@ impl Books {
     }
 }
 
+/// What a followed person who works on each good of the shipped tree is called; any other good's
+/// workers are "<good> workers". Content, not settings.
+pub const JOB_NAMES: &[(&str, &str)] = &[
+    ("grain", "farmer"),
+    ("fish", "fisher"),
+    ("livestock", "herder"),
+    ("timber", "woodcutter"),
+    ("stone", "quarryman"),
+    ("ore", "miner"),
+    ("cloth", "weaver"),
+    ("tools", "smith"),
+];
+
 impl Module for Markets {
     fn manifest(&self) -> &'static Manifest {
         if self.know.is_some() { &V1_KNOW } else { &V1 }
+    }
+
+    /// Followed people work on the goods their province's workers make, as many of them as do.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        Some(crate::lives::Jobs {
+            reads: &["province.workers"],
+            offer: std::sync::Arc::new(|w: &World, p: usize, out: &mut Vec<crate::lives::Job>| {
+                let stride = w.goods.stride();
+                for (c, good) in w.goods.names().into_iter().enumerate() {
+                    let holders = w.workers.get(p * stride + c).copied().unwrap_or(0) as f64;
+                    let name = JOB_NAMES.iter().find(|j| j.0 == good).map_or_else(|| format!("{good} worker"), |j| j.1.to_string());
+                    out.push(crate::lives::Job { name, holders });
+                }
+            }),
+        })
     }
 
     fn check(&self, goods: &Goods) -> Result<(), String> {

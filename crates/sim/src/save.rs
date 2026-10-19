@@ -96,7 +96,9 @@ pub const MAGIC: &[u8; 8] = b"FMAPSAVE";
 /// Format 35 (Disease v1 "plagues"): its settings, natural starts and saved outbreaks.
 /// Format 36 (the window's plague map): each province's plague dead since the world began
 /// (`province.plague_dead_total`, Disease's).
-pub const FORMAT_VERSION: u32 = 36;
+/// Format 37 (Lives, followed people): its slot, settings, saved state and the follow edit; the
+/// jobs' settings of Religion (priests) and the Natural world (hunters).
+pub const FORMAT_VERSION: u32 = 37;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SaveFile {
@@ -249,6 +251,7 @@ impl Sim {
                 return err(format!("{:?} state is schema {}, this build reads {}", man.slot, s.state_schema, man.state_schema));
             }
             m.load_state(&s.bytes).map_err(LoadError)?;
+            m.publish(&mut sim.world);
         }
 
         sim.day = snap.day;

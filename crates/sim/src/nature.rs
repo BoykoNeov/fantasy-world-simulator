@@ -164,11 +164,14 @@ pub struct WildlifeParams {
     pub inflow: f64,
     /// Share of the game a year hunted in a fully crowded province (and in proportion).
     pub hunting: f64,
+    /// Share of the people who live by hunting where the game is untouched (and in proportion for
+    /// less): only followed people's jobs read it.
+    pub hunters: f64,
 }
 
 impl Default for WildlifeParams {
     fn default() -> Self {
-        WildlifeParams { breeding: 0.2, inflow: 0.02, hunting: 0.2 }
+        WildlifeParams { breeding: 0.2, inflow: 0.02, hunting: 0.2, hunters: 0.02 }
     }
 }
 
@@ -443,6 +446,19 @@ impl Module for Regrowth {
         &V1
     }
 
+    /// Followed people may hunt, where game is kept: fewer where it is hunted out.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        let hunters = self.params.wildlife.as_ref()?.hunters;
+        Some(crate::lives::Jobs {
+            reads: &["pop.province", "pop.size", "province.game_lost"],
+            offer: std::sync::Arc::new(move |w: &World, p: usize, out: &mut Vec<crate::lives::Job>| {
+                let people: u64 = (0..w.pops.size.len()).filter(|&j| w.pops.province[j] as usize == p).map(|j| w.pops.size[j]).sum();
+                let left = 1.0 - w.game_lost.get(p).copied().unwrap_or(0) as f64 / 1_000_000.0;
+                out.push(crate::lives::Job { name: "hunter".into(), holders: people as f64 * hunters * left.max(0.0) });
+            }),
+        })
+    }
+
     fn check(&self, goods: &Goods) -> Result<(), String> {
         let p = &self.params;
         if !(p.crowd_full.is_finite() && p.crowd_full > 0.0) {
@@ -488,6 +504,11 @@ impl Module for Regrowth {
             && !(rate(g.breeding) && rate(g.inflow) && rate(g.hunting))
         {
             return Err("wildlife: breeding, the inflow and hunting are 0 or more".into());
+        }
+        if let Some(g) = &p.wildlife
+            && !(0.0..=1.0).contains(&g.hunters)
+        {
+            return Err("wildlife: the hunters' share goes from 0 to 1".into());
         }
         Ok(())
     }

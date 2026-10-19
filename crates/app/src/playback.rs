@@ -62,6 +62,8 @@ pub struct DayState {
     pub trade: Arc<sim::markets::TradeRecord>,
     /// The battles going on ([`sim::warfare::BattleRecord`]).
     pub battles: Arc<sim::warfare::BattleRecord>,
+    /// The people followed and their kin ([`sim::lives::People`]).
+    pub lives: Arc<sim::lives::People>,
     /// Soldiers lost in each year gone by, for the soldiers-lost table.
     pub soldiers_by_year: Arc<Vec<(i64, sim::sim::SoldiersLost)>>,
     /// The modules' settings in force ([`Sim::settings`]).
@@ -78,6 +80,7 @@ impl DayState {
             money_levels: sim.settings.markets.as_ref().and_then(|m| m.money_levels_now(&sim.world)),
             trade: sim.world.trade.clone(),
             battles: sim.world.battles.clone(),
+            lives: sim.world.lives.clone(),
             soldiers_by_year: Arc::new(sim.history.iter().map(|y| (y.year, y.soldiers)).collect()),
             settings: sim.settings.clone(),
             map,

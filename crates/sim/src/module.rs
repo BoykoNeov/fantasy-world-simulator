@@ -52,6 +52,8 @@ pub enum Slot {
     Disease,
     /// The wild: woodland, fish and game, used up and growing back (step 10).
     Nature,
+    /// Followed people: a few named lives, samples of their provinces (step 9).
+    Lives,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,6 +301,15 @@ pub trait Module: Send {
     /// module works out from the fields and keeps between days. It may put its own fields right too,
     /// moving nobody and nothing.
     fn edited(&mut self, _w: &mut World, _edit: &crate::edit::Edit) {}
+
+    /// Put back on the world what the module shows beside the fields (not a field, and not saved
+    /// with them), after its state was loaded.
+    fn publish(&self, _w: &mut World) {}
+
+    /// Jobs this module offers the people Lives follows ([`crate::lives::Jobs`]), if any.
+    fn jobs(&self) -> Option<crate::lives::Jobs> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

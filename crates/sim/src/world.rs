@@ -158,6 +158,9 @@ pub struct World {
     pub trade: Arc<crate::markets::TradeRecord>,
     /// The battles going on, for showing them ([`crate::warfare::BattleRecord`]): not a field.
     pub battles: Arc<crate::warfare::BattleRecord>,
+    /// The people Lives follows and their kin, for showing them ([`crate::lives::People`]): not a
+    /// field; Lives keeps them in its saved state.
+    pub lives: Arc<crate::lives::People>,
     /// Fields as they stood when today began, for the modules that read them so ([`Earlier`]).
     pub earlier: Arc<Earlier>,
     /// Stored goods, per province per good kept (field `province.stock`; see [`World::goods`]).
@@ -280,6 +283,7 @@ impl World {
             routes: Arc::new(Routes::default()),
             trade: Arc::default(),
             battles: Arc::default(),
+            lives: Arc::default(),
             earlier: Arc::default(),
             stock: Vec::new(),
             goods: Arc::new(Goods::default()),
